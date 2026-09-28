@@ -1,0 +1,17 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Local dependencies and generated files
+node_modules/
+.venv/
+__pycache__/
+dist/
+build/
+coverage/
+*.log
+.DS_Store
+# Local user uploads must never enter Git
+uploads/
