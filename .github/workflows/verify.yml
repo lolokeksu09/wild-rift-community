@@ -23,3 +23,7 @@ jobs:
           cache-dependency-path: tests/package-lock.json
       - run: npm ci --prefix tests
       - run: npm run verify
+      - name: Install Chromium for layout checks
+        run: npx --prefix tests playwright install --with-deps chromium
+      - name: Check browser layouts
+        run: npm run test:browser --prefix tests
