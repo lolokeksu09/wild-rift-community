@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 5) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 6) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -95,6 +95,10 @@ export function openDatabase(path) {
     CREATE TABLE moderation_audit (id INTEGER PRIMARY KEY AUTOINCREMENT,report_id INTEGER NOT NULL REFERENCES reports(id),
       actor_id TEXT NOT NULL REFERENCES users(id),decision TEXT NOT NULL,note TEXT NOT NULL,created_at INTEGER NOT NULL) STRICT;
     PRAGMA user_version=5;
+    COMMIT;`);
+  if (version < 6) db.exec(`BEGIN IMMEDIATE;
+    ALTER TABLE reports ADD COLUMN decision_seen INTEGER NOT NULL DEFAULT 0 CHECK(decision_seen IN (0,1));
+    PRAGMA user_version=6;
     COMMIT;`);
   return db;
 }

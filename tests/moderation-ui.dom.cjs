@@ -1,0 +1,24 @@
+const {JSDOM,VirtualConsole}=require('jsdom');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {tmpdir}=require('node:os');const {pathToFileURL}=require('node:url');
+(async()=>{
+ const {createApp}=await import(pathToFileURL(path.join(__dirname,'../server/app.mjs')).href);
+ const dir=fs.mkdtempSync(path.join(tmpdir(),'wr-mod-ui-')),databasePath=path.join(dir,'db.sqlite');let app=await createApp({databasePath}),origin=await app.listen();const windows=[],errors=[];
+ try{
+  function client(){return {cookie:'',csrf:'',async api(route,method='GET',body){const headers={Cookie:this.cookie};if(method!=='GET')Object.assign(headers,{Origin:origin,'Content-Type':'application/json','X-Community-Request':'1','X-CSRF-Token':this.csrf});const r=await fetch(origin+route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(r.headers.has('set-cookie'))this.cookie=r.headers.get('set-cookie').split(';')[0];if(data.csrf)this.csrf=data.csrf;if(data.user)this.id=data.user.id;assert(r.ok,JSON.stringify(data));return data;}};}
+  const sender=client(),reporter=client(),mod=client();for(const [c,handle] of [[sender,'sender'],[reporter,'reporter'],[mod,'moderator']])await c.api('/api/register','POST',{handle,name:handle,password:'Local-test-password-123'});
+  const conversation=await sender.api('/api/direct','POST',{handle:'reporter',clientId:'moderation-ui-first-id',body:'<img src=x onerror=alert(1)> Текст запроса'});
+  await app.close();app=await createApp({databasePath,moderatorIds:[mod.id]});origin=await app.listen();
+  function mount(c){const vc=new VirtualConsole();vc.on('jsdomError',e=>errors.push(e.message));const dom=new JSDOM(fs.readFileSync(path.join(__dirname,'../server/public/index.html'),'utf8'),{url:origin,runScripts:'outside-only',virtualConsole:vc});windows.push(dom.window);const w=dom.window;w.AbortController=AbortController;w.prompt=()=> 'Проверить первое сообщение';w.fetch=(p,opts={})=>fetch(origin+p,{...opts,headers:{...opts.headers,Cookie:c.cookie,...(opts.method&&opts.method!=='GET'?{Origin:origin}:{})}});for(const file of ['chat.js','direct.js','app.js'])w.eval(fs.readFileSync(path.join(__dirname,'../server/public',file),'utf8'));return w;}
+  async function until(fn){for(let i=0;i<800;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('UI timeout: '+windows.map(w=>w.document.querySelector('#main').textContent).join(' | ')+' errors: '+errors.join(','));}
+  const r=mount(reporter),d=r.document;await until(()=>d.querySelector('#account').textContent==='reporter');d.querySelector('#direct').click();await until(()=>d.querySelector('[data-request-report]'));d.querySelector('[data-request-report]').click();await until(()=>d.body.textContent.includes('Жалоба отправлена. Запрос не принят.'));
+  assert.equal((await reporter.api('/api/direct')).conversations[0].status,'pending');assert.equal(d.querySelectorAll('#main img').length,0);
+  const m=mount(mod),md=m.document;await until(()=>md.querySelector('#account').textContent==='moderator');md.querySelector('#reports').click();await until(()=>md.querySelector('[data-report-decision]'));assert.equal(md.querySelectorAll('#main img').length,0);
+  const form=md.querySelector('[data-report-decision]');form.elements.note.value='Проверено <script>alert(1)</script>';form.dispatchEvent(new m.Event('submit',{bubbles:true,cancelable:true}));await until(()=>!md.querySelector('[data-report-decision]'));
+  await until(()=>d.querySelector('#reports').textContent.includes('решений: 1'));
+  d.querySelector('#reports').click();await until(()=>d.querySelector('[data-report-read]'));assert(d.querySelector('#main').textContent.includes('Проверено <script>'));assert.equal(d.querySelectorAll('#main script').length,0);
+  d.querySelector('[data-report-read]').click();await until(()=>!d.querySelector('[data-report-read]'));assert.equal((await reporter.api('/api/reports/summary')).unread,0);
+  assert.equal((await sender.api('/api/reports/summary')).unread,0);assert.equal((await reporter.api('/api/direct')).conversations.find(c=>c.id===conversation.id).status,'pending');assert.deepEqual(errors,[]);
+  console.log('PASS: pending request report → moderator UI decision → private badge → read marker; no acceptance; escaped message and decision. DOM only.');
+ }finally{for(const w of windows)w.close();await app.close();fs.rmSync(dir,{recursive:true,force:true});}
+})().catch(e=>{console.error(e);process.exitCode=1});

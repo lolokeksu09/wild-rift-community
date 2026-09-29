@@ -37,8 +37,18 @@ test('message reports: access, snapshots, resolution and audit',async t=>{
   const own=(await b.request('/api/reports')).data.reports[0];assert.equal(own.status,'upheld');assert.equal(own.decision_note,decision.note);assert.equal(own.sender_id,undefined);
   const {DatabaseSync}=await import('node:sqlite');const db=new DatabaseSync(databasePath);assert.equal(db.prepare('SELECT count(*) AS n FROM moderation_audit').get().n,1);db.close();
  });
+ await t.test('decision notifications are private and marking read is idempotent',async()=>{
+  assert.equal((await b.request('/api/reports/summary')).data.unread,1);
+  assert.equal((await a.request('/api/reports/summary')).data.unread,0);
+  assert.equal((await guest.request('/api/reports/summary')).status,401);
+  assert.equal((await a.request(`/api/reports/${rid}/read`,'POST',{})).status,404);
+  assert.equal((await c.request(`/api/reports/${rid}/read`,'POST',{})).status,404);
+  for(let i=0;i<2;i++)assert.equal((await b.request(`/api/reports/${rid}/read`,'POST',{})).status,200);
+  assert.equal((await b.request('/api/reports/summary')).data.unread,0);
+  assert.equal((await b.request('/api/reports?before=-1')).status,422);
+ });
  await t.test('revoking moderator configuration removes access after restart',async()=>{
   await app.close();app=await createApp({databasePath});origin=await app.listen();assert.equal((await c.request('/api/moderation/reports')).status,403);
-  assert.equal((await b.request('/api/reports')).data.reports[0].status,'upheld');
+  assert.equal((await b.request('/api/reports')).data.reports[0].status,'upheld');assert.equal((await b.request('/api/reports/summary')).data.unread,0);
  });
 });

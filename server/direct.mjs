@@ -34,7 +34,8 @@ export function directRoutes({db,user,path,method,body,url,send,now}) {
   }
   if(path==='/api/direct' && method==='GET'){
     const conversations=all(`SELECT c.*,u.id AS peer_id,u.name AS peer_name,u.handle AS peer_handle,
-      (SELECT body FROM direct_messages WHERE conversation_id=c.id ORDER BY id LIMIT 1) AS first_body
+      (SELECT body FROM direct_messages WHERE conversation_id=c.id ORDER BY id LIMIT 1) AS first_body,
+      (SELECT id FROM direct_messages WHERE conversation_id=c.id ORDER BY id LIMIT 1) AS first_message_id
       FROM direct_conversations c JOIN users u ON u.id=CASE WHEN c.user_low=? THEN c.user_high ELSE c.user_low END
       WHERE (c.user_low=? OR c.user_high=?) AND NOT EXISTS
       (SELECT 1 FROM blocks b WHERE (b.blocker_id=c.user_low AND b.target_id=c.user_high) OR (b.blocker_id=c.user_high AND b.target_id=c.user_low))
