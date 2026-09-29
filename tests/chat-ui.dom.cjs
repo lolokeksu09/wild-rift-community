@@ -22,6 +22,7 @@ const {JSDOM,VirtualConsole}=require('jsdom');const assert=require('node:assert/
   d.querySelector('[data-chat-refresh]').click();await until(()=>d.querySelectorAll('[data-message-id]').length===2);
   assert.equal(d.querySelectorAll('[data-chat-log] img').length,0);
   assert.equal(w.sessionStorage.length,0);
+  w.prompt=()=> 'Жалоба из интерфейса';d.querySelector('[data-report-message]').click();await until(()=>root.textContent.includes('Жалоба отправлена'));assert.equal((await member.api('/api/reports')).reports.length,1);
   // Membership revocation clears rendered history and pending data.
   await owner.api(`/api/clubs/${club}/ban`,'POST',{userId:member.id});d.querySelector('[data-chat-refresh]').click();await until(()=>root.textContent.includes('Чат недоступен'));assert.equal(d.querySelectorAll('[data-message-id]').length,0);
   controller.destroy();

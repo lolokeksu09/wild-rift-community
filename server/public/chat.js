@@ -39,7 +39,7 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
     const log=find('[data-chat-log]');
     if (!list.length && log.childNodes.length) { drawPending(); return; }
     const nearEnd=log.scrollHeight-log.scrollTop-log.clientHeight<50;
-    log.innerHTML=[...messages.values()].sort((a,b)=>a.id-b.id).map(m=>`<div class="bubble ${m.sender_id===userId?'self':''}" data-message-id="${m.id}"><small>${encode(m.sender_name)} · ${encode(new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}))}</small><span>${encode(m.body)}</span></div>`).join('') || '<p class="muted">Начни разговор — сообщений пока нет.</p>';
+    log.innerHTML=[...messages.values()].sort((a,b)=>a.id-b.id).map(m=>`<div class="bubble ${m.sender_id===userId?'self':''}" data-message-id="${m.id}"><small>${encode(m.sender_name)} · ${encode(new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}))}</small><span>${encode(m.body)}</span>${m.sender_id!==userId?`<button type="button" class="btn quiet" data-report-message="${m.id}">Пожаловаться</button>`:''}</div>`).join('') || '<p class="muted">Начни разговор — сообщений пока нет.</p>';
     if(nearEnd) log.scrollTop=log.scrollHeight;
     drawPending();
   }
@@ -95,7 +95,7 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
     }catch(error){if(active)handleError(error);}
     finally{if(active)button.disabled=false;}
   }
-  const onClick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.hasAttribute('data-chat-read')&&readEndpoint&&loadedLast){b.disabled=true;try{await request(readEndpoint,'POST',{lastId:loadedLast});if(active)status('Загруженные сообщения отмечены прочитанными');}catch(error){if(active)handleError(error);}finally{b.disabled=false;}}if(b.hasAttribute('data-chat-refresh'))poll();if(b.hasAttribute('data-chat-older'))older();if(b.dataset.chatRetry)send(b.dataset.chatRetry);if(b.dataset.chatDiscard&&confirm('Убрать локальную попытку? Если сообщение уже дошло до сервера, оно останется в истории.')){pending.delete(b.dataset.chatDiscard);persist();drawPending();}};
+  const onClick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.reportMessage){const reason=prompt('Причина жалобы. Текст этого сообщения и пояснение будут переданы модератору сервиса.');if(reason&&reason.trim().length>=3){b.disabled=true;try{await request('/api/reports','POST',{kind:endpoint.startsWith('/api/direct/')?'direct':'club',messageId:Number(b.dataset.reportMessage),reason});if(active)status('Жалоба отправлена. Статус доступен в разделе «Жалобы».');}catch(error){if(active)status(error.message);}finally{b.disabled=false;}}}if(b.hasAttribute('data-chat-read')&&readEndpoint&&loadedLast){b.disabled=true;try{await request(readEndpoint,'POST',{lastId:loadedLast});if(active)status('Загруженные сообщения отмечены прочитанными');}catch(error){if(active)handleError(error);}finally{b.disabled=false;}}if(b.hasAttribute('data-chat-refresh'))poll();if(b.hasAttribute('data-chat-older'))older();if(b.dataset.chatRetry)send(b.dataset.chatRetry);if(b.dataset.chatDiscard&&confirm('Убрать локальную попытку? Если сообщение уже дошло до сервера, оно останется в истории.')){pending.delete(b.dataset.chatDiscard);persist();drawPending();}};
   const onSubmit=e=>{
     if(!e.target.matches('[data-chat-form]'))return;e.preventDefault();
     const input=e.target.elements.body,body=input.value.trim();if(!body||!active)return;
