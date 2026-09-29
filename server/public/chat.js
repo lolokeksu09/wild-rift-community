@@ -1,6 +1,6 @@
 'use strict';
 // One controller per mounted club. It never trusts a previous membership check.
-window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/clubs/${clubId}/messages`, title = 'Чат клуба' }) {
+window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/clubs/${clubId}/messages`, title = 'Чат клуба', readEndpoint = null }) {
   const encode = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const storageKey = `wr-chat-pending:${userId}:${clubId}`;
   let active = true, timer, polling = false, cursor = 0, oldest = null, hasOlder = false, initial = true;
@@ -17,7 +17,8 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
       if (item && typeof item.clientId === 'string' && /^[A-Za-z0-9_-]{16,80}$/.test(item.clientId) && typeof item.body === 'string' && item.body.trim().length > 0 && item.body.length <= 2000) pending.set(item.clientId, { clientId:item.clientId, body:item.body, status:'Не подтверждено. Можно повторить.' });
     }
   } catch { /* Storage may be unavailable; in-memory retries still work. */ }
-  root.innerHTML = `<div class="row between wrap"><h3>${encode(title)}</h3><button type="button" class="btn quiet" data-chat-refresh>Обновить</button></div><p class="note" data-chat-status role="status">Подключение…</p><button type="button" class="btn quiet hidden" data-chat-older>Ранние сообщения</button><div class="server-chat-log" data-chat-log role="log" aria-label="Сообщения"></div><div data-chat-pending></div><form data-chat-form><label class="field">Сообщение<textarea name="body" required maxlength="2000" rows="2" placeholder="Напиши сообщение…"></textarea></label><p class="error" data-chat-error role="alert"></p><button class="btn primary">Отправить</button></form>`;
+  let loadedLast = 0;
+  root.innerHTML = `<div class="row between wrap"><h3>${encode(title)}</h3><button type="button" class="btn quiet" data-chat-refresh>Обновить</button></div>${readEndpoint?'<button type="button" class="btn quiet" data-chat-read>Отметить загруженное прочитанным</button>':''}<p class="note" data-chat-status role="status">Подключение…</p><button type="button" class="btn quiet hidden" data-chat-older>Ранние сообщения</button><div class="server-chat-log" data-chat-log role="log" aria-label="Сообщения"></div><div data-chat-pending></div><form data-chat-form><label class="field">Сообщение<textarea name="body" required maxlength="2000" rows="2" placeholder="Напиши сообщение…"></textarea></label><p class="error" data-chat-error role="alert"></p><button class="btn primary">Отправить</button></form>`;
   const find = selector => root.querySelector(selector);
   const status = text => { if (active) find('[data-chat-status]').textContent = text; };
   function persist() {
@@ -30,7 +31,7 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
   }
   function merge(list) {
     for (const m of list) {
-      messages.set(m.id,m);
+      messages.set(m.id,m); loadedLast=Math.max(loadedLast,m.id);
       if (m.sender_id===userId) pending.delete(m.client_id);
     }
     persist();
@@ -94,7 +95,7 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
     }catch(error){if(active)handleError(error);}
     finally{if(active)button.disabled=false;}
   }
-  const onClick=e=>{const b=e.target.closest('button');if(!b)return;if(b.hasAttribute('data-chat-refresh'))poll();if(b.hasAttribute('data-chat-older'))older();if(b.dataset.chatRetry)send(b.dataset.chatRetry);if(b.dataset.chatDiscard&&confirm('Убрать локальную попытку? Если сообщение уже дошло до сервера, оно останется в истории.')){pending.delete(b.dataset.chatDiscard);persist();drawPending();}};
+  const onClick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.hasAttribute('data-chat-read')&&readEndpoint&&loadedLast){b.disabled=true;try{await request(readEndpoint,'POST',{lastId:loadedLast});if(active)status('Загруженные сообщения отмечены прочитанными');}catch(error){if(active)handleError(error);}finally{b.disabled=false;}}if(b.hasAttribute('data-chat-refresh'))poll();if(b.hasAttribute('data-chat-older'))older();if(b.dataset.chatRetry)send(b.dataset.chatRetry);if(b.dataset.chatDiscard&&confirm('Убрать локальную попытку? Если сообщение уже дошло до сервера, оно останется в истории.')){pending.delete(b.dataset.chatDiscard);persist();drawPending();}};
   const onSubmit=e=>{
     if(!e.target.matches('[data-chat-form]'))return;e.preventDefault();
     const input=e.target.elements.body,body=input.value.trim();if(!body||!active)return;

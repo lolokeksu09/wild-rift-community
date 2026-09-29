@@ -39,7 +39,9 @@ export function directRoutes({db,user,path,method,body,url,send,now}) {
       WHERE (c.user_low=? OR c.user_high=?) AND NOT EXISTS
       (SELECT 1 FROM blocks b WHERE (b.blocker_id=c.user_low AND b.target_id=c.user_high) OR (b.blocker_id=c.user_high AND b.target_id=c.user_low))
       ORDER BY c.created_at DESC,c.id`,user.id,user.id,user.id);
-    send(200,{viewerId:user.id,conversations});return true;
+    for(const c of conversations)c.unread=c.status==='accepted'?get(`SELECT count(*) AS n FROM direct_messages
+      WHERE conversation_id=? AND sender_id<>? AND id>COALESCE((SELECT last_id FROM direct_reads WHERE conversation_id=? AND user_id=?),0)`,c.id,user.id,c.id,user.id).n:0;
+    send(200,{viewerId:user.id,conversations,unread:conversations.reduce((n,c)=>n+c.unread,0),requests:conversations.filter(c=>c.status==='pending'&&c.requester_id!==user.id).length});return true;
   }
   if(path==='/api/direct' && method==='POST'){
     const handle=text(body.handle,'Логин',3,24).toLowerCase(),{clientId,content}=messageInput();
@@ -59,13 +61,20 @@ export function directRoutes({db,user,path,method,body,url,send,now}) {
       return {id,replayed:false};
     });send(result.replayed?200:201,result);return true;
   }
-  const match=path.match(/^\/api\/direct\/([\w-]+)\/(decision|messages)$/);
+  const match=path.match(/^\/api\/direct\/([\w-]+)\/(decision|messages|read)$/);
   if(match){
     const [,id,action]=match,c=conversation(id);
-    if(action==='decision'&&method==='POST'){
+    if(action==='read'&&method==='POST'){
+      if(c.status!=='accepted')fail(403,'Беседа ещё не принята.');
+      if(!Number.isSafeInteger(body.lastId)||body.lastId<1||!get('SELECT id FROM direct_messages WHERE conversation_id=? AND id=?',id,body.lastId))fail(422,'Некорректная отметка прочтения.');
+      run(`INSERT INTO direct_reads VALUES(?,?,?) ON CONFLICT(conversation_id,user_id)
+        DO UPDATE SET last_id=MAX(last_id,excluded.last_id)`,id,user.id,body.lastId);
+      send(200,{ok:true});return true;
+    }
+    if(action==='decision' &&method==='POST'){
       if(c.requester_id===user.id)fail(403,'Решение принимает получатель.');
       const status={accept:'accepted',reject:'rejected'}[body.decision];
-      if(!status)fail(422,'Выбери решение.');
+      if(!['accept','reject'].includes(body.decision))fail(422,'Выбери решение.');
       if(c.status!=='pending'&&c.status!==status)fail(409,'Решение уже принято.');
       run('UPDATE direct_conversations SET status=? WHERE id=?',status,id);send(200,{status});return true;
     }

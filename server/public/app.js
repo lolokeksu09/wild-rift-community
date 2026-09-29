@@ -97,3 +97,18 @@ document.addEventListener('submit', async event => {
   finally { button.disabled = false; }
 });
 render();
+
+// In-app badge only: no browser permission or external push service.
+let badgeBusy=false;
+async function updateMessageBadge(){
+  if(badgeBusy)return;
+  const id=user?.id;
+  if(!id){$('#direct').textContent='Сообщения';return;}
+  badgeBusy=true;const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),10000);
+  try{const data=await api('/api/direct','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;
+    if(data.viewerId!==id){$('#direct').textContent='Сообщения · обнови сеанс';return;}
+    $('#direct').textContent=`Сообщения${data.unread?' · '+data.unread:''}${data.requests?' · запросы: '+data.requests:''}`;
+  }catch{if(user?.id===id)$('#direct').textContent='Сообщения · нет связи';}
+  finally{clearTimeout(deadline);badgeBusy=false;}
+}
+setInterval(updateMessageBadge,5000);

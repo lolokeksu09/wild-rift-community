@@ -15,6 +15,7 @@ const {JSDOM,VirtualConsole}=require('jsdom');const assert=require('node:assert/
   d.querySelector('[data-conversation]').click();await until(()=>root.textContent.includes('Подключено'));
   d.querySelector('[data-chat-form] [name=body]').value='Ответ из интерфейса';d.querySelector('[data-chat-form]').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
   await until(()=>d.querySelectorAll('[data-message-id]').length===2);
+  d.querySelector('[data-chat-read]').click();await until(()=>root.textContent.includes('отмечены прочитанными'));assert.equal((await member.api('/api/direct')).unread,0);
   const privacy=d.querySelector('[data-privacy]');privacy.checked=false;privacy.dispatchEvent(new w.Event('change',{bubbles:true}));await until(()=>!privacy.disabled);assert.equal((await member.api('/api/me')).user.dmRequests,false);
   d.querySelector('[data-block]').click();await until(()=>d.querySelector('[data-unblock]'));assert.equal(d.querySelectorAll('[data-message-id]').length,0);
   d.querySelector('[data-unblock]').click();await until(()=>d.querySelector('[data-conversation]'));
