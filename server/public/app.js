@@ -151,3 +151,13 @@ function appealCard(r,moderator){
  if(r.appeal_status==='pending')return heading+(moderator&&!([r.reporter_id,r.sender_id,r.moderator_id].includes(user.id))?`<form data-appeal-decision="${r.id}"><label class="field">Итог по жалобе<select name="decision"><option value="upheld">Нарушение подтверждено</option><option value="dismissed">Нарушение не подтверждено</option></select></label><label class="field">Объяснение пересмотра<textarea name="note" required minlength="3" maxlength="1000"></textarea></label>${errorLine}<button class="btn primary">Завершить пересмотр</button></form>`:'<p class="note">Ожидается другой независимый модератор.</p>');
  return heading+`<p>${esc(r.appeal_note)}</p>`+(!moderator&&!r.appeal_seen?`<button class="btn quiet" data-appeal-read="${r.id}">Результат пересмотра · отметить прочитанным</button>`:'');
 }
+
+let lfgBadgeBusy=false;
+async function updateLfgBadge(){
+ if(lfgBadgeBusy)return;const id=user?.id;if(!id){$('#lfg').textContent='Найти команду';return;}
+ lfgBadgeBusy=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+ try{const data=await api('/api/lfg/notifications/summary','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;$('#lfg').textContent=data.viewerId===id?`Найти команду${data.unread?' · '+data.unread:''}`:'Найти команду · обнови сеанс';}
+ catch{if(user?.id===id)$('#lfg').textContent='Найти команду · нет связи';}
+ finally{clearTimeout(timer);lfgBadgeBusy=false;}
+}
+setInterval(updateLfgBadge,5000);
