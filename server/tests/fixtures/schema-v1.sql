@@ -1,14 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-
-export function openDatabase(path) {
-  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(path);
-  db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
-  const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 2) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
-  if (version === 0) db.exec(`BEGIN;
+BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
       bio TEXT NOT NULL DEFAULT '', password TEXT NOT NULL, created_at INTEGER NOT NULL
@@ -46,22 +36,4 @@ export function openDatabase(path) {
       action TEXT NOT NULL, created_at INTEGER NOT NULL
     ) STRICT;
     PRAGMA user_version=1;
-    COMMIT;`);
-  if (version < 2) db.exec(`BEGIN IMMEDIATE;
-    CREATE TABLE messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
-      sender_id TEXT NOT NULL REFERENCES users(id),
-      client_id TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL,
-      UNIQUE(club_id,sender_id,client_id)
-    ) STRICT;
-    CREATE INDEX messages_club ON messages(club_id,id);
-    PRAGMA user_version=2;
-    COMMIT;`);
-  return db;
-}
-export function transaction(db, fn) {
-  db.exec('BEGIN IMMEDIATE');
-  try { const result = fn(); db.exec('COMMIT'); return result; }
-  catch (error) { db.exec('ROLLBACK'); throw error; }
-}
+    COMMIT;

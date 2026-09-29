@@ -11,7 +11,7 @@ const {pathToFileURL}=require('node:url');
   const code=fs.readFileSync(path.join(__dirname,'../server/public/app.js'),'utf8');
   const errors=[];let cookie='';const vc=new VirtualConsole();vc.on('jsdomError',e=>errors.push(e.message));
   dom=new JSDOM(html,{url:origin,runScripts:'outside-only',virtualConsole:vc,beforeParse(w){w.confirm=()=>true;w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.open=false};w.fetch=async(p,opts={})=>{const headers={...opts.headers,Cookie:cookie};if(opts.method&&opts.method!=='GET')headers.Origin=origin;const res=await fetch(origin+p,{...opts,headers});const set=res.headers.get('set-cookie');if(set)cookie=set.split(';')[0];return res;};}});
-  const w=dom.window,d=w.document;w.eval(code);
+  const w=dom.window,d=w.document;w.eval(fs.readFileSync(path.join(__dirname,'../server/public/chat.js'),'utf8'));w.eval(code);
   async function until(fn){for(let i=0;i<200;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('UI timeout: '+d.querySelector('#main').textContent);}
   const click=s=>{assert(d.querySelector(s),s);d.querySelector(s).click();};
   const fill=(s,v)=>{d.querySelector(s).value=v;};

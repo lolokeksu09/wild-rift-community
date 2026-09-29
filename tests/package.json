@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "test": "node prototype.dom.cjs",
-    "test:server-ui": "node server-ui.dom.cjs"
+    "test:server-ui": "node server-ui.dom.cjs",
+    "test:chat-ui": "node chat-ui.dom.cjs"
   },
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
