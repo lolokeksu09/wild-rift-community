@@ -29,6 +29,8 @@ function postHTML(p) {
 async function render() {
   chatController?.destroy(); chatController = null;
   const version = ++requestVersion;
+  const activeNav={clubs:'home',club:'home',account:'account',direct:'direct',reports:'reports',lfg:'lfg'}[view];
+  for(const button of document.querySelectorAll('.primary-nav button')){if(button.id===activeNav)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
   try {
     const session = await api('/api/me');
     if (version !== requestVersion) return;
