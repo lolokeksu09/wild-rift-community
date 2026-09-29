@@ -78,6 +78,7 @@ $('#confirmDelete').onclick = async () => { if (!pendingDelete) return; const id
 document.addEventListener('click', async event => {
   const b = event.target.closest('button'); if (!b) return;
   try {
+    if(b.dataset.appealRead){b.disabled=true;await api(`/api/reports/${b.dataset.appealRead}/appeal/read`,'POST',{});await render();updateReportBadge();}
     if(b.dataset.reportRead){b.disabled=true;await api(`/api/reports/${b.dataset.reportRead}/read`,'POST',{});await render();updateReportBadge();}
     if(b.dataset.ownReportsMore){b.disabled=true;const result=await api('/api/reports?before='+b.dataset.ownReportsMore);if(!b.isConnected)return;$('#ownReports').insertAdjacentHTML('beforeend',result.reports.map(ownReportCard).join(''));if(result.next){b.dataset.ownReportsMore=result.next;b.disabled=false;}else b.remove();}
     if(b.dataset.reportsMore){b.disabled=true;const result=await api('/api/moderation/reports?before='+b.dataset.reportsMore);if(!b.isConnected)return;$('#reportQueue').insertAdjacentHTML('beforeend',result.reports.map(reportCard).join(''));if(result.next){b.dataset.reportsMore=result.next;b.disabled=false;}else b.remove();}
@@ -94,6 +95,7 @@ document.addEventListener('click', async event => {
 });
 document.addEventListener('submit', async event => {
   const form = event.target;
+  if(form.dataset.appeal||form.dataset.appealDecision){event.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('button');button.disabled=true;try{const route=form.dataset.appeal?`/api/reports/${form.dataset.appeal}/appeal`:`/api/moderation/reports/${form.dataset.appealDecision}/appeal-decision`;await api(route,'POST',Object.fromEntries(new FormData(form)));await render();}catch(e){formError(form,e);}finally{button.disabled=false;}return;}
   if(form.dataset.reportDecision){event.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('button');button.disabled=true;try{await api(`/api/moderation/reports/${form.dataset.reportDecision}/decision`,'POST',Object.fromEntries(new FormData(form)));await render();}catch(e){formError(form,e);}finally{button.disabled=false;}return;}
   if (!['login' , 'register', 'profile', 'createClub', 'post'].includes(form.id) && !form.dataset.commentForm) return;
   event.preventDefault(); if (!form.reportValidity()) return;
@@ -127,9 +129,9 @@ async function updateMessageBadge(){
 setInterval(updateMessageBadge,5000);
 
 function reportStatus(status){return ({pending:'Ожидает рассмотрения',upheld:'Нарушение подтверждено',dismissed:'Отклонено'})[status]||status;}
-function reportCard(r){return `<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p class="note">${r.kind==='direct'?'Личное сообщение':'Сообщение клуба'}</p><blockquote class="content">${esc(r.snapshot)}</blockquote><p>${esc(r.reason)}</p>${r.status==='pending'?`<form data-report-decision="${r.id}"><label class="field">Решение<select name="decision"><option value="upheld">Нарушение подтверждено</option><option value="dismissed">Отклонено</option></select></label><label class="field">Объяснение для заявителя<textarea name="note" required minlength="3" maxlength="1000"></textarea></label>${errorLine}<button class="btn primary">Сохранить решение</button></form>`:`<p>${esc(r.decision_note)}</p>`}</article>`;}
+function reportCard(r){return `<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p class="note">${r.kind==='direct'?'Личное сообщение':'Сообщение клуба'}</p><blockquote class="content">${esc(r.snapshot)}</blockquote><p>${esc(r.reason)}</p>${r.status==='pending'?`<form data-report-decision="${r.id}"><label class="field">Решение<select name="decision"><option value="upheld">Нарушение подтверждено</option><option value="dismissed">Отклонено</option></select></label><label class="field">Объяснение для заявителя<textarea name="note" required minlength="3" maxlength="1000"></textarea></label>${errorLine}<button class="btn primary">Сохранить решение</button></form>`:`<p>${esc(r.decision_note)}</p>`}${appealCard(r,true)}</article>`;}
 
-function ownReportCard(r){return `<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p>${esc(r.reason)}</p><p>${esc(r.decision_note)}</p>${r.status!=='pending'&&!r.decision_seen?`<button class="btn quiet" data-report-read="${r.id}">Новое решение · отметить прочитанным</button>`:''}</article>`;}
+function ownReportCard(r){return `<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p>${esc(r.reason)}</p><p>${esc(r.decision_note)}</p>${r.status!=='pending'&&!r.decision_seen?`<button class="btn quiet" data-report-read="${r.id}">Новое решение · отметить прочитанным</button>`:''}${appealCard(r,false)}</article>`;}
 let reportBadgeBusy=false;
 async function updateReportBadge(){
  if(reportBadgeBusy)return;const id=user?.id;if(!id){$('#reports').textContent='Жалобы';return;}
@@ -139,3 +141,11 @@ async function updateReportBadge(){
  finally{clearTimeout(timer);reportBadgeBusy=false;}
 }
 setInterval(updateReportBadge,5000);
+
+function appealCard(r,moderator){
+ if(r.status==='pending')return '';
+ if(!r.appeal_status)return moderator?'':`<details><summary>Оспорить решение</summary><p class="note">Одна апелляция. Её рассмотрит другой модератор. После отправки текст нельзя изменить.</p><form data-appeal="${r.id}"><label class="field">Почему решение нужно пересмотреть<textarea name="reason" required minlength="3" maxlength="1000"></textarea></label>${errorLine}<button class="btn primary">Подать апелляцию</button></form></details>`;
+ const heading=`<h4>Пересмотр: ${esc(reportStatus(r.appeal_status))}</h4><p>${esc(r.appeal_reason)}</p>`;
+ if(r.appeal_status==='pending')return heading+(moderator&&!([r.reporter_id,r.sender_id,r.moderator_id].includes(user.id))?`<form data-appeal-decision="${r.id}"><label class="field">Итог по жалобе<select name="decision"><option value="upheld">Нарушение подтверждено</option><option value="dismissed">Нарушение не подтверждено</option></select></label><label class="field">Объяснение пересмотра<textarea name="note" required minlength="3" maxlength="1000"></textarea></label>${errorLine}<button class="btn primary">Завершить пересмотр</button></form>`:'<p class="note">Ожидается другой независимый модератор.</p>');
+ return heading+`<p>${esc(r.appeal_note)}</p>`+(!moderator&&!r.appeal_seen?`<button class="btn quiet" data-appeal-read="${r.id}">Результат пересмотра · отметить прочитанным</button>`:'');
+}
