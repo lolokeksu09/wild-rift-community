@@ -161,11 +161,12 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           const result = rows(`SELECT m.id,m.club_id,m.sender_id,m.client_id,m.body,m.created_at,u.name AS sender_name
             FROM messages m JOIN users u ON u.id=m.sender_id
             WHERE m.club_id=? AND m.id${newer ? '>' : '<'}?
-            ORDER BY m.id ${newer ? 'ASC' : 'DESC'} LIMIT 51`, clubId, Number(cursor ?? Number.MAX_SAFE_INTEGER));
+            AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.blocker_id=? AND b.target_id=m.sender_id)
+            ORDER BY m.id ${newer ? 'ASC' : 'DESC'} LIMIT 51`, clubId, Number(cursor ?? Number.MAX_SAFE_INTEGER),user.id);
           const hasMore = result.length > 50;
           const messages = result.slice(0, 50);
           if (!newer) messages.reverse();
-          send(200, { viewerId: user.id, messages, hasMore, next: hasMore ? (newer ? messages.at(-1).id : messages[0].id) : null }); return;
+          send(200, { viewerId: user.id, blockVersion: sql('SELECT block_version FROM users WHERE id=?',user.id).block_version, messages, hasMore, next: hasMore ? (newer ? messages.at(-1).id : messages[0].id) : null }); return;
         }
         if (method === 'POST') {
           const clientId = text(body.clientId, 'Идентификатор сообщения', 16, 80);
