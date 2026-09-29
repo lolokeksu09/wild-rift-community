@@ -1,3 +1,4 @@
+import { lfgRoutes } from './lfg.mjs';
 import { moderationRoutes } from './moderation.mjs';
 import { directRoutes } from './direct.mjs';
 import { createServer } from 'node:http';
@@ -10,6 +11,7 @@ const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/lfg.js', ['lfg.js', 'text/javascript; charset=utf-8']],
   ['/direct.js', ['direct.js', 'text/javascript; charset=utf-8']],
   ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']]
@@ -129,6 +131,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         run('UPDATE users SET name=?,bio=? WHERE id=?', text(body.name, 'Имя', 1, 40), text(body.bio, 'Описание', 0, 300), user.id);
         send(200, { user: safeUser(sql('SELECT * FROM users WHERE id=?', user.id)) }); return;
       }
+      if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
       if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds})) return;
       if (directRoutes({ db, user, path, method, body, url, send, now })) return;
       if (method === 'GET' && path === '/api/clubs') {
