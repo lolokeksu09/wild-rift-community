@@ -1,3 +1,4 @@
+import { directRoutes } from './direct.mjs';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -8,6 +9,7 @@ const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/direct.js', ['direct.js', 'text/javascript; charset=utf-8']],
   ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']]
 ]);
@@ -18,7 +20,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
   const sql = (query, ...params) => db.prepare(query).get(...params);
   const run = (query, ...params) => db.prepare(query).run(...params);
   const rows = (query, ...params) => db.prepare(query).all(...params);
-  const safeUser = user => ({ id: user.id, handle: user.handle, name: user.name, bio: user.bio });
+  const safeUser = user => ({ id: user.id, handle: user.handle, name: user.name, bio: user.bio, dmRequests: user.dm_requests !== 0 });
   function rate(key, limit, windowMs = 60000) {
     const time = now();
     for (const [k, v] of counters) if (v.until <= time) counters.delete(k);
@@ -125,6 +127,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         run('UPDATE users SET name=?,bio=? WHERE id=?', text(body.name, 'Имя', 1, 40), text(body.bio, 'Описание', 0, 300), user.id);
         send(200, { user: safeUser(sql('SELECT * FROM users WHERE id=?', user.id)) }); return;
       }
+      if (directRoutes({ db, user, path, method, body, url, send, now })) return;
       if (method === 'GET' && path === '/api/clubs') {
         send(200, { clubs: rows(`SELECT c.*, m.status AS membership,
           (SELECT count(*) FROM memberships WHERE club_id=c.id AND status='member') AS members
