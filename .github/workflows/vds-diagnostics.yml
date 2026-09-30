@@ -1,0 +1,48 @@
+name: VDS Caddy diagnostics
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/vds-diagnostics.yml]
+permissions: {}
+concurrency:
+  group: vds-diagnostics
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Caddy through pinned SSH host
+        env:
+          VDS_SSH_KEY: ${{ secrets.vvd_ssh_wr }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          keydir=$(mktemp -d)
+          trap 'rm -rf "$keydir"' EXIT
+          test -n "$VDS_SSH_KEY" || { echo "Missing secret vvd_ssh_wr"; exit 1; }
+          printf '%s\n' "$VDS_SSH_KEY" > "$keydir/id_ed25519"
+          unset VDS_SSH_KEY
+          printf '%s\n' '139.100.205.135 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH1pZF1lCdjez9hNRWJ+gpbwvIPvDxaiox1CYZbJ1LVX' > "$keydir/known_hosts"
+          ssh -T -i "$keydir/id_ed25519" \
+            -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$keydir/known_hosts" \
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+            root@139.100.205.135 'bash -se' <<'REMOTE'
+          set -eu
+          id
+          docker compose -f /opt/wild-rift-community/compose.yaml ps
+          docker compose -f /opt/wild-rift-community/compose.yaml exec -T caddy caddy version
+          docker compose -f /opt/wild-rift-community/compose.yaml logs --tail=40 caddy
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+            --output /dev/null --write-out 'HTTPS status=%{http_code} verify=%{ssl_verify_result}\n' \
+            https://139.100.205.135/
+          REMOTE
+      - name: Check HTTPS from GitHub runner
+        run: |
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+            --output /dev/null --write-out 'External HTTPS status=%{http_code} verify=%{ssl_verify_result}\n' \
+            https://139.100.205.135/
