@@ -26,6 +26,13 @@ jobs:
           test -n "$VDS_SSH_KEY" || { echo "Missing secret vvd_ssh_wr"; exit 1; }
           printf '%s\n' "$VDS_SSH_KEY" > "$keydir/id_ed25519"
           unset VDS_SSH_KEY
+          ssh-keygen -y -P '' -f "$keydir/id_ed25519" > "$keydir/actual.pub"
+          printf '%s\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPST/+oYHSmTytBFOz0CyVzwlkTXwJUlN+rFBEFKkMJK' > "$keydir/expected.pub"
+          echo 'Actual key fingerprint:'
+          ssh-keygen -lf "$keydir/actual.pub"
+          echo 'Expected key fingerprint:'
+          ssh-keygen -lf "$keydir/expected.pub"
+          test "$(awk '{print $1, $2}' "$keydir/actual.pub")" = "$(awk '{print $1, $2}' "$keydir/expected.pub")" || { echo 'Secret key does not match authorized public key supplied by owner'; exit 1; }
           printf '%s\n' '139.100.205.135 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH1pZF1lCdjez9hNRWJ+gpbwvIPvDxaiox1CYZbJ1LVX' > "$keydir/known_hosts"
           ssh -T -i "$keydir/id_ed25519" \
             -o IdentitiesOnly=yes -o BatchMode=yes \
@@ -42,6 +49,7 @@ jobs:
             https://139.100.205.135/
           REMOTE
       - name: Check HTTPS from GitHub runner
+        if: always()
         run: |
           curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
             --output /dev/null --write-out 'External HTTPS status=%{http_code} verify=%{ssl_verify_result}\n' \
