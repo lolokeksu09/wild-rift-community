@@ -11,6 +11,7 @@ import { token, digest, passwordHash, passwordMatches, fail, HttpError, text, pa
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
+  ['/community.css', ['community.css', 'text/css; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/lfg.js', ['lfg.js', 'text/javascript; charset=utf-8']],
   ['/direct.js', ['direct.js', 'text/javascript; charset=utf-8']],
@@ -79,7 +80,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     const send = (status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); };
     try {
       const expectedOrigin = publicOrigin || `http://127.0.0.1:${server.address().port}`;
@@ -144,6 +145,17 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
       if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds})) return;
       if (directRoutes({ db, user, path, method, body, url, send, now })) return;
+      if (method === 'GET' && path === '/api/feed') {
+        const before = url.searchParams.get('before') || String(Number.MAX_SAFE_INTEGER);
+        if (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before))) fail(422, 'Некорректный курсор.');
+        const result = rows(`SELECT p.*,u.name AS author_name,c.name AS club_name FROM posts p
+          JOIN users u ON u.id=p.author_id JOIN clubs c ON c.id=p.club_id
+          LEFT JOIN memberships m ON m.club_id=c.id AND m.user_id=?
+          WHERE p.id<? AND (m.status IS NULL OR m.status!='banned')
+          AND (c.access='open' OR m.status='member') ORDER BY p.id DESC LIMIT 21`, user?.id || '', Number(before));
+        const posts = result.slice(0,20);
+        send(200, {posts,next:result.length>20?posts.at(-1).id:null}); return;
+      }
       if (method === 'GET' && path === '/api/clubs') {
         send(200, { clubs: rows(`SELECT c.*, m.status AS membership,
           (SELECT count(*) FROM memberships WHERE club_id=c.id AND status='member') AS members

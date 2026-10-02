@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { createApp } from '../server/app.mjs';
 
@@ -29,7 +30,9 @@ try {
       console.log(`PASS ${width}px: ${label}, no horizontal overflow or overlapping navigation`);
     }
     await page.goto(origin);
-    await layout('guest clubs');
+    await layout('guest home');
+    mkdirSync('ui-screenshots',{recursive:true});
+    await page.screenshot({path:`ui-screenshots/home-${width}.png`,fullPage:true});
     await page.locator('#account').click();
     await page.locator('#register').waitFor();
     await layout('registration');
@@ -44,6 +47,7 @@ try {
       await page.locator('#main h1').filter({ hasText: heading }).waitFor();
       assert.equal(await page.locator(`#${id}`).getAttribute('aria-current'), 'page');
       await layout(id);
+      if(id==='account')await page.screenshot({path:`ui-screenshots/profile-${width}.png`,fullPage:true});
     }
     await context.close();
   }

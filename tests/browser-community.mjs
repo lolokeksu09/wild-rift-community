@@ -33,6 +33,8 @@ try {
         const page = await context.newPage();
         page.on('pageerror', e => errors.push(e.message));
         await page.goto(origin);
+        await page.locator('.welcome-hero').waitFor();
+        await page.locator('#home').click();
         await page.locator('#createClub').waitFor();
         return { page, api, id: registration.user.id };
       }
@@ -54,6 +56,8 @@ try {
       origin = await app.listen();
       for (const user of [mod, owner, member]) {
         await user.page.goto(origin);
+        await user.page.locator('.welcome-hero').waitFor();
+        await user.page.locator('#home').click();
         await user.page.locator('#createClub').waitFor();
       }
       assert.equal((await mod.api('/api/me')).user.isModerator, true);

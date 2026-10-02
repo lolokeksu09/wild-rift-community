@@ -16,12 +16,12 @@ const {pathToFileURL}=require('node:url');
   const click=s=>{assert(d.querySelector(s),s);d.querySelector(s).click();};
   const fill=(s,v)=>{d.querySelector(s).value=v;};
   const submit=s=>d.querySelector(s).dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
-  await until(()=>d.querySelector('h1')?.textContent==='Клубы');click('#account');await until(()=>d.querySelector('#register'));
+  await until(()=>d.querySelector('.welcome-hero'));click('#account');await until(()=>d.querySelector('#register'));
   fill('#register [name=name]','Тестер');fill('#register [name=handle]','uitester');fill('#register [name=password]','Test-password-12345');submit('#register');await until(()=>d.querySelector('#createClub'));
   fill('#createClub [name=name]','Клуб интерфейса');fill('#createClub [name=description]','Тест');submit('#createClub');await until(()=>d.querySelector('#post'));
   fill('#post [name=title]','Пост интерфейса');fill('#post [name=body]','<img src=x onerror=alert(1)>');submit('#post');await until(()=>d.querySelector('.post-title'));
   assert.equal(d.querySelectorAll('.content img').length,0);click('[data-comments]');await until(()=>d.querySelector('[data-comment-form]'));fill('[data-comment-form] [name=body]','Комментарий');submit('[data-comment-form]');await until(()=>d.querySelector('.comment .content')?.textContent==='Комментарий');
-  click('#account');await until(()=>d.querySelector('#profile'));fill('#profile [name=name]','Новое имя');submit('#profile');await until(()=>d.querySelector('#account').textContent==='Новое имя');
+  click('#account');await until(()=>d.querySelector('#profile'));fill('#profile [name=name]','Новое имя');submit('#profile');await until(()=>d.querySelector('.profile-identity h2')?.textContent==='Новое имя');
   click('[data-logout="/api/logout"]');await until(()=>d.querySelector('#login'));fill('#login [name=handle]','uitester');fill('#login [name=password]','Test-password-12345');submit('#login');await until(()=>d.querySelector('[data-open]'));click('[data-open]');await until(()=>d.querySelector('[data-delete]'));click('[data-delete]');assert.equal(d.querySelector('#confirmDialog').open,true);click('#confirmDelete');await until(()=>!d.querySelector('.post-title'));
   assert.deepEqual(errors,[]);console.log('PASS: client forms ↔ real HTTP/SQLite (register, club, post, escaped content, comment, profile, logout/login, delete confirmation). DOM only.');
  }finally{dom?.window.close();await app.close();}
