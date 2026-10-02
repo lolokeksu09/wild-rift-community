@@ -1,0 +1,39 @@
+name: wild-rift-community
+services:
+  app:
+    image: ${WR_IMAGE:?WR_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      PUBLIC_ORIGIN: https://139.100.205.135
+      COMMUNITY_MODERATOR_IDS: ${COMMUNITY_MODERATOR_IDS:-}
+    volumes:
+      - ./data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    pids_limit: 128
+    healthcheck:
+      test: [CMD, node, -e, "require('node:http').get('http://127.0.0.1:3000/api/me',{headers:{Host:'139.100.205.135'}},r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+  caddy:
+    image: caddy:2.11.4
+    restart: unless-stopped
+    ports: ['80:80', '443:443', '443:443/udp']
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+volumes:
+  caddy_data:
+  caddy_config:

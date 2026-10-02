@@ -2,6 +2,7 @@ import { lfgRoutes } from './lfg.mjs';
 import { moderationRoutes } from './moderation.mjs';
 import { directRoutes } from './direct.mjs';
 import { createServer } from 'node:http';
+import { isIP } from 'node:net';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { openDatabase, transaction } from './database.mjs';
@@ -16,7 +17,13 @@ const assets = new Map([
   ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']]
 ]);
-export async function createApp({ databasePath = ':memory:', now = Date.now, authLimit = 20, moderatorIds = [] } = {}) {
+export async function createApp({ databasePath = ':memory:', now = Date.now, authLimit = 20, moderatorIds = [], publicOrigin = null, listenHost = '127.0.0.1', proxyClientHeader = false } = {}) {
+  if (publicOrigin !== null) {
+    const origin = new URL(publicOrigin);
+    if (origin.protocol !== 'https:' || origin.origin !== publicOrigin || origin.username || origin.password) throw new Error('PUBLIC_ORIGIN must be an exact HTTPS origin without a path.');
+  }
+  if (!['127.0.0.1', '0.0.0.0'].includes(listenHost) || (listenHost !== '127.0.0.1' && !publicOrigin)) throw new Error('External listening requires PUBLIC_ORIGIN.');
+  const secureCookie = publicOrigin ? '; Secure' : '';
   moderatorIds = [...moderatorIds];
   const db = openDatabase(databasePath);
   const dummyPassword = await passwordHash(token());
@@ -64,7 +71,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (previous) run('DELETE FROM sessions WHERE hash=?', previous.session_hash);
       run('INSERT INTO sessions(hash,user_id,csrf,expires_at) VALUES(?,?,?,?)', digest(raw), user.id, csrf, now() + SESSION_MS);
     });
-    res.setHeader('Set-Cookie', `wr_session=${raw}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MS / 1000}`);
+    res.setHeader('Set-Cookie', `wr_session=${raw}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MS / 1000}${secureCookie}`);
     return { user: safeUser(user), csrf };
   }
   const server = createServer(async (req, res) => {
@@ -75,9 +82,10 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     const send = (status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); };
     try {
-      const expectedHost = `127.0.0.1:${server.address().port}`;
-      if (req.headers.host !== expectedHost) fail(403, 'Недопустимый адрес сервера. Используй 127.0.0.1.');
-      const url = new URL(req.url, `http://${expectedHost}`);
+      const expectedOrigin = publicOrigin || `http://127.0.0.1:${server.address().port}`;
+      const expectedHost = new URL(expectedOrigin).host;
+      if (req.headers.host !== expectedHost) fail(403, 'Недопустимый адрес сервера.');
+      const url = new URL(req.url, expectedOrigin);
       const path = url.pathname, method = req.method;
       if (!path.startsWith('/api/')) {
         const asset = assets.get(path);
@@ -88,7 +96,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       const user = session(req);
       let body = {};
       if (method !== 'GET') {
-        if (req.headers.origin !== `http://${expectedHost}` || req.headers['x-community-request'] !== '1') fail(403, 'Запрос с другого источника отклонён.');
+        if (req.headers.origin !== expectedOrigin || req.headers['x-community-request'] !== '1') fail(403, 'Запрос с другого источника отклонён.');
         if (!['/api/register', '/api/login'].includes(path)) {
           signed(user);
           if (req.headers['x-csrf-token'] !== user.csrf) fail(403, 'Сеанс изменился. Обнови страницу.');
@@ -98,7 +106,9 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       }
       if (method === 'GET' && path === '/api/me') { send(200, { user: user ? safeUser(user) : null, csrf: user?.csrf || null }); return; }
       if (method === 'POST' && ['/api/register', '/api/login'].includes(path)) {
-        rate(`auth:${req.socket.remoteAddress}`, authLimit);
+        const clientAddress = proxyClientHeader ? req.headers['x-wr-client-ip'] : req.socket.remoteAddress;
+        if (proxyClientHeader && (typeof clientAddress !== 'string' || !isIP(clientAddress))) fail(403, 'Недопустимый адрес клиента.');
+        rate(`auth:${clientAddress}`, authLimit);
         if (activeAuth >= 4) fail(429, 'Сервер занят. Повтори чуть позже.');
         const handle = text(body.handle, 'Логин', 3, 24).toLowerCase();
         if (!/^[a-z0-9_]+$/.test(handle)) fail(422, 'Логин: латиница, цифры и подчёркивание.');
@@ -125,7 +135,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (method === 'POST' && ['/api/logout', '/api/logout-all'].includes(path)) {
         if (path === '/api/logout-all') run('DELETE FROM sessions WHERE user_id=?', user.id);
         else run('DELETE FROM sessions WHERE hash=?', user.session_hash);
-        res.setHeader('Set-Cookie', 'wr_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'); send(200, { ok: true }); return;
+        res.setHeader('Set-Cookie', `wr_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`); send(200, { ok: true }); return;
       }
       if (method === 'PATCH' && path === '/api/me') {
         run('UPDATE users SET name=?,bio=? WHERE id=?', text(body.name, 'Имя', 1, 40), text(body.bio, 'Описание', 0, 300), user.id);
@@ -258,7 +268,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
   });
   server.requestTimeout = 15000; server.headersTimeout = 10000;
   return {
-    async listen(port = 0) { await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); }); return `http://127.0.0.1:${server.address().port}`; },
+    async listen(port = 0) { await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, listenHost, resolve); }); return publicOrigin || `http://127.0.0.1:${server.address().port}`; },
     async close() { if (server.listening) await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }); db.close(); }
   };
 }
