@@ -1,4 +1,5 @@
 name: Deploy community to VDS
+# Release 0.13: community interface and permission-filtered feed.
 on:
   workflow_dispatch:
   push:
