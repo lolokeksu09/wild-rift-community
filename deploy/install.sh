@@ -16,6 +16,7 @@ mkdir -p "$backup"
 cp -p compose.yaml Caddyfile "$backup/"
 if test -f .env; then cp -p .env "$backup/"; fi
 migration=false
+seeded=false
 published=false
 had_data=false
 rollback() {
@@ -73,6 +74,13 @@ if test -d data; then
 else
   install -d -m 700 -o 1000 -g 1000 data
 fi
+if [[ "${SEED_DEMO_COMMUNITY:-0}" == 1 ]] && ! test -f "$root/demo-seeded-v1"; then
+  # The cold backup above also covers this additive, operator-authorized seed.
+  # Before public traffic, a failure restores the entire previous database.
+  migration=true
+  docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$root/data:/data" "$image" node server/demo-seed-cli.mjs /data/community.sqlite </dev/null
+  seeded=true
+fi
 cat "$bundle/compose.yaml" > compose.yaml
 # Leave Caddy serving maintenance during app startup.
 touch .env
@@ -89,6 +97,7 @@ docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile </dev/nu
 curl --retry 6 --retry-all-errors --retry-delay 2 --fail --silent --show-error --connect-timeout 10 --max-time 20 https://139.100.205.135/api/me
 printf '\n'
 printf '%s\n' "$release" > deployed-release
+if "$seeded"; then printf '%s\n' "$release" > demo-seeded-v1; fi
 install -m 700 "$bundle/offsite-backup.sh" "$root/offsite-backup.sh"
 trap - ERR
 docker compose ps
