@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 12) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 13) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -175,6 +175,28 @@ export function openDatabase(path) {
     CREATE UNIQUE INDEX discussion_notification_event ON discussion_notifications(user_id,post_id,COALESCE(comment_id,0));
     CREATE INDEX discussion_notifications_user ON discussion_notifications(user_id,seen,id);
     PRAGMA user_version=12;
+    COMMIT;`);
+  if(version < 13) db.exec(`BEGIN IMMEDIATE;
+    ALTER TABLE clubs ADD COLUMN rules TEXT NOT NULL DEFAULT '';
+    ALTER TABLE clubs ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE clubs ADD COLUMN accent TEXT NOT NULL DEFAULT 'azure' CHECK(accent IN ('azure','emerald','violet','coral'));
+    ALTER TABLE clubs ADD COLUMN settings_version INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE club_moderators(club_id TEXT NOT NULL,user_id TEXT NOT NULL,
+      PRIMARY KEY(club_id,user_id),FOREIGN KEY(club_id,user_id) REFERENCES memberships(club_id,user_id) ON DELETE CASCADE) STRICT;
+    CREATE TABLE club_pins(post_id INTEGER PRIMARY KEY REFERENCES posts(id) ON DELETE CASCADE,
+      club_id TEXT NOT NULL REFERENCES clubs(id),actor_id TEXT NOT NULL REFERENCES users(id),created_at INTEGER NOT NULL) STRICT;
+    CREATE INDEX club_pins_club ON club_pins(club_id,created_at,post_id);
+    CREATE TABLE club_invites(id TEXT PRIMARY KEY,club_id TEXT NOT NULL REFERENCES clubs(id),creator_id TEXT NOT NULL REFERENCES users(id),
+      client_id TEXT NOT NULL,token_hash TEXT UNIQUE NOT NULL,max_uses INTEGER NOT NULL CHECK(max_uses BETWEEN 1 AND 50),
+      uses INTEGER NOT NULL DEFAULT 0,expires_at INTEGER NOT NULL,created_at INTEGER NOT NULL,
+      revoked INTEGER NOT NULL DEFAULT 0 CHECK(revoked IN (0,1)),UNIQUE(club_id,creator_id,client_id)) STRICT;
+    CREATE TABLE club_invite_uses(invite_id TEXT NOT NULL REFERENCES club_invites(id),user_id TEXT NOT NULL REFERENCES users(id),
+      created_at INTEGER NOT NULL,PRIMARY KEY(invite_id,user_id)) STRICT;
+    CREATE TABLE club_transfers(id TEXT PRIMARY KEY,club_id TEXT NOT NULL REFERENCES clubs(id),owner_id TEXT NOT NULL REFERENCES users(id),
+      target_id TEXT NOT NULL REFERENCES users(id),client_id TEXT NOT NULL,expires_at INTEGER NOT NULL,created_at INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','accepted','cancelled')),UNIQUE(club_id,owner_id,client_id)) STRICT;
+    CREATE UNIQUE INDEX club_transfer_pending ON club_transfers(club_id) WHERE status='pending';
+    PRAGMA user_version=13;
     COMMIT;`);
   return db;
 }

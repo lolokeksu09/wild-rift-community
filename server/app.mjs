@@ -1,3 +1,4 @@
+import {clubRoutes,clubRole,audit as clubAudit} from './clubs.mjs';
 import { discussionRoutes, postExtras, attemptId, mentions, unblocked } from './discussions.mjs';
 import { playerRoutes, fold } from './players.mjs';
 import { profileFields, profileView } from './profiles.mjs';
@@ -16,6 +17,7 @@ const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
+  ['/clubs.js', ['clubs.js','text/javascript; charset=utf-8']],
   ['/discussions.js', ['discussions.js', 'text/javascript; charset=utf-8']],
   ['/players.js', ['players.js', 'text/javascript; charset=utf-8']],
   ['/profiles.js', ['profiles.js', 'text/javascript; charset=utf-8']],
@@ -205,9 +207,10 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if(clubCoverRoute && method==='PATCH') {
         const club=ownerFor(clubCoverRoute[1],user);
         const cover=body.coverId===club.cover_id?club.cover_id:ownedImage(db,body.coverId,user);
-        transaction(db,()=>{run('UPDATE clubs SET cover_id=? WHERE id=?',cover,club.id);if(club.cover_id && club.cover_id!==cover && !imageAttached(db,club.cover_id))run('DELETE FROM media WHERE id=?',club.cover_id);});
+        transaction(db,()=>{if(cover!==club.cover_id)clubAudit(db,user,club.id,club.id,'cover',now);run('UPDATE clubs SET cover_id=? WHERE id=?',cover,club.id);if(club.cover_id && club.cover_id!==cover && !imageAttached(db,club.cover_id))run('DELETE FROM media WHERE id=?',club.cover_id);});
         send(200,{ok:true});return;
       }
+      if (clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFor})) return;
       if (discussionRoutes({db,user,path,method,body,url,send,now,postFor})) return;
       if (playerRoutes({db,user,path,method,url,send})) return;
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
@@ -227,7 +230,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (method === 'GET' && path === '/api/clubs') {
         send(200, { clubs: rows(`SELECT c.*, m.status AS membership,
           (SELECT count(*) FROM memberships WHERE club_id=c.id AND status='member') AS members
-          FROM clubs c LEFT JOIN memberships m ON m.club_id=c.id AND m.user_id=? ORDER BY c.created_at DESC,c.id DESC LIMIT 100`, user?.id || '') }); return;
+          FROM clubs c LEFT JOIN memberships m ON m.club_id=c.id AND m.user_id=? ORDER BY c.created_at DESC,c.id DESC LIMIT 100`, user?.id || '').map(c=>({...c,tags:JSON.parse(c.tags),myRole:clubRole(db,c,user)})) }); return;
       }
       if (method === 'POST' && path === '/api/clubs') {
         const name = text(body.name, 'Название', 2, 80), description = text(body.description, 'Описание', 0, 1000);
@@ -283,35 +286,6 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       let match = path.match(/^\/api\/clubs\/([\w-]+)\/(join|leave|members|decision|ban|posts)$/);
       if (match) {
         const [, id, action] = match;
-        if (method === 'POST' && action === 'join') {
-          const club = sql('SELECT * FROM clubs WHERE id=?', id); if (!club) fail(404, 'Клуб не найден.');
-          const old = sql('SELECT status FROM memberships WHERE club_id=? AND user_id=?', id, user.id);
-          if (old?.status === 'banned') fail(403, 'Вступление в клуб ограничено.');
-          const status = old?.status || (club.access === 'open' ? 'member' : 'pending');
-          run('INSERT OR IGNORE INTO memberships VALUES(?,?,?)', id, user.id, status); send(200, { status }); return;
-        }
-        if (method === 'POST' && action === 'leave') {
-          const club = sql('SELECT * FROM clubs WHERE id=?', id);
-          if (club?.owner_id === user.id) fail(409, 'Владелец пока не может выйти: передача владения ещё не реализована.');
-          // Leaving must not remove a ban.
-          run("DELETE FROM memberships WHERE club_id=? AND user_id=? AND status!='banned'", id, user.id); send(200, { ok: true }); return;
-        }
-        if (method === 'GET' && action === 'members') {
-          ownerFor(id, user); send(200, { members: rows('SELECT u.id,u.handle,u.name,m.status FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.club_id=? ORDER BY u.handle', id) }); return;
-        }
-        if (method === 'POST' && ['decision', 'ban'].includes(action)) {
-          const club = ownerFor(id, user); const target = text(body.userId, 'Участник', 1, 80);
-          if (target === club.owner_id) fail(409, 'Нельзя изменить членство владельца.');
-          const old = sql('SELECT status FROM memberships WHERE club_id=? AND user_id=?', id, target);
-          if (!old) fail(404, 'Участник не найден.');
-          if (action === 'decision' && (old.status !== 'pending' || !['approve', 'reject'].includes(body.decision))) fail(409, 'Нет подходящей заявки.');
-          transaction(db, () => {
-            if (action === 'ban') run("UPDATE memberships SET status='banned' WHERE club_id=? AND user_id=?", id, target);
-            else if (body.decision === 'approve') run("UPDATE memberships SET status='member' WHERE club_id=? AND user_id=?", id, target);
-            else run('DELETE FROM memberships WHERE club_id=? AND user_id=?', id, target);
-            run('INSERT INTO audit(actor_id,club_id,target_id,action,created_at) VALUES(?,?,?,?,?)', user.id, id, target, action === 'ban' ? 'ban' : body.decision, now());
-          }); send(200, { ok: true }); return;
-        }
         if (action === 'posts') {
           clubFor(id, user, method !== 'GET');
           if (method === 'GET') {
