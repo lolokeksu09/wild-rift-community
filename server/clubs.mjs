@@ -58,7 +58,7 @@ export function clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFo
   send(200,{club:publicClub(db,club,user),transfer:transfer||null});return true;
  }
  if(action==='pins'&&!extra&&method==='GET'){
-  clubFor(id,user,false);const posts=db.prepare(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id FROM club_pins cp JOIN posts p ON p.id=cp.post_id JOIN users u ON u.id=p.author_id WHERE cp.club_id=:club AND ${unblocked()} ORDER BY cp.created_at DESC,p.id DESC LIMIT 3`).all({club:id,viewer:user?.id||''});send(200,{posts:postExtras(db,posts,user)});return true;
+  clubFor(id,user,false);const posts=db.prepare(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id FROM club_pins cp JOIN posts p ON p.id=cp.post_id JOIN users u ON u.id=p.author_id WHERE cp.club_id=:club AND ${unblocked()} ORDER BY cp.created_at DESC,p.id DESC LIMIT 3`).all({club:id,viewer:user?.id||''});send(200,{posts:postExtras(db,posts,user,now)});return true;
  }
  if(!user)fail(401,'Сначала войди в аккаунт.');
  if(action==='join'||action==='leave'){

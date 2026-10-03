@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 16) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 17) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -236,6 +236,15 @@ export function openDatabase(path) {
     PRAGMA user_version=15;
     COMMIT;`);
   if(version<16)db.exec(`BEGIN; ALTER TABLE posts ADD COLUMN edit_version INTEGER NOT NULL DEFAULT 1 CHECK(edit_version>0); ALTER TABLE posts ADD COLUMN edited_at INTEGER; ALTER TABLE posts ADD COLUMN edit_client_id TEXT; PRAGMA user_version=16; COMMIT;`);
+  if(version<17)db.exec(`BEGIN IMMEDIATE;
+    CREATE TABLE polls(post_id INTEGER PRIMARY KEY REFERENCES posts(id) ON DELETE CASCADE,club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,ends_at INTEGER NOT NULL,duration_hours INTEGER NOT NULL CHECK(duration_hours BETWEEN 1 AND 168),UNIQUE(post_id,club_id)) STRICT;
+    CREATE TABLE poll_options(post_id INTEGER NOT NULL REFERENCES polls(post_id) ON DELETE CASCADE,option_id INTEGER NOT NULL CHECK(option_id BETWEEN 0 AND 5),label TEXT NOT NULL,PRIMARY KEY(post_id,option_id)) STRICT;
+    CREATE TABLE poll_votes(post_id INTEGER NOT NULL,user_id TEXT NOT NULL,club_id TEXT NOT NULL,option_id INTEGER NOT NULL,created_at INTEGER NOT NULL,
+      PRIMARY KEY(post_id,user_id),FOREIGN KEY(post_id,club_id) REFERENCES polls(post_id,club_id) ON DELETE CASCADE,
+      FOREIGN KEY(post_id,option_id) REFERENCES poll_options(post_id,option_id) ON DELETE CASCADE,
+      FOREIGN KEY(club_id,user_id) REFERENCES memberships(club_id,user_id) ON DELETE CASCADE) STRICT;
+    CREATE INDEX poll_votes_option ON poll_votes(post_id,option_id);
+    PRAGMA user_version=17; COMMIT;`);
   return db;
 }
 export function transaction(db, fn) {
