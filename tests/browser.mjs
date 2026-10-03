@@ -47,12 +47,13 @@ try {
     await page.locator('#createClub [name=name]').fill('Ночная смена');
     await page.locator('#createClub [name=description]').fill('Играем вечером, обсуждаем матчи и помогаем друг другу. Спокойная компания для совместных игр.');
     await page.locator('#createClub button').click();
-    await page.locator('#post').waitFor();
+    await page.locator('[data-club-tab=posts]').waitFor();
     await page.locator('[data-club-tab=settings]').click();
     await page.locator('#clubCover input[type=file]').setInputFiles({name:'cover.png',mimeType:'image/png',buffer:image});
     await page.locator('#clubCover button[type=submit]').click();
     await page.locator('.club-banner-image').waitFor();
     await page.locator('[data-club-tab=posts]').click();
+    await page.locator('.club-compose summary').click();
     await page.locator('#post').waitFor();
     await page.locator('#post [name=title]').fill('После матча');
     await page.locator('#post [name=body]').fill('Обсудим игру и соберём команду на следующий матч.');
