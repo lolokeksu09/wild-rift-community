@@ -3,8 +3,9 @@ export function pollResults(db,post,user,now=Date.now){
  const poll=db.prepare('SELECT ends_at,duration_hours FROM polls WHERE post_id=?').get(post.id);if(!poll)return null;
  const viewer=user?.id||'',counts=db.prepare(`SELECT v.option_id,count(*) n FROM poll_votes v JOIN memberships m ON m.club_id=v.club_id AND m.user_id=v.user_id WHERE v.post_id=:post AND m.status='member' AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=:viewer AND b.target_id=v.user_id) OR (b.target_id=:viewer AND b.blocker_id=v.user_id)) GROUP BY v.option_id`).all({post:post.id,viewer});
  const options=db.prepare('SELECT option_id,label FROM poll_options WHERE post_id=? ORDER BY option_id').all(post.id).map(o=>({...o,votes:counts.find(c=>c.option_id===o.option_id)?.n||0}));
- const myOption=user&&db.prepare("SELECT 1 FROM memberships WHERE club_id=? AND user_id=? AND status='member'").get(post.club_id,viewer)?db.prepare('SELECT option_id FROM poll_votes WHERE post_id=? AND user_id=?').get(post.id,viewer)?.option_id??null:null;
- return {endsAt:poll.ends_at,closed:now()>=poll.ends_at,options,total:options.reduce((n,o)=>n+o.votes,0),myOption};
+ const member=Boolean(user&&db.prepare("SELECT 1 FROM memberships WHERE club_id=? AND user_id=? AND status='member'").get(post.club_id,viewer));
+ const myOption=member?db.prepare('SELECT option_id FROM poll_votes WHERE post_id=? AND user_id=?').get(post.id,viewer)?.option_id??null:null;
+ return {endsAt:poll.ends_at,closed:now()>=poll.ends_at,member,options,total:options.reduce((n,o)=>n+o.votes,0),myOption};
 }
 export function pollRoutes({db,user,path,method,body,send,now,clubFor,postFor,mentions}){
  const create=path.match(/^\/api\/clubs\/([\w-]+)\/polls$/),vote=path.match(/^\/api\/posts\/(\d+)\/poll(?:\/(vote))?$/);if(!create&&!vote)return false;
