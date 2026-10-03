@@ -4,6 +4,7 @@ import {pollRoutes} from './polls.mjs';
 import {postManagementRoutes} from './post-management.mjs';
 import {draftRoutes} from './drafts.mjs';
 import {homeRoutes} from './home.mjs';
+import {previewRoutes} from './preview.mjs';
 import {eventRoutes} from './events.mjs';
 import {clubRoutes,clubRole,audit as clubAudit} from './clubs.mjs';
 import { discussionRoutes, postExtras, attemptId, mentions, unblocked } from './discussions.mjs';
@@ -28,6 +29,7 @@ const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/composer.js', ['composer.js','text/javascript; charset=utf-8']],
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
+  ['/premium.css', ['premium.css', 'text/css; charset=utf-8']],
   ['/events.js', ['events.js','text/javascript; charset=utf-8']],
   ['/clubs.js', ['clubs.js','text/javascript; charset=utf-8']],
   ['/discussions.js', ['discussions.js', 'text/javascript; charset=utf-8']],
@@ -272,6 +274,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (playerRoutes({db,user,path,method,url,send})) return;
       if (draftRoutes({db,user,path,method,body,send,now,clubFor})) return;
       if (homeRoutes({db,user,path,method,send,now})) return;
+      if (previewRoutes({db,user,path,method,send,now})) return;
       if (eventRoutes({db,user,path,method,body,url,send,now})) return;
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
       if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds})) return;
