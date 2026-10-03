@@ -18,8 +18,8 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
     }
   } catch { /* Storage may be unavailable; in-memory retries still work. */ }
   let loadedLast = 0, blockVersion = null, canSend = !readOnly;
-  const clubChat = endpoint.startsWith('/api/clubs/') || endpoint.startsWith('/api/lfg/');
-  const canReport = !endpoint.startsWith('/api/lfg/');
+  const clubChat = endpoint.startsWith('/api/clubs/') || endpoint.startsWith('/api/lfg/') || endpoint.startsWith('/api/events/');
+  const canReport = !endpoint.startsWith('/api/lfg/') && !endpoint.startsWith('/api/events/');
   root.innerHTML = `<div class="row between wrap"><h3>${encode(title)}</h3><button type="button" class="btn quiet" data-chat-refresh>Обновить</button></div>${readEndpoint?'<button type="button" class="btn quiet" data-chat-read>Отметить загруженное прочитанным</button>':''}<p class="note" data-chat-status role="status">Подключение…</p><button type="button" class="btn quiet hidden" data-chat-older>Ранние сообщения</button><div class="server-chat-log" data-chat-log role="log" aria-label="Сообщения"></div><div data-chat-pending></div><form data-chat-form><label class="field">Сообщение<textarea name="body" required maxlength="2000" rows="2" placeholder="Напиши сообщение…"></textarea></label><p class="error" data-chat-error role="alert"></p><button class="btn primary">Отправить</button></form>`;
   const find = selector => root.querySelector(selector);
   const status = text => { if (active) find('[data-chat-status]').textContent = text; };
