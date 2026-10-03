@@ -58,7 +58,7 @@ try {
     await page.locator('#post [name=title]').fill('После матча');
     await page.locator('#post [name=body]').fill('Обсудим игру и соберём команду на следующий матч.');
     await page.locator('#post input[type=file]').setInputFiles({name:'match.png',mimeType:'image/png',buffer:image});
-    await page.locator('#post button').click();
+    await page.locator('#post button:not([type=button])').click();
     await page.locator('[data-image]').waitFor();
     await page.locator('[data-image]').click();
     await page.locator('#imageViewer[open]').waitFor();
