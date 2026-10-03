@@ -345,3 +345,10 @@ button:focus-visible,a:focus-visible,summary:focus-visible { outline:2px solid #
  .share-dialog { padding:22px; }
 }
 @media(prefers-reduced-motion:reduce) { .skeleton-page>div { animation:none; } .spotlight-card,.spotlight-card>img,.club-grid .club-card { transition:none; } }
+@media(max-width:1100px) {
+ body:not(.guest) .topbar>div:first-child { display:none; }
+ body:not(.guest) .topbar-actions { width:100%; flex-wrap:nowrap; justify-content:space-between; min-width:0; }
+ body:not(.guest) .topbar-actions .btn { min-width:44px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex-shrink:1; }
+ body:not(.guest) .top-search { flex-shrink:0!important; }
+ body:not(.guest) .top-search span { display:none; }
+}
