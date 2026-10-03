@@ -70,6 +70,7 @@ try {
       for (const user of [owner, member]) {
         await user.page.locator('#home').click();
         await user.page.locator(`[data-open="${club.id}"]`).click();
+        await user.page.locator('[data-club-tab=chat]').click();
         await user.page.locator('[data-chat-form]').waitFor();
       }
       await send(owner.page, longText);
