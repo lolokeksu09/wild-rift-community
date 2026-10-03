@@ -1,5 +1,5 @@
 name: Deploy community to VDS
-# Release 0.13: community interface and permission-filtered feed.
+# Release 0.13: validate cold SQLite backups in a disposable writable copy.
 on:
   workflow_dispatch:
   push:
