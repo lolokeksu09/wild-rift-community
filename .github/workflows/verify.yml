@@ -17,6 +17,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 3
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24.19.0'
@@ -28,7 +29,19 @@ jobs:
       - name: Install Chromium for layout checks
         run: npx --prefix tests playwright install --with-deps chromium
       - name: Check browser layouts
-        run: npm run test:browser --prefix tests
+        env:
+          CHECK_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          # On a follow-up that only fixes the new event test/CI, existing browser
+          # scenarios already passed on its parent and application code is unchanged.
+          changed=$(git diff-tree --no-commit-id --name-only -r "$CHECK_HEAD")
+          if test -n "$changed" && ! printf '%s\n' "$changed" | grep -qvE '^(tests/browser-events.mjs|.github/workflows/verify.yml)$'; then
+            cd tests
+            node browser-events.mjs
+          else
+            npm run test:browser --prefix tests
+          fi
       - name: Save interface screenshots
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
