@@ -1,9 +1,10 @@
+import { DatabaseSync } from 'node:sqlite';
 import { request } from 'node:http';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../app.mjs';
 import { openDatabase } from '../database.mjs';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -66,8 +67,9 @@ test('recovery has shared authentication rate limit and uniform invalid-account 
 test('18→19 migration is repeatable and preserves accounts without inventing codes', () => {
   const dir = mkdtempSync(join(tmpdir(), 'wr-recovery-migration-'));
   try {
-    const path = join(dir, 'db'); let db = openDatabase(path);
-    db.exec("INSERT INTO users(id,handle,name,password,created_at) VALUES('u','kept','Kept','untouched',1); DROP TABLE recovery_codes; PRAGMA user_version=18;"); db.close();
+    const path = join(dir, 'db'); let db = new DatabaseSync(path);
+    db.exec(readFileSync(new URL('./fixtures/schema-v18.sql', import.meta.url), 'utf8'));
+    db.exec("INSERT INTO users(id,handle,name,password,created_at) VALUES('u','kept','Kept','untouched',1);"); db.close();
     for (let i = 0; i < 2; i++) {
       db = openDatabase(path);
       assert.equal(db.prepare('PRAGMA user_version').get().user_version, 19);
