@@ -19,6 +19,7 @@ export function profileFields(body, old = {}) {
     if (typeof body.riotVisible!=='boolean') fail(422,'Проверь видимость Riot ID.');
     result.riotVisible=body.riotVisible;
   }
+  if('microphone' in body){if(!['unknown','yes','no'].includes(body.microphone))fail(422,'Проверь наличие микрофона.');result.microphone=body.microphone;}
   return result;
 }
 export function gameProfile(user, own=false) {
