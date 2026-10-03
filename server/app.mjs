@@ -1,3 +1,4 @@
+import {eventRoutes} from './events.mjs';
 import {clubRoutes,clubRole,audit as clubAudit} from './clubs.mjs';
 import { discussionRoutes, postExtras, attemptId, mentions, unblocked } from './discussions.mjs';
 import { playerRoutes, fold } from './players.mjs';
@@ -17,6 +18,7 @@ const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
+  ['/events.js', ['events.js','text/javascript; charset=utf-8']],
   ['/clubs.js', ['clubs.js','text/javascript; charset=utf-8']],
   ['/discussions.js', ['discussions.js', 'text/javascript; charset=utf-8']],
   ['/players.js', ['players.js', 'text/javascript; charset=utf-8']],
@@ -213,6 +215,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFor})) return;
       if (discussionRoutes({db,user,path,method,body,url,send,now,postFor})) return;
       if (playerRoutes({db,user,path,method,url,send})) return;
+      if (eventRoutes({db,user,path,method,body,url,send,now})) return;
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
       if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds})) return;
       if (directRoutes({ db, user, path, method, body, url, send, now })) return;
