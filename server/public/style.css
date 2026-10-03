@@ -13,3 +13,6 @@
 .primary-nav .btn{max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere}
 .primary-nav [aria-current=page]{border-color:var(--lime);color:var(--lime)}
 @media(max-width:700px){.topbar{min-height:72px;padding:16px 18px;align-items:stretch;flex-direction:column;gap:12px}.primary-nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;flex:auto}.primary-nav .btn{width:100%;padding:10px}}
+
+.guide-meta .pill{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.guide-summary{overflow-wrap:anywhere}

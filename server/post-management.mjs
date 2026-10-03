@@ -14,6 +14,7 @@ export function postManagementRoutes({db,user,path,method,body,url,send,now,post
  const match=path.match(/^\/api\/posts\/(\d+)$/);if(!match||method!=='PATCH')return false;
  if(!user)fail(401,'Сначала войди в аккаунт.');const id=Number(match[1]);if(!Number.isSafeInteger(id))fail(404,'Публикация недоступна.');
  const post=postFor(id,user,true);if(post.author_id!==user.id)fail(403,'Изменить публикацию может только автор.');
+ if(db.prepare('SELECT 1 FROM guides WHERE post_id=?').get(id))fail(409,'Редактируй текст и метки через редактор руководства.');
  if(db.prepare('SELECT 1 FROM polls WHERE post_id=?').get(id))fail(409,'Опубликованный опрос нельзя редактировать.');
  const title=text(body.title,'Заголовок',1,100),content=text(body.body,'Текст',1,4000),clientId=attemptId(body);
  if(!clientId||!Number.isSafeInteger(body.version)||body.version<1)fail(422,'Некорректная версия изменения.');
