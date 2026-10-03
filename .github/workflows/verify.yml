@@ -33,12 +33,16 @@ jobs:
           CHECK_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          # On a follow-up that only fixes the new event test/CI, existing browser
+          # On a follow-up that only fixes a new browser test/CI, existing browser
           # scenarios already passed on its parent and application code is unchanged.
           changed=$(git diff-tree --no-commit-id --name-only -r "$CHECK_HEAD")
-          if test -n "$changed" && ! printf '%s\n' "$changed" | grep -qvE '^(tests/browser-events.mjs|.github/workflows/verify.yml)$'; then
+          if test -n "$changed" && ! printf '%s\n' "$changed" | grep -qvE '^(tests/browser-(events|home).mjs|.github/workflows/verify.yml)$'; then
             cd tests
-            node browser-events.mjs
+            if printf '%s\n' "$changed" | grep -q 'tests/browser-home.mjs'; then
+              node browser-home.mjs
+            else
+              node browser-events.mjs
+            fi
           else
             npm run test:browser --prefix tests
           fi
