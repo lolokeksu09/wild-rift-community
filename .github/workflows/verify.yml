@@ -26,8 +26,12 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix tests
       - name: Check operator scripts
-        run: bash -n deploy/install.sh deploy/offsite-backup.sh
+        run: bash -n deploy/install.sh deploy/offsite-backup.sh deploy/smoke-image.sh
       - run: npm run verify
+      - name: Verify packaged image before publication
+        run: |
+          docker build -t community-check:${{ github.sha }} .
+          bash deploy/smoke-image.sh community-check:${{ github.sha }}
       - name: Install Chromium for layout checks
         run: npx --prefix tests playwright install --with-deps chromium
       - name: Check browser layouts
