@@ -63,11 +63,11 @@ if test -d data; then
   had_data=true
   if test -f data/community.sqlite; then
     # Check/migrate an isolated copy first. WAL can require writable SHM sidecars.
-    schema=$(docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$backup/data:/backup:ro" "$image" node --input-type=module -e "import {cpSync} from 'node:fs'; import {DatabaseSync} from 'node:sqlite'; import {openDatabase} from './server/database.mjs'; cpSync('/backup','/tmp/check',{recursive:true}); const old=new DatabaseSync('/tmp/check/community.sqlite',{readOnly:true}); const v=old.prepare('PRAGMA user_version').get().user_version; old.close(); if(![10,11,12,13,14,15,16,17,18].includes(v))throw Error('Unsupported deployment migration'); const d=openDatabase('/tmp/check/community.sqlite'); if(d.prepare('PRAGMA integrity_check').get().integrity_check!=='ok'||d.prepare('PRAGMA foreign_key_check').all().length)throw Error('Invalid migrated backup'); d.close(); console.log(v);" </dev/null)
-    [[ "$schema" == 10 || "$schema" == 11 || "$schema" == 12 || "$schema" == 13 || "$schema" == 14 || "$schema" == 15 || "$schema" == 16 || "$schema" == 17 || "$schema" == 18 ]]
-    if [[ "$schema" != 18 ]]; then
+    schema=$(docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$backup/data:/backup:ro" "$image" node --input-type=module -e "import {cpSync} from 'node:fs'; import {DatabaseSync} from 'node:sqlite'; import {openDatabase} from './server/database.mjs'; cpSync('/backup','/tmp/check',{recursive:true}); const old=new DatabaseSync('/tmp/check/community.sqlite',{readOnly:true}); const v=old.prepare('PRAGMA user_version').get().user_version; old.close(); if(![10,11,12,13,14,15,16,17,18,19].includes(v))throw Error('Unsupported deployment migration'); const d=openDatabase('/tmp/check/community.sqlite'); if(d.prepare('PRAGMA integrity_check').get().integrity_check!=='ok'||d.prepare('PRAGMA foreign_key_check').all().length)throw Error('Invalid migrated backup'); d.close(); console.log(v);" </dev/null)
+    [[ "$schema" == 10 || "$schema" == 11 || "$schema" == 12 || "$schema" == 13 || "$schema" == 14 || "$schema" == 15 || "$schema" == 16 || "$schema" == 17 || "$schema" == 18 || "$schema" == 19 ]]
+    if [[ "$schema" != 19 ]]; then
       migration=true
-      docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$root/data:/data" "$image" node --input-type=module -e "import {openDatabase} from './server/database.mjs'; const d=openDatabase('/data/community.sqlite'); if(d.prepare('PRAGMA user_version').get().user_version!==18||d.prepare('PRAGMA integrity_check').get().integrity_check!=='ok'||d.prepare('PRAGMA foreign_key_check').all().length)throw Error('Migration check failed'); d.close();" </dev/null
+      docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$root/data:/data" "$image" node --input-type=module -e "import {openDatabase} from './server/database.mjs'; const d=openDatabase('/data/community.sqlite'); if(d.prepare('PRAGMA user_version').get().user_version!==19||d.prepare('PRAGMA integrity_check').get().integrity_check!=='ok'||d.prepare('PRAGMA foreign_key_check').all().length)throw Error('Migration check failed'); d.close();" </dev/null
     fi
   fi
 else
@@ -89,6 +89,7 @@ docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile </dev/nu
 curl --retry 6 --retry-all-errors --retry-delay 2 --fail --silent --show-error --connect-timeout 10 --max-time 20 https://139.100.205.135/api/me
 printf '\n'
 printf '%s\n' "$release" > deployed-release
+install -m 700 "$bundle/offsite-backup.sh" "$root/offsite-backup.sh"
 trap - ERR
 docker compose ps
 echo "Deployed $release; configuration and SQLite backup: $backup"

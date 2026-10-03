@@ -28,7 +28,10 @@ function notify(message) { $('#toast').textContent = message; clearTimeout(windo
 function formError(form, error) { form.querySelector('.error').textContent = error.message; }
 const errorLine = '<p class="error" role="alert"></p>';
 function auth() {
-  return `<div class="pagehead"><div><h1>Найди своих</h1><p class="muted">Создай аккаунт и начни свой клуб.</p></div></div><div class="auth-grid"><form id="login" class="panel"><h2>Вход</h2><label class="field">Логин<input name="handle" required minlength="3" maxlength="24" autocomplete="username"></label><label class="field">Пароль<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="current-password"></label>${errorLine}<button class="btn primary">Войти</button></form><form id="register" class="panel"><h2>Регистрация</h2><label class="field">Имя<input name="name" required maxlength="40" autocomplete="nickname"></label><label class="field">Логин<input name="handle" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" autocomplete="username"></label><label class="field">Пароль · от 12 символов<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label>${errorLine}<button class="btn primary">Создать аккаунт</button><p class="form-note">Email и восстановление доступа ещё не подключены. Не используй пароль от игры.</p></form></div>`;
+  return `<div class="pagehead"><div><h1>Найди своих</h1><p class="muted">Создай аккаунт и начни свой клуб.</p></div></div><div class="auth-grid"><form id="login" class="panel"><h2>Вход</h2><label class="field">Логин<input name="handle" required minlength="3" maxlength="24" autocomplete="username"></label><label class="field">Пароль<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="current-password"></label>${errorLine}<button class="btn primary">Войти</button></form><form id="register" class="panel"><h2>Регистрация</h2><label class="field">Имя<input name="name" required maxlength="40" autocomplete="nickname"></label><label class="field">Логин<input name="handle" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" autocomplete="username"></label><label class="field">Пароль · от 12 символов<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label>${errorLine}<button class="btn primary">Создать аккаунт</button><p class="form-note">После регистрации сохрани резервные коды в профиле. Без заранее сохранённого кода восстановить забытый пароль нельзя. Не используй пароль от игры.</p></form></div><details class="panel"><summary>Забыл пароль?</summary><form id="recover"><h2>Восстановление доступа</h2><p class="note">Нужен один из резервных кодов, сохранённых заранее. После смены пароля все прежние сеансы завершатся.</p><label class="field">Логин<input name="handle" required minlength="3" maxlength="24" autocomplete="username"></label><label class="field">Резервный код<input name="code" required maxlength="40" autocomplete="off" spellcheck="false"></label><label class="field">Новый пароль<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label>${errorLine}<button class="btn primary">Сменить пароль</button></form></details>`;
+}
+function recoverySettings(remaining) {
+  return `<section class="panel"><h2>Восстановление доступа</h2><p class="note">Осталось резервных кодов: <span data-recovery-count>${remaining}</span>. Каждый код заменяет забытый пароль один раз. Сохрани их отдельно от пароля и никому не передавай.</p><form id="recoveryCodes"><label class="field">Текущий пароль<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="current-password"></label><p class="note">Новый набор отменяет все прежние коды. Коды показываются только один раз; сохрани их до ухода с этой страницы. Если ответ потерялся, создай новый набор.</p>${errorLine}<button class="btn primary">Создать новый набор</button><div data-recovery-result></div></form></section>`;
 }
 const initials = name => esc(String(name || 'WR').trim().split(/\s+/).slice(0,2).map(x=>Array.from(x)[0]).join('').toUpperCase());
 function clubCard(c) {
@@ -134,7 +137,12 @@ async function render() {
     }
     if (view === 'direct') { $('#main').innerHTML = user ? '<section id=directRoot></section>' : auth(); if(user){chatController = window.createDirectInbox({root:$('#directRoot'),user,api,initialHandle:directDraftHandle});directDraftHandle='';} return; }
     if(view==='player'){const data=await api('/api/profiles/'+selectedPlayer);if(version!==requestVersion)return;$('#main').innerHTML=`<button class="back-link" data-nav="${playerReturnView}">← ${playerReturnView==='lfg'?'К поиску напарников':'К обсуждениям'}</button><h1>Профиль игрока</h1>${mediaUI.showcase(data.profile)}`;return;}
-    if (view === 'account') { $('#main').innerHTML = user ? profile() : auth(); return; }
+    if (view === 'account') {
+      if (!user) { $('#main').innerHTML = auth(); return; }
+      const viewer=user.id,data=await api('/api/recovery-codes');
+      if(version!==requestVersion || user?.id!==viewer)return;
+      $('#main').innerHTML = profile() + recoverySettings(data.remaining); return;
+    }
     if (view === 'club') {
       const detail=await api(`/api/clubs/${selectedClub}/detail`);if(version!==requestVersion)return;const club=detail.club;
       const ci=clubs.findIndex(c=>c.id===club.id);if(ci>=0)clubs[ci]=club;
@@ -274,6 +282,29 @@ document.addEventListener('submit', async event => {
   }
   if(form.dataset.appeal||form.dataset.appealDecision){event.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('button');button.disabled=true;try{const route=form.dataset.appeal?`/api/reports/${form.dataset.appeal}/appeal`:`/api/moderation/reports/${form.dataset.appealDecision}/appeal-decision`;await api(route,'POST',Object.fromEntries(new FormData(form)));await render();}catch(e){formError(form,e);}finally{button.disabled=false;}return;}
   if(form.dataset.reportDecision){event.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('button');button.disabled=true;try{await api(`/api/moderation/reports/${form.dataset.reportDecision}/decision`,'POST',Object.fromEntries(new FormData(form)));await render();}catch(e){formError(form,e);}finally{button.disabled=false;}return;}
+  if (['recover','recoveryCodes'].includes(form.id)) {
+    event.preventDefault(); if(!form.reportValidity())return;
+    const button=form.querySelector('button'),version=requestVersion,viewer=user?.id;
+    button.disabled=true; formError(form,{message:''});
+    try {
+      const data=Object.fromEntries(new FormData(form));
+      if(form.id==='recover') {
+        await api('/api/recover','POST',data);
+        if(version!==requestVersion || !form.isConnected)return;
+        user=csrf=null;view='account';await render();notify('Пароль изменён. Войди с новым паролем.');
+      } else {
+        // Remove any previous visible codes before generating replacements.
+        form.querySelector('[data-recovery-result]').replaceChildren();
+        const result=await api('/api/recovery-codes','POST',data);
+        if(version!==requestVersion || user?.id!==viewer || !form.isConnected)return;
+        form.reset();
+        form.closest('section').querySelector('[data-recovery-count]').textContent=String(result.codes.length);
+        form.querySelector('[data-recovery-result]').innerHTML=`<p class="note">Сохрани все восемь кодов. Прежние коды больше не работают.</p><label class="field">Резервные коды<textarea readonly rows="8" autocomplete="off" spellcheck="false">${result.codes.map(esc).join('\n')}</textarea></label>`;
+      }
+    } catch(e) { if(form.isConnected)formError(form,e); }
+    finally { button.disabled=false; }
+    return;
+  }
   if(form.dataset.composerMounted)return;
   if (!['login' , 'register', 'profile', 'createClub', 'post', 'clubCover'].includes(form.id) && !form.dataset.commentForm) return;
   event.preventDefault(); if (!form.reportValidity()) return;

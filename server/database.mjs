@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 18) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 19) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -249,6 +249,14 @@ export function openDatabase(path) {
     CREATE TABLE guides(post_id INTEGER PRIMARY KEY REFERENCES posts(id) ON DELETE CASCADE,topic TEXT NOT NULL CHECK(topic IN ('champion','build','macro','roles','beginner')),champion TEXT NOT NULL DEFAULT '',game_version TEXT NOT NULL,summary TEXT NOT NULL DEFAULT '') STRICT;
     CREATE INDEX guides_topic ON guides(topic,post_id);CREATE INDEX guides_version ON guides(game_version,post_id);
     PRAGMA user_version=18;COMMIT;`);
+  if (version < 19) db.exec(`BEGIN;
+    CREATE TABLE recovery_codes (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      hash TEXT NOT NULL, created_at INTEGER NOT NULL,
+      PRIMARY KEY(user_id,hash)
+    ) STRICT;
+    PRAGMA user_version=19; COMMIT;`);
+
   return db;
 }
 export function transaction(db, fn) {

@@ -1,5 +1,5 @@
 name: Deploy community to VDS
-# Release 0.23: player guides, author version, catalogue and editing; cold migration 17 → 18.
+# Release 0.24: recovery codes and encrypted backup tools; cold migration 18 → 19.
 on:
   workflow_dispatch:
   push:
@@ -53,12 +53,12 @@ jobs:
           [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
           opts=(-i "$keydir/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$keydir/known_hosts" -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
           ssh "${opts[@]}" root@139.100.205.135 "install -d -m 700 /opt/wild-rift-community/releases/$GITHUB_SHA" </dev/null
-          scp "${opts[@]}" deploy/image.tar.gz deploy/compose.yaml deploy/Caddyfile deploy/install.sh "root@139.100.205.135:/opt/wild-rift-community/releases/$GITHUB_SHA/"
+          scp "${opts[@]}" deploy/image.tar.gz deploy/compose.yaml deploy/Caddyfile deploy/install.sh deploy/offsite-backup.sh "root@139.100.205.135:/opt/wild-rift-community/releases/$GITHUB_SHA/"
           ssh "${opts[@]}" root@139.100.205.135 "bash /opt/wild-rift-community/releases/$GITHUB_SHA/install.sh $GITHUB_SHA" </dev/null
       - name: Check HTTPS externally
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://139.100.205.135/api/me | tee /tmp/wr-me.json
           node -e "const x=require('/tmp/wr-me.json'); if(x.user!==null || x.csrf!==null) process.exit(1)"
-          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://139.100.205.135/ | grep -q 'Версия 0.23'
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://139.100.205.135/ | grep -q 'Версия 0.24'
 
