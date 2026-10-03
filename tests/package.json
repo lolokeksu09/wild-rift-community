@@ -9,7 +9,7 @@
     "test:direct-ui": "node direct-ui.dom.cjs",
     "test:moderation-ui": "node moderation-ui.dom.cjs",
     "test:lfg-ui": "node lfg-ui.dom.cjs",
-    "test:browser": "node browser.mjs && node browser-community.mjs"
+    "test:browser": "node browser.mjs && node browser-community.mjs && node browser-players.mjs"
   },
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"

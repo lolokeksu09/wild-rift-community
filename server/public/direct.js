@@ -1,5 +1,5 @@
 'use strict';
-window.createDirectInbox = function({root,user,api}) {
+window.createDirectInbox = function({root,user,api,initialHandle=''}) {
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let active=true,chat=null,generation=0;
   const requests=new Set();
@@ -18,6 +18,7 @@ window.createDirectInbox = function({root,user,api}) {
         <section class="panel"><label><input type="checkbox" data-privacy ${session.user.dmRequests?'checked':''}> Принимать новые запросы</label><p class="note">Настройка не закрывает существующие беседы.</p></section>
         ${groups.map(([title,filter])=>`<section class="panel"><h2>${title}</h2>${data.conversations.filter(filter).map(c=>`<article class="comment"><h3>${esc(c.peer_name)} · @${esc(c.peer_handle)}</h3>${c.status!=='accepted'?`<p class="content">${esc(c.first_body)}</p>`:''}<div class="row wrap">${c.status==='accepted'?`<button class="btn primary" data-conversation="${c.id}" data-title="${esc(c.peer_name)}">Открыть${c.unread?` · ${c.unread} новых`: ''}</button>`:c.status==='pending'&&c.requester_id!==user.id?`<button class="btn primary" data-accept="${c.id}">Принять</button><button class="btn quiet" data-reject="${c.id}">Отклонить</button>`:''}${c.status!=='accepted'&&c.requester_id!==user.id?`<button class="btn quiet" data-request-report="${c.first_message_id}">Пожаловаться</button>`:''}<button class="btn quiet" data-block="${c.peer_id}">Блокировать</button></div></article>`).join('')||'<p class="muted">Пока пусто.</p>'}</section>`).join('')}
         <section class="panel"><h2>Заблокированные</h2>${blocked.blocks.map(b=>`<p>${esc(b.name)} · @${esc(b.handle)} <button class="btn quiet" data-unblock="${b.id}">Разблокировать</button></p>`).join('')||'<p>Список пуст.</p>'}<p class="note">Блокировка закрывает доступ к личной беседе с обеих сторон. История сохраняется и снова доступна после снятия всех блокировок. Отклонённый запрос не открывается повторно. В общих чатах сообщения заблокированных тобой игроков скрыты; членство в клубе не меняется.</p></section><section class="panel hidden" data-direct-chat></section>`;
+      const form=root.querySelector('[data-request]');if(initialHandle&&form){form.elements.handle.value=initialHandle;initialHandle='';form.elements.body.focus();}
     }catch(e){if(version===generation)error(e);}
   }
   async function click(e){const b=e.target.closest('button');if(!b)return;
