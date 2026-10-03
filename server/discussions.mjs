@@ -1,11 +1,12 @@
+import {pollResults} from './polls.mjs';
 import { fail, text } from './security.mjs';
 import { transaction } from './database.mjs';
 export function unblocked(alias='p') {
   return `NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=:viewer AND b.target_id=${alias}.author_id) OR (b.target_id=:viewer AND b.blocker_id=${alias}.author_id))`;
 }
-export function postExtras(db,posts,user) {
+export function postExtras(db,posts,user,now=Date.now) {
   const viewer=user?.id||'';
-  return posts.map(p=>({...p,reactions:db.prepare(`SELECT r.kind,count(*) AS count FROM post_reactions r WHERE r.post_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=? AND b.target_id=r.user_id) OR (b.target_id=? AND b.blocker_id=r.user_id)) GROUP BY r.kind`).all(p.id,viewer,viewer),myReaction:user?db.prepare('SELECT kind FROM post_reactions WHERE post_id=? AND user_id=?').get(p.id,viewer)?.kind||null:null,saved:user?Boolean(db.prepare('SELECT 1 FROM saved_posts WHERE post_id=? AND user_id=?').get(p.id,viewer)):false}));
+  return posts.map(p=>({...p,poll:pollResults(db,p,user,now),reactions:db.prepare(`SELECT r.kind,count(*) AS count FROM post_reactions r WHERE r.post_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=? AND b.target_id=r.user_id) OR (b.target_id=? AND b.blocker_id=r.user_id)) GROUP BY r.kind`).all(p.id,viewer,viewer),myReaction:user?db.prepare('SELECT kind FROM post_reactions WHERE post_id=? AND user_id=?').get(p.id,viewer)?.kind||null:null,saved:user?Boolean(db.prepare('SELECT 1 FROM saved_posts WHERE post_id=? AND user_id=?').get(p.id,viewer)):false}));
 }
 export function attemptId(body) {
   if(body.clientId==null)return null; // Legacy clients; current UI always supplies an ID.
@@ -37,7 +38,7 @@ export function discussionRoutes({db,user,path,method,body,url,send,now,postFor}
     if(saved){
       if(method!=='GET')fail(405,'Метод не поддерживается.');
       const posts=db.prepare(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id,c.name AS club_name FROM saved_posts s JOIN posts p ON p.id=s.post_id JOIN users u ON u.id=p.author_id JOIN clubs c ON c.id=p.club_id LEFT JOIN memberships m ON m.club_id=c.id AND m.user_id=:viewer WHERE s.user_id=:viewer AND p.id<:before AND (m.status IS NULL OR m.status!='banned') AND (c.access='open' OR m.status='member') AND ${unblocked()} ORDER BY p.id DESC LIMIT 21`).all({viewer,before:cursor(url,'before',Number.MAX_SAFE_INTEGER)});
-      send(200,{viewerId:viewer,posts:postExtras(db,posts.slice(0,20),user),next:posts.length>20?posts[19].id:null});return true;
+      send(200,{viewerId:viewer,posts:postExtras(db,posts.slice(0,20),user,now),next:posts.length>20?posts[19].id:null});return true;
     }
     if(notification[1]?.endsWith('/read')){
       if(method!=='POST')fail(405,'Метод не поддерживается.');
@@ -56,7 +57,7 @@ export function discussionRoutes({db,user,path,method,body,url,send,now,postFor}
   if(action==='reaction'){
     if(method==='PUT'){if(!['like','useful','fire'].includes(body.kind))fail(422,'Выбери реакцию.');db.prepare('INSERT INTO post_reactions(post_id,user_id,kind) VALUES(?,?,?) ON CONFLICT(post_id,user_id) DO UPDATE SET kind=excluded.kind').run(id,viewer,body.kind);}
     else if(method==='DELETE')db.prepare('DELETE FROM post_reactions WHERE post_id=? AND user_id=?').run(id,viewer);else fail(405,'Метод не поддерживается.');
-    send(200,{post:postExtras(db,[post],user)[0]});return true;
+    send(200,{post:postExtras(db,[post],user,now)[0]});return true;
   }
   if(action==='saved'){
     if(method==='PUT')db.prepare('INSERT OR IGNORE INTO saved_posts(post_id,user_id,created_at) VALUES(?,?,?)').run(id,viewer,now());else if(method==='DELETE')db.prepare('DELETE FROM saved_posts WHERE post_id=? AND user_id=?').run(id,viewer);else fail(405,'Метод не поддерживается.');

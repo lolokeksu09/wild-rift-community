@@ -1,5 +1,5 @@
 name: Deploy community to VDS
-# Release 0.21: own-post editing and access-filtered discussion search; cold migration 15 → 16.
+# Release 0.22: club polls, one immutable vote, timed close and private results; cold migration 16 → 17.
 on:
   workflow_dispatch:
   push:
@@ -60,5 +60,5 @@ jobs:
           set -euo pipefail
           curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://139.100.205.135/api/me | tee /tmp/wr-me.json
           node -e "const x=require('/tmp/wr-me.json'); if(x.user!==null || x.csrf!==null) process.exit(1)"
-          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://139.100.205.135/ | grep -q 'Версия 0.21'
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://139.100.205.135/ | grep -q 'Версия 0.22'
 

@@ -9,11 +9,12 @@ export function postManagementRoutes({db,user,path,method,body,url,send,now,post
   if(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw)))fail(422,'Некорректный курсор.');
   if(club)clubFor(club,user);
   const posts=db.prepare(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id,c.name AS club_name FROM posts p JOIN users u ON u.id=p.author_id JOIN clubs c ON c.id=p.club_id LEFT JOIN memberships m ON m.club_id=c.id AND m.user_id=:viewer WHERE p.id<:before AND (:club='' OR c.id=:club) AND (m.status IS NULL OR m.status!='banned') AND (c.access='open' OR m.status='member') AND ${unblocked()} AND (instr(wr_fold(p.title),:q)>0 OR instr(wr_fold(p.body),:q)>0) ORDER BY p.id DESC LIMIT 21`).all({viewer:user?.id||'',before:Number(raw),club,q:fold(query)});
-  send(200,{viewerId:user?.id||null,query,posts:postExtras(db,posts.slice(0,20),user),next:posts.length>20?posts[19].id:null});return true;
+  send(200,{viewerId:user?.id||null,query,posts:postExtras(db,posts.slice(0,20),user,now),next:posts.length>20?posts[19].id:null});return true;
  }
  const match=path.match(/^\/api\/posts\/(\d+)$/);if(!match||method!=='PATCH')return false;
  if(!user)fail(401,'Сначала войди в аккаунт.');const id=Number(match[1]);if(!Number.isSafeInteger(id))fail(404,'Публикация недоступна.');
  const post=postFor(id,user,true);if(post.author_id!==user.id)fail(403,'Изменить публикацию может только автор.');
+ if(db.prepare('SELECT 1 FROM polls WHERE post_id=?').get(id))fail(409,'Опубликованный опрос нельзя редактировать.');
  const title=text(body.title,'Заголовок',1,100),content=text(body.body,'Текст',1,4000),clientId=attemptId(body);
  if(!clientId||!Number.isSafeInteger(body.version)||body.version<1)fail(422,'Некорректная версия изменения.');
  if('imageId' in body||'image_id' in body)fail(422,'Здесь можно изменить только заголовок и текст.');
