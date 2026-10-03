@@ -47,7 +47,7 @@ test('cold backup restores an independent database with private access and new w
   try {
     assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 14);
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 15);
   } finally { db.close(); }
   app = await createApp({ databasePath: restoredPath }); origin = await app.listen();
   assert.equal((await owner.request('/api/me')).body.user.handle, 'restoreowner');

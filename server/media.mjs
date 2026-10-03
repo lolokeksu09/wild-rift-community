@@ -48,9 +48,9 @@ export function ownedImage(db,id,user) {
   if(id===null)return null;
   if(typeof id!=='string'||!db.prepare('SELECT id FROM media WHERE id=? AND owner_id=?').get(id,user.id))fail(403,'Изображение недоступно для этой операции.');
   // A private post attachment must never become a public avatar or cover.
-  if(db.prepare('SELECT id FROM posts WHERE image_id=?').get(id)||db.prepare('SELECT id FROM clubs WHERE cover_id=?').get(id)||db.prepare('SELECT id FROM users WHERE avatar_id=? OR cover_id=?').get(id,id))fail(409,'Изображение уже используется. Для нового места загрузи его отдельно.');
+  if(db.prepare('SELECT club_id FROM post_drafts WHERE image_id=?').get(id)||db.prepare('SELECT id FROM posts WHERE image_id=?').get(id)||db.prepare('SELECT id FROM clubs WHERE cover_id=?').get(id)||db.prepare('SELECT id FROM users WHERE avatar_id=? OR cover_id=?').get(id,id))fail(409,'Изображение уже используется. Для нового места загрузи его отдельно.');
   return id;
 }
 export function imageAttached(db,id) {
-  return !!(db.prepare('SELECT id FROM posts WHERE image_id=?').get(id)||db.prepare('SELECT id FROM clubs WHERE cover_id=?').get(id)||db.prepare('SELECT id FROM users WHERE avatar_id=? OR cover_id=?').get(id,id));
+  return !!(db.prepare('SELECT club_id FROM post_drafts WHERE image_id=?').get(id)||db.prepare('SELECT id FROM posts WHERE image_id=?').get(id)||db.prepare('SELECT id FROM clubs WHERE cover_id=?').get(id)||db.prepare('SELECT id FROM users WHERE avatar_id=? OR cover_id=?').get(id,id));
 }

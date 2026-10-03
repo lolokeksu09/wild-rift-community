@@ -36,10 +36,12 @@ jobs:
           # On a follow-up that only fixes a new browser test/CI, existing browser
           # scenarios already passed on its parent and application code is unchanged.
           changed=$(git diff-tree --no-commit-id --name-only -r "$CHECK_HEAD")
-          if test -n "$changed" && ! printf '%s\n' "$changed" | grep -qvE '^(tests/browser-(events|home).mjs|.github/workflows/verify.yml)$'; then
+          if test -n "$changed" && ! printf '%s\n' "$changed" | grep -qvE '^(tests/browser-(events|home|drafts).mjs|.github/workflows/verify.yml)$'; then
             cd tests
             if printf '%s\n' "$changed" | grep -q 'tests/browser-home.mjs'; then
               node browser-home.mjs
+            elif printf '%s\n' "$changed" | grep -q 'tests/browser-drafts.mjs'; then
+              node browser-drafts.mjs
             else
               node browser-events.mjs
             fi
