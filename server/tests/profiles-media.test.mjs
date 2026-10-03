@@ -46,7 +46,8 @@ test('profiles and media: privacy, spoofed files, attachment access, retries and
  assert.equal((await outside.req('/api/profiles/'+owner.id)).status,404);assert.equal((await outside.req('/api/media/'+avatarId)).status,404);
  const club=(await owner.req('/api/clubs','POST',{name:'Закрытый медиа-клуб',description:'',access:'request'})).data.id;
  const pic=(await upload(owner)).data.image.id;
- const post=(await owner.req(`/api/clubs/${club}/posts`,'POST',{title:'Скриншот',body:'Приватный пост',imageId:pic})).data.id;
+ const post=(await owner.req(`/api/clubs/${club}/posts`,'POST',{title:'Скриншот',body:'Приватный пост',imageId:pic,clientId:'image-post-attempt'})).data.id;
+ assert.equal((await owner.req(`/api/clubs/${club}/posts`,'POST',{title:'Скриншот',body:'Приватный пост',imageId:pic,clientId:'image-post-attempt'})).data.id,post);
  assert.equal((await owner.req('/api/me','PATCH',{coverId:pic})).status,409);
  assert.equal((await owner.req(`/api/clubs/${club}/cover`,'PATCH',{coverId:pic})).status,409);
  assert.equal((await guest.req('/api/media/'+pic)).status,403);
@@ -63,13 +64,13 @@ test('profiles and media: privacy, spoofed files, attachment access, retries and
  assert.equal((await owner.req('/api/me','PATCH',{profileVisible:false})).status,200);assert.equal((await guest.req('/api/media/'+avatarId)).status,404);
 });
 
-test('migration 10 to 11 preserves accounts, content and supports repeated opening',async()=>{
+test('migration 10 to current schema preserves accounts, content and supports repeated opening',async()=>{
  const {DatabaseSync}=await import('node:sqlite');const {readFileSync}=await import('node:fs');const dir=mkdtempSync(tmpdir()+'/wr-migration11-'),path=dir+'/community.sqlite';
  try {
   let db=new DatabaseSync(path);db.exec(readFileSync(new URL('./fixtures/schema-v10.sql',import.meta.url),'utf8'));
   db.exec("INSERT INTO users(id,handle,name,bio,password,created_at) VALUES('u','old','Old','Bio','unchanged',1); INSERT INTO clubs(id,owner_id,name,description,access,created_at) VALUES('c','u','Club','','request',1); INSERT INTO memberships VALUES('c','u','member'); INSERT INTO posts(club_id,author_id,title,body,created_at) VALUES('c','u','Title','Keep text',1); INSERT INTO sessions VALUES('session','u','csrf',9999999999999);");db.close();
   cpSync(path,dir+'/pre-migration.sqlite');
-  for(let i=0;i<2;i++){db=openDatabase(path);assert.equal(db.prepare('PRAGMA user_version').get().user_version,11);assert.equal(db.prepare('SELECT body FROM posts').get().body,'Keep text');assert.equal(db.prepare('SELECT password FROM users').get().password,'unchanged');assert.equal(db.prepare('SELECT profile_visible FROM users').get().profile_visible,0);assert.equal(db.prepare('SELECT count(*) n FROM sessions').get().n,1);assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);db.close();}
+  for(let i=0;i<2;i++){db=openDatabase(path);assert.equal(db.prepare('PRAGMA user_version').get().user_version,12);assert.equal(db.prepare('SELECT body FROM posts').get().body,'Keep text');assert.equal(db.prepare('SELECT password FROM users').get().password,'unchanged');assert.equal(db.prepare('SELECT profile_visible FROM users').get().profile_visible,0);assert.equal(db.prepare('SELECT count(*) n FROM sessions').get().n,1);assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);db.close();}
   const old=new DatabaseSync(dir+'/pre-migration.sqlite');assert.equal(old.prepare('PRAGMA user_version').get().user_version,10);assert.equal(old.prepare('SELECT body FROM posts').get().body,'Keep text');old.close();
  } finally{rmSync(dir,{recursive:true,force:true});}
 });

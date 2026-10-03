@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 11) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 12) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -146,6 +146,35 @@ export function openDatabase(path) {
     ALTER TABLE clubs ADD COLUMN cover_id TEXT REFERENCES media(id);
     ALTER TABLE posts ADD COLUMN image_id TEXT REFERENCES media(id);
     PRAGMA user_version=11;
+    COMMIT;`);
+  if (version < 12) db.exec(`BEGIN IMMEDIATE;
+    ALTER TABLE posts ADD COLUMN client_id TEXT;
+    CREATE UNIQUE INDEX posts_attempt ON posts(club_id,author_id,client_id) WHERE client_id IS NOT NULL;
+    ALTER TABLE comments ADD COLUMN client_id TEXT;
+    ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE;
+    CREATE UNIQUE INDEX comments_attempt ON comments(post_id,author_id,client_id) WHERE client_id IS NOT NULL;
+    CREATE TABLE post_reactions (
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK(kind IN ('like','useful','fire')), PRIMARY KEY(post_id,user_id)
+    ) STRICT;
+    CREATE TABLE saved_posts (
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL, PRIMARY KEY(post_id,user_id)
+    ) STRICT;
+    CREATE INDEX saved_posts_user ON saved_posts(user_id,post_id);
+    CREATE TABLE discussion_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      actor_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      comment_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK(kind IN ('mention','reply')),created_at INTEGER NOT NULL,
+      seen INTEGER NOT NULL DEFAULT 0 CHECK(seen IN (0,1))
+    ) STRICT;
+    CREATE UNIQUE INDEX discussion_notification_event ON discussion_notifications(user_id,post_id,COALESCE(comment_id,0));
+    CREATE INDEX discussion_notifications_user ON discussion_notifications(user_id,seen,id);
+    PRAGMA user_version=12;
     COMMIT;`);
   return db;
 }
