@@ -2,6 +2,8 @@
 const $ = s => document.querySelector(s);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const mediaUI=window.WRProfiles;
+const discussionUI=window.WRDiscussions;
+let selectedPost=null,selectedComment=null;
 let selectedPlayer=null,playerReturnView='discover',directDraftHandle='';
 let lfgState={};
 let chatController = null;
@@ -30,7 +32,7 @@ function clubCards() {
 }
 function profile() {
   const mine=clubs.filter(c=>c.membership==='member');
-  return `<div class="pagehead"><div><span class="tiny-label">ТВОЯ ИСТОРИЯ В СООБЩЕСТВЕ</span><h1>Аккаунт</h1></div></div>${mediaUI.showcase(user,true)}<div class="profile-columns">${mediaUI.editor(user,errorLine)}<section class="panel"><span class="tiny-label">ТВОИ ЛЮДИ</span><h2>Мои клубы</h2>${mine.length?mine.map(c=>`<button class="profile-club" data-open="${esc(c.id)}"><span class="avatar">${initials(c.name)}</span><span>${esc(c.name)}</span><span aria-hidden="true">↗</span></button>`).join(''):'<p class="note">Ты ещё не вступил в клуб.</p><button class="btn quiet" data-nav="clubs">Найти клуб</button>'}</section></div><section class="panel"><h3>Сеансы</h3><p class="note">Выход со всех устройств отзывает все текущие сеансы аккаунта.</p><div class="row wrap"><button class="btn quiet" data-logout="/api/logout">Выйти здесь</button><button class="btn quiet" data-logout="/api/logout-all">Выйти везде</button></div></section>`;
+  return `<div class="pagehead"><div><span class="tiny-label">ТВОЯ ИСТОРИЯ В СООБЩЕСТВЕ</span><h1>Аккаунт</h1></div></div>${mediaUI.showcase(user,true)}<div class="profile-columns">${mediaUI.editor(user,errorLine)}<section class="panel"><span class="tiny-label">ТВОИ ЛЮДИ</span><h2>Мои клубы</h2><button class="btn quiet wide" data-nav="saved">Сохранённые публикации</button>${mine.length?mine.map(c=>`<button class="profile-club" data-open="${esc(c.id)}"><span class="avatar">${initials(c.name)}</span><span>${esc(c.name)}</span><span aria-hidden="true">↗</span></button>`).join(''):'<p class="note">Ты ещё не вступил в клуб.</p><button class="btn quiet" data-nav="clubs">Найти клуб</button>'}</section></div><section class="panel"><h3>Сеансы</h3><p class="note">Выход со всех устройств отзывает все текущие сеансы аккаунта.</p><div class="row wrap"><button class="btn quiet" data-logout="/api/logout">Выйти здесь</button><button class="btn quiet" data-logout="/api/logout-all">Выйти везде</button></div></section>`;
 }
 function feedCard(p) {
   return `<div class="feed-entry"><button class="feed-club" data-open="${esc(p.club_id)}">${esc(p.club_name)} <span aria-hidden="true">↗</span></button>${postHTML(p).replace('data-comments=',`data-comment-club="${esc(p.club_id)}" data-comments=`)}</div>`;
@@ -39,14 +41,15 @@ function discoverPage(feed) {
   return `<section class="welcome-hero"><div class="hero-copy"><span class="tiny-label">ИГРА ОБЪЕДИНЯЕТ. ЛЮДИ ОСТАЮТСЯ.</span><h1>Твой Рифт.<br>Твои люди.</h1><p>Найди напарников на вечер,<br>свой клуб и разговоры после матча.</p><div class="row wrap"><button class="btn primary" data-nav="lfg">Найти команду <span aria-hidden="true">↗</span></button><button class="btn quiet" data-nav="clubs">Открыть клубы</button></div></div><div class="rift-art" aria-hidden="true"><i></i><i></i><i></i><span>WR</span></div><span class="hero-index" aria-hidden="true">MEET / PLAY / BELONG</span></section><div class="discovery-grid"><section><div class="section-head"><div><span class="tiny-label">ЧЕМ ЖИВЁТ СООБЩЕСТВО</span><h2>Свежие обсуждения</h2></div><span class="live-label">По времени</span></div><div id="feedPosts">${feed.posts.map(feedCard).join('')||'<div class="empty-state feed-empty"><span class="empty-mark" aria-hidden="true">✦</span><h3>Здесь начнётся разговор</h3><p>Публикации из доступных тебе клубов появятся в этой ленте. Можно обсудить матч, попросить совет или просто познакомиться.</p><button class="btn quiet" data-nav="clubs">Выбрать клуб</button></div>'}</div>${feed.next?`<button class="btn quiet wide" data-feed-more="${feed.next}">Ещё обсуждения</button>`:''}</section><aside class="discovery-aside"><section class="panel gathering"><span class="tiny-label">ОДНА ЦЕЛЬ. ОДНА КОМАНДА.</span><h2>Следующий матч — вместе</h2><p>Выбери режим, нужную роль и время. Собери группу из 2–5 игроков.</p><button class="btn primary wide" data-nav="lfg">Собрать команду</button></section><section class="panel"><div class="section-head"><h3>Открой для себя</h3></div>${clubs.slice(0,3).map(c=>`<button class="profile-club" data-open="${esc(c.id)}"><span class="avatar">${initials(c.name)}</span><span>${esc(c.name)}<small>${c.members} участников</small></span><span aria-hidden="true">↗</span></button>`).join('')||'<p class="note">Новые клубы появятся здесь. Создай первый и пригласи друзей.</p>'}<button class="text-link" data-nav="clubs">Все клубы →</button></section><p class="community-note">За каждым ником — человек.<br>Уважай чужой опыт и играй в свою игру.</p></aside></div>`;
 }
 function postHTML(p) {
-  return `<article class="panel"><div class="post-author">${mediaUI.avatar(p.author_avatar_id,p.author_name)}<div><button type="button" class="author-link" data-player="${esc(p.author_id)}">${esc(p.author_name)}</button><small>${esc(new Date(p.created_at).toLocaleString('ru-RU'))}</small></div></div><h3 class="post-title">${esc(p.title)}</h3><p class="content">${esc(p.body)}</p>${mediaUI.image(p.image_id,'Изображение к публикации: '+p.title)}<div class="post-actions"><button data-comments="${p.id}">Обсудить</button>${p.author_id === user?.id ? `<button data-delete="${p.id}">Удалить</button>` : ''}</div><div id="comments-${p.id}"></div></article>`;
+  const member=clubs.some(c=>c.id===p.club_id&&c.membership==='member');
+  return `<article class="panel"><div class="post-author">${mediaUI.avatar(p.author_avatar_id,p.author_name)}<div><button type="button" class="author-link" data-player="${esc(p.author_id)}">${esc(p.author_name)}</button><small>${esc(new Date(p.created_at).toLocaleString('ru-RU'))}</small></div></div><h3 class="post-title">${esc(p.title)}</h3><p class="content">${esc(p.body)}</p>${mediaUI.image(p.image_id,'Изображение к публикации: '+p.title)}${discussionUI.actions(p,user,member)}<div id="comments-${p.id}"></div></article>`;
 }
 async function render() {
   mediaUI.cleanup();
   chatController?.destroy(); chatController = null;
   const version = ++requestVersion;
-  const activeNav={discover:'discover',clubs:'home',club:'home',player:'account',account:'account',direct:'direct',reports:'reports',lfg:'lfg'}[view];
-  for(const button of document.querySelectorAll('.primary-nav button, #reports')){if(button.id===activeNav)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
+  const activeNav={discover:'discover',clubs:'home',club:'home',player:'account',account:'account',direct:'direct',reports:'reports',lfg:'lfg',saved:'account',notifications:'notifications',post:'discover'}[view];
+  for(const button of document.querySelectorAll('.primary-nav button, #reports, #notifications')){if(button.id===activeNav)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
   $('#main').setAttribute('aria-busy','true');
   $('#main').innerHTML='<div class=loading-state role=status>Загружаем…</div>';
   try {
@@ -60,6 +63,20 @@ async function render() {
     $('#account').textContent = user ? 'Профиль' : 'Вход';
     $('#account').dataset.handle=user?.handle||'';
     $('#account').title=user?user.name:'Вход и регистрация';
+    if(view==='saved'){
+      if(!user){$('#main').innerHTML=auth();return;}
+      const data=await api('/api/saved');if(version!==requestVersion||data.viewerId!==user.id)return;
+      $('#main').innerHTML=`<div class="pagehead"><div><span class="tiny-label">ВЕРНУТЬСЯ К ВАЖНОМУ</span><h1>Сохранённое</h1><p class="muted">Доступные тебе публикации, от новых к старым.</p></div></div><div id="savedPosts">${data.posts.map(feedCard).join('')||'<div class="empty-state"><h3>Сохрани то, к чему хочется вернуться</h3><p>Нажми «Сохранить» под публикацией. Закрытый контент появляется здесь только пока у тебя есть доступ.</p><button class="btn quiet" data-nav="discover">К обсуждениям</button></div>'}</div>${data.next?`<button class="btn quiet wide" data-saved-more="${data.next}">Ещё сохранённые</button>`:''}`;return;
+    }
+    if(view==='notifications'){
+      if(!user){$('#main').innerHTML=auth();return;}
+      const data=await api('/api/discussions/notifications');if(version!==requestVersion||data.viewerId!==user.id)return;
+      $('#main').innerHTML=`<div class="pagehead"><div><span class="tiny-label">РАЗГОВОР ПРОДОЛЖАЕТСЯ</span><h1>Ответы и упоминания</h1><p class="muted">События в доступных обсуждениях.</p></div></div><div id="discussionEvents">${data.notifications.map(discussionUI.notification).join('')||'<div class="empty-state"><h3>Пока тихо</h3><p>Здесь появятся ответы на твои комментарии и упоминания через @логин.</p></div>'}</div>${data.next?`<button class="btn quiet" data-discussion-more="${data.next}">Ранее</button>`:''}`;return;
+    }
+    if(view==='post'){
+      const data=await api('/api/posts/'+selectedPost);if(version!==requestVersion)return;
+      selectedClub=data.post.club_id;$('#main').innerHTML=`<button class="back-link" data-nav="notifications">← Ответы и упоминания</button>${postHTML(data.post)}`;await comments(selectedPost,selectedComment);return;
+    }
     if(view==='discover'){const feed=await api('/api/feed');if(version!==requestVersion)return;$('#main').innerHTML=discoverPage(feed);return;}
     if(view==='lfg'){$('#main').innerHTML=user?'<section id=lfgRoot></section>':auth();if(user)chatController=window.createLfg({root:$('#lfgRoot'),user,api,state:lfgState});return;}
     if (view === 'reports') {
@@ -89,14 +106,26 @@ async function render() {
     $('#main').innerHTML = clubCards();
   } catch (e) { if (version === requestVersion) { $('#main').innerHTML = `<section class="panel"><h2>Не удалось загрузить</h2><p class="error">${esc(e.message)}</p><button class="btn quiet" id="retry">Повторить</button></section>`; } } finally { if(version===requestVersion)$('#main').setAttribute('aria-busy','false'); }
 }
-async function comments(id) {
-  const { comments } = await api(`/api/posts/${id}/comments`);
-  const el = $(`#comments-${id}`); if (!el) return;
-  const club = clubs.find(c => c.id === selectedClub);
-  el.innerHTML = comments.map(c => `<div class="comment"><small>${esc(c.author_name)}</small><p class="content">${esc(c.body)}</p></div>`).join('') + (club?.membership === 'member' ? `<form data-comment-form="${id}"><label class="field">Комментарий<textarea name="body" maxlength="1000" required></textarea></label>${errorLine}<button class="btn primary">Ответить</button></form>` : '<p class="note">Для ответа нужно вступить в клуб.</p>');
+async function comments(id,focus=null) {
+  const version=requestVersion,viewer=user?.id,el=$(`#comments-${id}`);if(!el)return;
+  el.innerHTML='<p class="note" role="status">Загружаем обсуждение…</p>';
+  try{
+    let data=await api(`/api/posts/${id}/comments`),focusedPage=false;
+    if(focus&&!data.comments.some(c=>c.id===Number(focus))){data=await api(`/api/posts/${id}/comments?before=${Number(focus)+1}`);focusedPage=true;}
+    if(version!==requestVersion||viewer!==user?.id||!el.isConnected)return;
+    const post=await api('/api/posts/'+id);if(version!==requestVersion||viewer!==user?.id||!el.isConnected)return;
+    const member=clubs.some(c=>c.id===post.post.club_id&&c.membership==='member');
+    el.innerHTML=`${focusedPage?`<p class="note">Комментарии до выбранного ответа. <button class="text-link" data-comments="${id}">Показать последние</button></p>`:''}<div data-comment-list="${id}">${data.comments.map(c=>discussionUI.comment({...c,post_id:id},member)).join('')||'<p class="note">Первый ответ может быть твоим.</p>'}</div>${data.next?`<button class="btn quiet" data-comments-more="${id}" data-after="${data.next}">Ранее</button>`:''}${member?discussionUI.editor(id,errorLine):'<p class="note">Для ответа нужно вступить в клуб.</p>'}`;
+    if(focus){const target=el.querySelector(`[data-comment-id="${Number(focus)}"]`);target?.classList.add('comment-focused');target?.scrollIntoView?.({block:'center'});}
+  }catch(e){if(version===requestVersion&&el.isConnected)el.innerHTML=`<p class="error">${esc(e.message)}</p><button class="btn quiet" data-comments="${id}">Повторить</button>`;}
+}
+function sendingAttempt(form,signature){
+  if(form.dataset.sendSignature!==signature){form.dataset.sendSignature=signature;form.dataset.sendId=crypto.randomUUID();}
+  return form.dataset.sendId;
 }
 $('#discover').onclick=()=>{view='discover';render();};
 $('#lfg').onclick=()=>{view='lfg';render();};
+$('#notifications').onclick=()=>{view='notifications';render();};
 $('#reports').onclick=()=>{view='reports';render();};
 $('#direct').onclick = () => { view = 'direct'; render(); };
 $('#home').onclick = () => { view = 'clubs'; render(); };
@@ -106,6 +135,21 @@ $('#confirmDelete').onclick = async () => { if (!pendingDelete) return; const id
 document.addEventListener('click', async event => {
   const b = event.target.closest('button'); if (!b) return;
   try {
+    if(b.dataset.react){
+      b.disabled=true;b.closest('[data-post-actions]').querySelectorAll('button').forEach(button=>button.disabled=true);const id=b.dataset.react,kind=b.dataset.kind,selected=b.getAttribute('aria-pressed')==='true',version=requestVersion;
+      const data=await api(`/api/posts/${id}/reaction`,selected?'DELETE':'PUT',selected?{}:{kind});
+      if(version!==requestVersion||!b.isConnected)return;
+      const member=clubs.some(c=>c.id===data.post.club_id&&c.membership==='member');
+      b.closest('[data-post-actions]').outerHTML=discussionUI.actions(data.post,user,member);return;
+    }
+    if(b.dataset.save){b.disabled=true;const saved=b.getAttribute('aria-pressed')==='true',version=requestVersion;await api(`/api/posts/${b.dataset.save}/saved`,saved?'DELETE':'PUT',{});if(version!==requestVersion||!b.isConnected)return;if(view==='saved'&&saved){await render();return;}b.setAttribute('aria-pressed',String(!saved));b.textContent=saved?'Сохранить':'В сохранённом';b.disabled=false;return;}
+    if(b.dataset.reply){const form=$(`[data-comment-form="${b.dataset.replyPost}"]`);if(!form)return;form.dataset.parentId=b.dataset.reply;form.querySelector('.reply-target').classList.remove('hidden');form.querySelector('.reply-target span').textContent='Ответ '+b.dataset.replyName;form.elements.body.focus();return;}
+    if(b.dataset.cancelReply){const form=$(`[data-comment-form="${b.dataset.cancelReply}"]`);delete form.dataset.parentId;form.querySelector('.reply-target').classList.add('hidden');return;}
+    if(b.dataset.commentsMore){b.disabled=true;const id=b.dataset.commentsMore,version=requestVersion;const data=await api(`/api/posts/${id}/comments?before=${b.dataset.after}`);if(version!==requestVersion||!b.isConnected)return;const member=Boolean($(`[data-comment-form="${id}"]`));$(`[data-comment-list="${id}"]`).insertAdjacentHTML('afterbegin',data.comments.map(c=>discussionUI.comment({...c,post_id:id},member)).join(''));if(data.next){b.dataset.after=data.next;b.disabled=false;}else b.remove();return;}
+    if(b.dataset.savedMore){b.disabled=true;const data=await api('/api/saved?before='+b.dataset.savedMore);if(!b.isConnected||data.viewerId!==user?.id)return;$('#savedPosts').insertAdjacentHTML('beforeend',data.posts.map(feedCard).join(''));if(data.next){b.dataset.savedMore=data.next;b.disabled=false;}else b.remove();return;}
+    if(b.dataset.discussionMore){b.disabled=true;const data=await api('/api/discussions/notifications?before='+b.dataset.discussionMore);if(!b.isConnected||data.viewerId!==user?.id)return;$('#discussionEvents').insertAdjacentHTML('beforeend',data.notifications.map(discussionUI.notification).join(''));if(data.next){b.dataset.discussionMore=data.next;b.disabled=false;}else b.remove();return;}
+    if(b.dataset.discussionRead){b.disabled=true;await api(`/api/discussions/notifications/${b.dataset.discussionRead}/read`,'POST',{});await render();updateDiscussionBadge();return;}
+    if(b.dataset.discussionPost){selectedPost=b.dataset.discussionPost;selectedComment=b.dataset.discussionComment||null;view='post';await render();return;}
     if(b.dataset.contact){directDraftHandle=b.dataset.contact;view='direct';await render();return;}
     if(b.dataset.player){playerReturnView=view==='lfg'?'lfg':'discover';selectedPlayer=b.dataset.player;view='player';await render();return;}
     if(b.dataset.clearImage){await api('/api/me','PATCH',{[b.dataset.clearImage]:null});await render();return;}
@@ -126,7 +170,7 @@ document.addEventListener('click', async event => {
     if (b.dataset.comments) await comments(b.dataset.comments);
     if (b.dataset.delete) { pendingDelete = b.dataset.delete; $('#confirmDialog').showModal(); }
     if (b.dataset.more) { b.disabled = true; const data = await api(`/api/clubs/${selectedClub}/posts?before=${b.dataset.more}`); if (!b.isConnected) return; $('#posts').insertAdjacentHTML('beforeend', data.posts.map(postHTML).join('')); if (data.next) { b.dataset.more = data.next; b.disabled = false; } else b.remove(); }
-  } catch (e) { b.disabled = false; notify(e.message); }
+  } catch (e) { b.disabled = false;if(b.dataset.react&&b.isConnected)b.closest('[data-post-actions]').querySelectorAll('button').forEach(button=>button.disabled=false);notify(e.message); }
 });
 document.addEventListener('submit', async event => {
   const form = event.target;
@@ -141,8 +185,8 @@ document.addEventListener('submit', async event => {
     if (form.id === 'profile') await mediaUI.save(form,api,csrf);
     if(form.id==='clubCover'){const id=await mediaUI.upload(form.elements.coverFile.files[0],csrf);if(!id)throw Error('Выбери изображение.');await api(`/api/clubs/${selectedClub}/cover`,'PATCH',{coverId:id});}
     if (form.id === 'createClub') { const result = await api('/api/clubs', 'POST', data); selectedClub = result.id; view = 'club'; }
-    if (form.id === 'post'){const id=await mediaUI.upload(form.elements.imageFile.files[0],csrf);await api(`/api/clubs/${selectedClub}/posts`, 'POST',{title:data.title,body:data.body,imageId:id});}
-    if (form.dataset.commentForm) { await api(`/api/posts/${form.dataset.commentForm}/comments`, 'POST', data); await comments(form.dataset.commentForm); return; }
+    if (form.id === 'post'){const file=form.elements.imageFile.files[0];const imageSignature=file?JSON.stringify([file.name,file.size,file.lastModified]):'';if(form.dataset.imageSignature!==imageSignature){delete form.dataset.imageId;form.dataset.imageSignature=imageSignature;}const id=form.dataset.imageId||await mediaUI.upload(file,csrf);if(id)form.dataset.imageId=id;await api(`/api/clubs/${selectedClub}/posts`, 'POST',{title:data.title,body:data.body,imageId:id,clientId:sendingAttempt(form,JSON.stringify([data.title,data.body,id]))});}
+    if (form.dataset.commentForm) { const parentId=form.dataset.parentId?Number(form.dataset.parentId):null;await api(`/api/posts/${form.dataset.commentForm}/comments`, 'POST',{body:data.body,parentId,clientId:sendingAttempt(form,JSON.stringify([data.body,parentId]))});if(form.isConnected)await comments(form.dataset.commentForm);updateDiscussionBadge();return; }
     await render();
   } catch (e) { formError(form, e); }
   finally { button.disabled = false; }
@@ -197,3 +241,13 @@ async function updateLfgBadge(){
 setInterval(updateLfgBadge,5000);
 
 document.addEventListener('input', event=>{if(event.target.id!=='clubSearch')return;const query=event.target.value.trim().toLowerCase();let visible=0;for(const card of document.querySelectorAll('[data-club-card]')){const show=card.dataset.search.includes(query);card.classList.toggle('hidden',!show);if(show)visible++;}$('#noClubResults').classList.toggle('hidden',visible>0);});
+
+let discussionBadgeBusy=false;
+async function updateDiscussionBadge(){
+ if(discussionBadgeBusy)return;const id=user?.id;if(!id){$('#notifications').textContent='Ответы';return;}
+ discussionBadgeBusy=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+ try{const data=await api('/api/discussions/notifications/summary','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;$('#notifications').textContent=data.viewerId===id?`Ответы${data.unread?' · '+data.unread:''}`:'Ответы · обнови сеанс';}
+ catch{if(user?.id===id)$('#notifications').textContent='Ответы · нет связи';}
+ finally{clearTimeout(timer);discussionBadgeBusy=false;}
+}
+setInterval(updateDiscussionBadge,5000);

@@ -1,3 +1,4 @@
+import { discussionRoutes, postExtras, attemptId, mentions, unblocked } from './discussions.mjs';
 import { playerRoutes, fold } from './players.mjs';
 import { profileFields, profileView } from './profiles.mjs';
 import { readImage, encodeImage, saveImage, ownedImage, imageAttached } from './media.mjs';
@@ -15,6 +16,7 @@ const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
+  ['/discussions.js', ['discussions.js', 'text/javascript; charset=utf-8']],
   ['/players.js', ['players.js', 'text/javascript; charset=utf-8']],
   ['/profiles.js', ['profiles.js', 'text/javascript; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
@@ -69,7 +71,9 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
   function postFor(id, user, write = false) {
     const post = sql('SELECT * FROM posts WHERE id=?', id);
     if (!post) fail(404, 'Публикация недоступна.');
-    clubFor(post.club_id, user, write); return post;
+    clubFor(post.club_id, user, write);
+    if(user && sql('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',user.id,post.author_id,post.author_id,user.id))fail(404,'Публикация недоступна.');
+    return post;
   }
   function newSession(user, previous, res) {
     const raw = token(), csrf = token();
@@ -204,6 +208,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         transaction(db,()=>{run('UPDATE clubs SET cover_id=? WHERE id=?',cover,club.id);if(club.cover_id && club.cover_id!==cover && !imageAttached(db,club.cover_id))run('DELETE FROM media WHERE id=?',club.cover_id);});
         send(200,{ok:true});return;
       }
+      if (discussionRoutes({db,user,path,method,body,url,send,now,postFor})) return;
       if (playerRoutes({db,user,path,method,url,send})) return;
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
       if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds})) return;
@@ -213,11 +218,11 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         if (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before))) fail(422, 'Некорректный курсор.');
         const result = rows(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id,c.name AS club_name FROM posts p
           JOIN users u ON u.id=p.author_id JOIN clubs c ON c.id=p.club_id
-          LEFT JOIN memberships m ON m.club_id=c.id AND m.user_id=?
-          WHERE p.id<? AND (m.status IS NULL OR m.status!='banned')
-          AND (c.access='open' OR m.status='member') ORDER BY p.id DESC LIMIT 21`, user?.id || '', Number(before));
+          LEFT JOIN memberships m ON m.club_id=c.id AND m.user_id=:viewer
+          WHERE p.id<:before AND (m.status IS NULL OR m.status!='banned')
+          AND (c.access='open' OR m.status='member') AND ${unblocked()} ORDER BY p.id DESC LIMIT 21`, {viewer:user?.id||'',before:Number(before)});
         const posts = result.slice(0,20);
-        send(200, {posts,next:result.length>20?posts.at(-1).id:null}); return;
+        send(200, {posts:postExtras(db,posts,user),next:result.length>20?posts.at(-1).id:null}); return;
       }
       if (method === 'GET' && path === '/api/clubs') {
         send(200, { clubs: rows(`SELECT c.*, m.status AS membership,
@@ -312,14 +317,22 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           if (method === 'GET') {
             const before = url.searchParams.get('before') || String(Number.MAX_SAFE_INTEGER);
             if (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before))) fail(422, 'Некорректный курсор.');
-            const result = rows(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id FROM posts p JOIN users u ON u.id=p.author_id WHERE p.club_id=? AND p.id<? ORDER BY p.id DESC LIMIT 21`, id, Number(before));
+            const result = rows(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id FROM posts p JOIN users u ON u.id=p.author_id WHERE p.club_id=:club AND p.id<:before AND ${unblocked()} ORDER BY p.id DESC LIMIT 21`, {club:id,before:Number(before),viewer:user?.id||''});
             const more = result.length > 20; const posts = result.slice(0, 20);
-            send(200, { posts, next: more ? posts.at(-1).id : null }); return;
+            send(200, { posts:postExtras(db,posts,user), next: more ? posts.at(-1).id : null }); return;
           }
           if (method === 'POST') {
-            const image=body.imageId==null?null:ownedImage(db,body.imageId,user);
-            const result = run('INSERT INTO posts(club_id,author_id,title,body,created_at,image_id) VALUES(?,?,?,?,?,?)', id, user.id, text(body.title, 'Заголовок', 1, 100), text(body.body, 'Текст', 1, 4000), now(),image);
-            send(201, { id: Number(result.lastInsertRowid) }); return;
+            const title=text(body.title,'Заголовок',1,100),postBody=text(body.body,'Текст',1,4000),clientId=attemptId(body);
+            const replay=clientId?sql('SELECT image_id FROM posts WHERE club_id=? AND author_id=? AND client_id=?',id,user.id,clientId):null;
+            const image=body.imageId==null?null:(replay?.image_id===body.imageId?body.imageId:ownedImage(db,body.imageId,user));
+            const result=transaction(db,()=>{
+              const old=clientId?sql('SELECT id,title,body,image_id FROM posts WHERE club_id=? AND author_id=? AND client_id=?',id,user.id,clientId):null;
+              if(old){if(old.title!==title||old.body!==postBody||old.image_id!==image)fail(409,'Этот идентификатор уже использован для другой публикации.');return {id:old.id,replayed:true};}
+              const postId=Number(run('INSERT INTO posts(club_id,author_id,title,body,created_at,image_id,client_id) VALUES(?,?,?,?,?,?,?)',id,user.id,title,postBody,now(),image,clientId).lastInsertRowid);
+              mentions(db,{post:{id:postId,club_id:id,author_id:user.id},actor:user,body:title+'\n'+postBody,now});
+              return {id:postId,replayed:false};
+            });
+            send(result.replayed?200:201,result);return;
           }
         }
       }
@@ -327,9 +340,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (match) {
         const id = Number(match[1]); if (!Number.isSafeInteger(id)) fail(404, 'Публикация недоступна.');
         const post = postFor(id, user, method !== 'GET');
-        if (match[2] && method === 'GET') { send(200, { comments: rows('SELECT c.id,c.body,c.created_at,u.name AS author_name FROM comments c JOIN users u ON u.id=c.author_id WHERE c.post_id=? ORDER BY c.id DESC LIMIT 100', id).reverse() }); return; }
-        if (match[2] && method === 'POST') { const r = run('INSERT INTO comments(post_id,author_id,body,created_at) VALUES(?,?,?,?)', id, user.id, text(body.body, 'Комментарий', 1, 1000), now()); send(201, { id: Number(r.lastInsertRowid) }); return; }
-        if (!match[2] && method === 'GET') { send(200, { post }); return; }
+        if (!match[2] && method === 'GET') { send(200, { post:postExtras(db,[{...post,author_name:sql('SELECT name FROM users WHERE id=?',post.author_id).name,club_name:sql('SELECT name FROM clubs WHERE id=?',post.club_id).name,author_avatar_id:sql('SELECT CASE WHEN profile_visible=1 THEN avatar_id ELSE NULL END AS avatar FROM users WHERE id=?',post.author_id).avatar}],user)[0] }); return; }
         if (!match[2] && method === 'DELETE') {
           if (post.author_id !== user.id) fail(403, 'Удалить публикацию может только автор.');
           transaction(db,()=>{run('DELETE FROM posts WHERE id=?',id);if(post.image_id && !imageAttached(db,post.image_id))run('DELETE FROM media WHERE id=?',post.image_id);}); send(200, { ok: true }); return;
