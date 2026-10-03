@@ -36,9 +36,11 @@ jobs:
           # On a follow-up that only fixes a new browser test/CI, existing browser
           # scenarios already passed on its parent and application code is unchanged.
           changed=$(git diff-tree --no-commit-id --name-only -r "$CHECK_HEAD")
-          if test -n "$changed" && ! printf '%s\n' "$changed" | grep -qvE '^(tests/browser-(events|home|drafts|post-management|polls).mjs|.github/workflows/verify.yml)$'; then
+          if test -n "$changed" && ! printf '%s\n' "$changed" | grep -qvE '^(tests/browser-(events|home|drafts|post-management|polls|guides).mjs|.github/workflows/verify.yml)$'; then
             cd tests
-            if printf '%s\n' "$changed" | grep -q 'tests/browser-polls.mjs'; then
+            if printf '%s\n' "$changed" | grep -q 'tests/browser-guides.mjs'; then
+              node browser-guides.mjs
+            elif printf '%s\n' "$changed" | grep -q 'tests/browser-polls.mjs'; then
               node browser-polls.mjs
             elif printf '%s\n' "$changed" | grep -q 'tests/browser-post-management.mjs'; then
               node browser-post-management.mjs
@@ -49,6 +51,11 @@ jobs:
             else
               node browser-events.mjs
             fi
+          elif printf '%s\n' "$changed" | grep -qE '^(server/guides.mjs|server/public/guides.js|server/tests/guides.test.mjs)$'; then
+            cd tests
+            node browser-guides.mjs
+            node browser-post-management.mjs
+            node browser-polls.mjs
           elif printf '%s\n' "$changed" | grep -qE '^(server/polls.mjs|server/public/polls.js|server/tests/polls.test.mjs)$'; then
             cd tests
             node browser-polls.mjs

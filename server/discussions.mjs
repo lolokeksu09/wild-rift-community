@@ -6,7 +6,7 @@ export function unblocked(alias='p') {
 }
 export function postExtras(db,posts,user,now=Date.now) {
   const viewer=user?.id||'';
-  return posts.map(p=>({...p,poll:pollResults(db,p,user,now),reactions:db.prepare(`SELECT r.kind,count(*) AS count FROM post_reactions r WHERE r.post_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=? AND b.target_id=r.user_id) OR (b.target_id=? AND b.blocker_id=r.user_id)) GROUP BY r.kind`).all(p.id,viewer,viewer),myReaction:user?db.prepare('SELECT kind FROM post_reactions WHERE post_id=? AND user_id=?').get(p.id,viewer)?.kind||null:null,saved:user?Boolean(db.prepare('SELECT 1 FROM saved_posts WHERE post_id=? AND user_id=?').get(p.id,viewer)):false}));
+  return posts.map(p=>({...p,guide:db.prepare('SELECT topic,champion,game_version,summary FROM guides WHERE post_id=?').get(p.id)||null,poll:pollResults(db,p,user,now),reactions:db.prepare(`SELECT r.kind,count(*) AS count FROM post_reactions r WHERE r.post_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=? AND b.target_id=r.user_id) OR (b.target_id=? AND b.blocker_id=r.user_id)) GROUP BY r.kind`).all(p.id,viewer,viewer),myReaction:user?db.prepare('SELECT kind FROM post_reactions WHERE post_id=? AND user_id=?').get(p.id,viewer)?.kind||null:null,saved:user?Boolean(db.prepare('SELECT 1 FROM saved_posts WHERE post_id=? AND user_id=?').get(p.id,viewer)):false}));
 }
 export function attemptId(body) {
   if(body.clientId==null)return null; // Legacy clients; current UI always supplies an ID.
