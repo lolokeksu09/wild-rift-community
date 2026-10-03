@@ -1,3 +1,5 @@
+import { profileFields, profileView } from './profiles.mjs';
+import { readImage, encodeImage, saveImage, ownedImage, imageAttached } from './media.mjs';
 import { lfgRoutes } from './lfg.mjs';
 import { moderationRoutes } from './moderation.mjs';
 import { directRoutes } from './direct.mjs';
@@ -12,6 +14,7 @@ const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
+  ['/profiles.js', ['profiles.js', 'text/javascript; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/lfg.js', ['lfg.js', 'text/javascript; charset=utf-8']],
   ['/direct.js', ['direct.js', 'text/javascript; charset=utf-8']],
@@ -28,11 +31,11 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
   moderatorIds = [...moderatorIds];
   const db = openDatabase(databasePath);
   const dummyPassword = await passwordHash(token());
-  const counters = new Map(); let activeAuth = 0;
+  const counters = new Map(); let activeAuth = 0, activeUploads = 0;
   const sql = (query, ...params) => db.prepare(query).get(...params);
   const run = (query, ...params) => db.prepare(query).run(...params);
   const rows = (query, ...params) => db.prepare(query).all(...params);
-  const safeUser = user => ({ id: user.id, handle: user.handle, name: user.name, bio: user.bio, isModerator: moderatorIds.includes(user.id), dmRequests: user.dm_requests !== 0 });
+  const safeUser = user => ({ ...profileView(user,true), isModerator: moderatorIds.includes(user.id), dmRequests: user.dm_requests !== 0 });
   function rate(key, limit, windowMs = 60000) {
     const time = now();
     for (const [k, v] of counters) if (v.until <= time) counters.delete(k);
@@ -80,7 +83,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     const send = (status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); };
     try {
       const expectedOrigin = publicOrigin || `http://127.0.0.1:${server.address().port}`;
@@ -102,6 +105,21 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           signed(user);
           if (req.headers['x-csrf-token'] !== user.csrf) fail(403, 'Сеанс изменился. Обнови страницу.');
           rate(`write:${user.id}`, 120);
+        }
+        if (path === '/api/media' && method === 'POST') {
+          rate(`upload:${user.id}`,10);
+          const clientId=req.headers['x-upload-id'];
+          if(typeof clientId!=='string'||!/^[-a-zA-Z0-9_]{16,80}$/.test(clientId)) fail(422,'Некорректный идентификатор загрузки.');
+          if(activeUploads>=2)fail(429,'Сервер обрабатывает изображения. Повтори чуть позже.');
+          activeUploads++;
+          try {
+            const input=await readImage(req),encoded=await encodeImage(input,req.headers['content-type']);
+            const current=session(req);signed(current);
+            if(current.id!==user.id||current.csrf!==user.csrf)fail(403,'Сеанс изменился.');
+            const result=saveImage(db,current,clientId,input,encoded,now);
+            send(result.replayed?200:201,result);
+          } finally {activeUploads--;}
+          return;
         }
         body = await jsonBody(req);
       }
@@ -139,8 +157,49 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         res.setHeader('Set-Cookie', `wr_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`); send(200, { ok: true }); return;
       }
       if (method === 'PATCH' && path === '/api/me') {
-        run('UPDATE users SET name=?,bio=? WHERE id=?', text(body.name, 'Имя', 1, 40), text(body.bio, 'Описание', 0, 300), user.id);
+        if('profileVisible' in body && typeof body.profileVisible!=='boolean')fail(422,'Проверь видимость профиля.');
+        if('gameProfile' in body && (!body.gameProfile || typeof body.gameProfile!=='object' || Array.isArray(body.gameProfile)))fail(422,'Проверь игровые поля.');
+        const game=profileFields(body.gameProfile||{},JSON.parse(user.game_profile));
+        const name=text(body.name??user.name,'Имя',1,40),bio=text(body.bio??user.bio,'Описание',0,300);
+        const avatar='avatarId' in body && body.avatarId!==user.avatar_id?ownedImage(db,body.avatarId,user):user.avatar_id;
+        const cover='coverId' in body && body.coverId!==user.cover_id?ownedImage(db,body.coverId,user):user.cover_id;
+        if(avatar && avatar===cover)fail(409,'Для аватара и обложки нужны отдельные загрузки.');
+        transaction(db,()=>{
+          run('UPDATE users SET name=?,bio=?,game_profile=?,profile_visible=?,avatar_id=?,cover_id=? WHERE id=?',name,bio,JSON.stringify(game),'profileVisible' in body?Number(body.profileVisible):user.profile_visible,avatar,cover,user.id);
+          for(const id of [user.avatar_id,user.cover_id])if(id && id!==avatar && id!==cover && !imageAttached(db,id))run('DELETE FROM media WHERE id=?',id);
+        });
         send(200, { user: safeUser(sql('SELECT * FROM users WHERE id=?', user.id)) }); return;
+      }
+      const profileRoute=path.match(/^\/api\/profiles\/([\w-]+)$/);
+      if(profileRoute && method==='GET') {
+        const target=sql('SELECT * FROM users WHERE id=?',profileRoute[1]);
+        if(!target || (target.id!==user?.id && (!target.profile_visible || (user && sql('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',user.id,target.id,target.id,user.id)))))fail(404,'Профиль недоступен.');
+        send(200,{profile:profileView(target,target.id===user?.id)});return;
+      }
+      const mediaRoute=path.match(/^\/api\/media\/([\w-]+)$/);
+      if(mediaRoute) {
+        const id=mediaRoute[1],image=sql('SELECT id,owner_id FROM media WHERE id=?',id);
+        if(!image)fail(404,'Изображение недоступно.');
+        if(method==='DELETE') {
+          if(image.owner_id!==user.id)fail(403,'Изображение недоступно.');
+          if(imageAttached(db,id))fail(409,'Сначала убери изображение из профиля, клуба или публикации.');
+          run('DELETE FROM media WHERE id=?',id);send(200,{ok:true});return;
+        }
+        if(method!=='GET')fail(405,'Метод не поддерживается.');
+        const post=sql('SELECT id FROM posts WHERE image_id=?',id),club=sql('SELECT id FROM clubs WHERE cover_id=?',id),profile=sql('SELECT id,profile_visible FROM users WHERE avatar_id=? OR cover_id=?',id,id);
+        if(post)postFor(post.id,user);
+        else if(club){if(user && sql("SELECT 1 FROM memberships WHERE club_id=? AND user_id=? AND status='banned'",club.id,user.id))fail(403,'Изображение недоступно.');}
+        else if(profile){if(profile.id!==user?.id && (!profile.profile_visible || (user && sql('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',user.id,profile.id,profile.id,user.id))))fail(404,'Изображение недоступно.');}
+        else if(image.owner_id!==user?.id)fail(404,'Изображение недоступно.');
+        res.setHeader('Cross-Origin-Resource-Policy','same-origin');
+        res.writeHead(200,{'Content-Type':'image/webp'});res.end(sql('SELECT bytes FROM media WHERE id=?',id).bytes);return;
+      }
+      const clubCoverRoute=path.match(/^\/api\/clubs\/([\w-]+)\/cover$/);
+      if(clubCoverRoute && method==='PATCH') {
+        const club=ownerFor(clubCoverRoute[1],user);
+        const cover=body.coverId===club.cover_id?club.cover_id:ownedImage(db,body.coverId,user);
+        transaction(db,()=>{run('UPDATE clubs SET cover_id=? WHERE id=?',cover,club.id);if(club.cover_id && club.cover_id!==cover && !imageAttached(db,club.cover_id))run('DELETE FROM media WHERE id=?',club.cover_id);});
+        send(200,{ok:true});return;
       }
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
       if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds})) return;
@@ -148,7 +207,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (method === 'GET' && path === '/api/feed') {
         const before = url.searchParams.get('before') || String(Number.MAX_SAFE_INTEGER);
         if (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before))) fail(422, 'Некорректный курсор.');
-        const result = rows(`SELECT p.*,u.name AS author_name,c.name AS club_name FROM posts p
+        const result = rows(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id,c.name AS club_name FROM posts p
           JOIN users u ON u.id=p.author_id JOIN clubs c ON c.id=p.club_id
           LEFT JOIN memberships m ON m.club_id=c.id AND m.user_id=?
           WHERE p.id<? AND (m.status IS NULL OR m.status!='banned')
@@ -166,7 +225,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         if (!['open', 'request'].includes(body.access)) fail(422, 'Выбери тип доступа.');
         const id = randomUUID();
         transaction(db, () => {
-          run('INSERT INTO clubs VALUES(?,?,?,?,?,?)', id, user.id, name, description, body.access, now());
+          run('INSERT INTO clubs(id,owner_id,name,description,access,created_at) VALUES(?,?,?,?,?,?)', id, user.id, name, description, body.access, now());
           run('INSERT INTO memberships VALUES(?,?,?)', id, user.id, 'member');
         });
         send(201, { id }); return;
@@ -249,12 +308,13 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           if (method === 'GET') {
             const before = url.searchParams.get('before') || String(Number.MAX_SAFE_INTEGER);
             if (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before))) fail(422, 'Некорректный курсор.');
-            const result = rows(`SELECT p.*,u.name AS author_name FROM posts p JOIN users u ON u.id=p.author_id WHERE p.club_id=? AND p.id<? ORDER BY p.id DESC LIMIT 21`, id, Number(before));
+            const result = rows(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id FROM posts p JOIN users u ON u.id=p.author_id WHERE p.club_id=? AND p.id<? ORDER BY p.id DESC LIMIT 21`, id, Number(before));
             const more = result.length > 20; const posts = result.slice(0, 20);
             send(200, { posts, next: more ? posts.at(-1).id : null }); return;
           }
           if (method === 'POST') {
-            const result = run('INSERT INTO posts(club_id,author_id,title,body,created_at) VALUES(?,?,?,?,?)', id, user.id, text(body.title, 'Заголовок', 1, 100), text(body.body, 'Текст', 1, 4000), now());
+            const image=body.imageId==null?null:ownedImage(db,body.imageId,user);
+            const result = run('INSERT INTO posts(club_id,author_id,title,body,created_at,image_id) VALUES(?,?,?,?,?,?)', id, user.id, text(body.title, 'Заголовок', 1, 100), text(body.body, 'Текст', 1, 4000), now(),image);
             send(201, { id: Number(result.lastInsertRowid) }); return;
           }
         }
@@ -268,7 +328,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         if (!match[2] && method === 'GET') { send(200, { post }); return; }
         if (!match[2] && method === 'DELETE') {
           if (post.author_id !== user.id) fail(403, 'Удалить публикацию может только автор.');
-          run('DELETE FROM posts WHERE id=?', id); send(200, { ok: true }); return;
+          transaction(db,()=>{run('DELETE FROM posts WHERE id=?',id);if(post.image_id && !imageAttached(db,post.image_id))run('DELETE FROM media WHERE id=?',post.image_id);}); send(200, { ok: true }); return;
         }
       }
       fail(404, 'Маршрут не найден.');

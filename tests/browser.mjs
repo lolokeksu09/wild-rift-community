@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
+import sharp from 'sharp';
 import { createApp } from '../server/app.mjs';
 
 // Isolated in-memory database; no working data or external service is used.
 const app = await createApp();
+const image=await sharp({create:{width:1000,height:600,channels:3,background:'#3b5e82'}}).png().toBuffer();
 let browser;
 try {
   const origin = await app.listen();
@@ -46,6 +48,17 @@ try {
     await page.locator('#createClub [name=description]').fill('Играем вечером, обсуждаем матчи и помогаем друг другу. Спокойная компания для совместных игр.');
     await page.locator('#createClub button').click();
     await page.locator('#post').waitFor();
+    await page.locator('#clubCover input[type=file]').setInputFiles({name:'cover.png',mimeType:'image/png',buffer:image});
+    await page.locator('#clubCover button[type=submit]').click();
+    await page.locator('.club-banner-image').waitFor();
+    await page.locator('#post [name=title]').fill('После матча');
+    await page.locator('#post [name=body]').fill('Обсудим игру и соберём команду на следующий матч.');
+    await page.locator('#post input[type=file]').setInputFiles({name:'match.png',mimeType:'image/png',buffer:image});
+    await page.locator('#post button').click();
+    await page.locator('[data-image]').waitFor();
+    await page.locator('[data-image]').click();
+    await page.locator('#imageViewer[open]').waitFor();
+    await page.locator('#imageViewer button').click();
     await layout('club overview');
     await page.screenshot({path:`ui-screenshots/club-${width}.png`,fullPage:true});
     await page.locator('#home').click();
@@ -61,7 +74,28 @@ try {
       await page.locator('#main h1').filter({ hasText: heading }).waitFor();
       assert.equal(await page.locator(`#${id}`).getAttribute('aria-current'), 'page');
       await layout(id);
-      if(id==='account')await page.screenshot({path:`ui-screenshots/profile-${width}.png`,fullPage:true});
+      if(id==='account'){
+        await page.locator('#profile [name=rank]').fill('Мастер');
+        await page.locator('#profile [name=region]').fill('Европа');
+        await page.locator('#profile [name=language]').fill('Русский');
+        await page.locator('#profile [name=champions]').fill('Ренгар, Ахри');
+        await page.locator('#profile [name=playTime]').fill('Вечером, 20:00–23:00 МСК');
+        await page.locator('#profile [name=riotId]').fill('Player#ABC');
+        await page.locator('#profile [name=profileVisible]').check();
+        await page.locator('#profile [name=roles][value=jungle]').check();
+        await page.locator('#profile [name=avatarFile]').setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:image});
+        await page.locator('#profile [name=coverFile]').setInputFiles({name:'cover.png',mimeType:'image/png',buffer:image});
+        await page.locator('#profile button[type=submit]').click();
+        await page.locator('.identity-avatar img').waitFor();
+        await page.locator('.game-card').getByText('Мастер',{exact:true}).waitFor();
+        await layout('saved player profile');
+        const guest=await context.browser().newContext({viewport:{width,height:900}});
+        const other=await guest.newPage();await other.goto(origin);await other.locator('.author-link').first().click();
+        await other.getByRole('heading',{name:'Профиль игрока'}).waitFor();
+        assert.equal(await other.locator('.game-card').getByText('Player#ABC',{exact:true}).count(),0);
+        await other.screenshot({path:`ui-screenshots/public-profile-${width}.png`,fullPage:true});await guest.close();
+        await page.screenshot({path:`ui-screenshots/profile-${width}.png`,fullPage:true});
+      }
     }
     await context.close();
   }

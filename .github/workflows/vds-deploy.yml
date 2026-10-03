@@ -1,5 +1,5 @@
 name: Deploy community to VDS
-# Release 0.13: validate cold SQLite backups in a disposable writable copy.
+# Release 0.14: player profiles, private media and backed-up schema migration.
 on:
   workflow_dispatch:
   push:
@@ -22,11 +22,13 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24.19.0'
+      - run: npm ci
       - run: npm test
       - name: Build release image
         run: |
           set -euo pipefail
           docker build -t "wild-rift-community:$GITHUB_SHA" .
+          bash deploy/smoke-image.sh "wild-rift-community:$GITHUB_SHA"
           docker save "wild-rift-community:$GITHUB_SHA" | gzip > deploy/image.tar.gz
       - name: Install release through pinned SSH host
         env:
