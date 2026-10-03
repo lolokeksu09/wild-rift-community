@@ -41,3 +41,9 @@
 @media(max-width:600px){.topbar{gap:8px}.topbar-actions{gap:6px}.topbar-actions .btn{padding:8px 10px;min-height:44px;font-size:12px}.topbar .tiny-label{font-size:9px}.topbar #pageLabel{font-size:11px}.reaction-row{gap:6px}.reaction-row button{padding:10px;font-size:12px}}
 
 .comment-focused{background:#19241e;border-radius:10px;padding:14px;border:1px solid var(--lime,#b8f46a)}
+
+/* Keep the skip link out of screenshots and layout until keyboard focus. */
+.skip{top:12px;left:12px;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.skip:focus{width:auto;height:auto;padding:12px;clip-path:none;overflow:visible}
+.post-actions button[aria-pressed=true]{border:1px solid #91beff;border-radius:22px;color:#aacfff;background:#172c44;padding:8px 12px}
+@media(max-width:600px){.topbar-actions{flex-wrap:nowrap;flex-shrink:0}.topbar>div:first-child{min-width:0;flex:1}.topbar .tiny-label{font-size:7px;letter-spacing:1.4px}}
