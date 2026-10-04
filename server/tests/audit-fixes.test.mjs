@@ -143,8 +143,10 @@ test('ownership CLI defaults to read-only, creates verified backup before apply 
   const cli=new URL('../demo-ownership-cli.mjs',import.meta.url);
   const run=(...args)=>spawnSync(process.execPath,[cli.pathname.replace(/^\/([A-Z]:)/,'$1'),file,'lolokeksu',...args],{encoding:'utf8'});
   const dry=run();assert.equal(dry.status,0,dry.stderr);assert.equal(JSON.parse(dry.stdout).dryRun,true);
+  assert.notEqual(run('--check').status,0);
   const before=new DatabaseSync(file,{readOnly:true});assert.notEqual(before.prepare('SELECT owner_id FROM clubs LIMIT 1').get().owner_id,'human');before.close();
   const applied=run('--apply',copy);assert.equal(applied.status,0,applied.stderr);assert.equal(JSON.parse(applied.stdout).changed,6);
+  const verified=run('--check');assert.equal(verified.status,0,verified.stderr);assert.equal(JSON.parse(verified.stdout).verified,true);
   const backup=new DatabaseSync(copy,{readOnly:true});assert.notEqual(backup.prepare('SELECT owner_id FROM clubs LIMIT 1').get().owner_id,'human');assert.deepEqual(backup.prepare('PRAGMA foreign_key_check').all(),[]);backup.close();
   assert.notEqual(run('--apply',copy).status,0);
  }finally{db?.close();rmSync(dir,{recursive:true,force:true});}
