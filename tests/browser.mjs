@@ -68,8 +68,10 @@ try {
     await page.locator('#home').click();
     await page.locator('[data-club-card]').first().waitFor();
     await page.locator('#clubSearch').fill('нет такого клуба');
+    await page.waitForFunction(()=>document.querySelectorAll('[data-club-card]').length===0);
     assert.equal(await page.locator('[data-club-card]:visible').count(),0);
     await page.locator('#clubSearch').fill('Ночная');
+    await page.waitForFunction(()=>document.querySelectorAll('[data-club-card]').length>0);
     assert((await page.locator('[data-club-card]:visible').count())>0);
     await layout('club cards');
     await page.screenshot({path:`ui-screenshots/clubs-${width}.png`,fullPage:true});

@@ -2,9 +2,9 @@ import sharp from 'sharp';
 import {createHash,randomBytes} from 'node:crypto';
 import {transaction} from './database.mjs';
 import {passwordHash} from './security.mjs';
-import {isDemo} from './demo.mjs';
+import {isDemo,demoId} from './demo.mjs';
 
-export const demoId=value=>{const h=createHash('sha256').update('wr-community-demo-v1:'+value).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;};
+export {demoId};
 const names=['Лунный Лис','Тихий Рифт','Северный Ветер','Золотой Фонарь','Лесной След','Синий Комет','Алый Рассвет','Звёздный Шаг','Ночной Барон','Мятный Дракон','Стальной Лотос','Искра Рифта','Лунный Страж','Песочный Час','Сапфир','Тёплый Пинг','Кристальный Луч','Медный Ключ','Белый Сокол','Теневой След','Космический Кот','Зелёный Огонь','Речной Камень','Последний Фонарь'];
 const colors=['#be9c62','#7292bf','#9a7dbc','#70a798','#ba7973','#a8a071'];
 const roles=['baron','jungle','mid','dragon','support'];

@@ -1,4 +1,5 @@
 import { replaceCodes, consumeCode } from './recovery.mjs';
+import {catalogRoutes} from './catalog.mjs';
 import {guideRoutes} from './guides.mjs';
 import {pollRoutes} from './polls.mjs';
 import {postManagementRoutes} from './post-management.mjs';
@@ -6,7 +7,6 @@ import {draftRoutes} from './drafts.mjs';
 import {homeRoutes} from './home.mjs';
 import {previewRoutes} from './preview.mjs';
 import {communityMemberRoutes} from './community-members.mjs';
-import {clubSummary} from './club-summary.mjs';
 import {isDemo} from './demo.mjs';
 import {eventRoutes} from './events.mjs';
 import {clubRoutes,clubRole,audit as clubAudit} from './clubs.mjs';
@@ -20,7 +20,7 @@ import { directRoutes } from './direct.mjs';
 import { createServer } from 'node:http';
 import { isIP } from 'node:net';
 import { readFileSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { randomUUID,createHash } from 'node:crypto';
 import { openDatabase, transaction } from './database.mjs';
 import { token, digest, passwordHash, passwordMatches, fail, HttpError, text, passwordValue, jsonBody } from './security.mjs';
 
@@ -45,6 +45,12 @@ const assets = new Map([
   ['/style.css', ['style.css', 'text/css; charset=utf-8']]
 ]);
 export async function createApp({ databasePath = ':memory:', now = Date.now, authLimit = 20, moderatorIds = [], publicOrigin = null, listenHost = '127.0.0.1', proxyClientHeader = false } = {}) {
+  const publicAssets=new Map([...assets].map(([path,[file,type]])=>{
+    const bytes=readFileSync(new URL(`./public/${file}`,import.meta.url));
+    return [path,{bytes,type,hash:createHash('sha256').update(bytes).digest('hex').slice(0,20)}];
+  }));
+  const index=publicAssets.get('/');
+  index.bytes=Buffer.from(index.bytes.toString('utf8').replace(/(href|src)="(\/[\w-]+\.(?:css|js))"/g,(_all,attr,path)=>`${attr}="${path}?v=${publicAssets.get(path).hash}"`));
   if (publicOrigin !== null) {
     const origin = new URL(publicOrigin);
     if (origin.protocol !== 'https:' || origin.origin !== publicOrigin || origin.username || origin.password) throw new Error('PUBLIC_ORIGIN must be an exact HTTPS origin without a path.');
@@ -121,8 +127,10 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         const pageRoute=/^\/(?:clubs(?:\/[\w-]{1,80})?|posts\/\d{1,16}|players(?:\/[\w-]{1,80})?|guides|teams|events|account|messages|notifications|reports|saved|drafts|search|rules)\/?$/.test(path);
         const asset = assets.get(path)||(pageRoute?assets.get('/'):null);
         if (method !== 'GET' || !asset) fail(404, 'Страница не найдена.');
-        res.writeHead(200, { 'Content-Type': asset[1] });
-        res.end(readFileSync(new URL(`./public/${asset[0]}`, import.meta.url))); return;
+        const resource=publicAssets.get(assets.has(path)?path:'/');
+        if(asset[0]!=='index.html'&&url.searchParams.get('v')===resource.hash)res.setHeader('Cache-Control','public, max-age=31536000, immutable');
+        res.writeHead(200, { 'Content-Type': resource.type });
+        res.end(resource.bytes); return;
       }
       const user = session(req);
       let body = {};
@@ -270,6 +278,16 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         transaction(db,()=>{if(cover!==club.cover_id)clubAudit(db,user,club.id,club.id,'cover',now);run('UPDATE clubs SET cover_id=? WHERE id=?',cover,club.id);if(club.cover_id && club.cover_id!==cover && !imageAttached(db,club.cover_id))run('DELETE FROM media WHERE id=?',club.cover_id);});
         send(200,{ok:true});return;
       }
+      if(path==='/api/notifications/summary'&&method==='GET'){
+        signed(user);
+        const summaries={};
+        for(const [key,route,handler] of [
+          ['direct','/api/direct/summary',directRoutes],['reports','/api/reports/summary',moderationRoutes],
+          ['lfg','/api/lfg/notifications/summary',lfgRoutes],['discussions','/api/discussions/notifications/summary',discussionRoutes],
+          ['events','/api/events/notifications/summary',eventRoutes]
+        ])handler({db,user,path:route,method,body,url,now,postFor,moderatorIds,send:(status,data)=>{if(status!==200)fail(status,'Не удалось обновить уведомления.');summaries[key]=data;}});
+        send(200,{viewerId:user.id,...summaries});return;
+      }
       if(guideRoutes({db,user,path,method,body,url,send,now,clubFor,postFor,mentions}))return;
       if(pollRoutes({db,user,path,method,body,send,now,clubFor,postFor,mentions}))return;
       if(postManagementRoutes({db,user,path,method,body,url,send,now,postFor,clubFor}))return;
@@ -282,7 +300,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (previewRoutes({db,user,path,method,send,now})) return;
       if (eventRoutes({db,user,path,method,body,url,send,now})) return;
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
-      if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds})) return;
+      if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds,postFor})) return;
       if (directRoutes({ db, user, path, method, body, url, send, now })) return;
       if (method === 'GET' && path === '/api/feed') {
         const before = url.searchParams.get('before') || String(Number.MAX_SAFE_INTEGER);
@@ -295,11 +313,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         const posts = result.slice(0,20);
         send(200, {posts:postExtras(db,posts,user,now),next:result.length>20?posts.at(-1).id:null}); return;
       }
-      if (method === 'GET' && path === '/api/clubs') {
-        send(200, { clubs: rows(`SELECT c.*, m.status AS membership,
-          (SELECT count(*) FROM memberships WHERE club_id=c.id AND status='member') AS members
-          FROM clubs c LEFT JOIN memberships m ON m.club_id=c.id AND m.user_id=? ORDER BY c.created_at DESC,c.id DESC LIMIT 100`, user?.id || '').map(c=>({...c,...clubSummary(db,c,user),tags:JSON.parse(c.tags),myRole:clubRole(db,c,user)})) }); return;
-      }
+      if(catalogRoutes({db,user,path,method,url,send}))return;
       if (method === 'POST' && path === '/api/clubs') {
         const name = text(body.name, 'Название', 2, 80), description = text(body.description, 'Описание', 0, 1000);
         if (!['open', 'request'].includes(body.access)) fail(422, 'Выбери тип доступа.');
