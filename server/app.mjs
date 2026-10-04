@@ -1,5 +1,6 @@
 import { replaceCodes, consumeCode } from './recovery.mjs';
 import {catalogRoutes} from './catalog.mjs';
+import {pageMetadata,pageHTML,sitemap} from './pages.mjs';
 import {guideRoutes} from './guides.mjs';
 import {pollRoutes} from './polls.mjs';
 import {postManagementRoutes} from './post-management.mjs';
@@ -26,6 +27,7 @@ import { token, digest, passwordHash, passwordMatches, fail, HttpError, text, pa
 
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
+  ['/favicon.svg',['favicon.svg','image/svg+xml']],
   ['/post-management.js',['post-management.js','text/javascript; charset=utf-8']],
   ['/polls.js',['polls.js','text/javascript; charset=utf-8']],
   ['/guides.js',['guides.js','text/javascript; charset=utf-8']],
@@ -124,15 +126,37 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       const url = new URL(req.url, expectedOrigin);
       const path = url.pathname, method = req.method;
       if (!path.startsWith('/api/')) {
+        if(method==='GET'||method==='HEAD'){
+          if(path==='/favicon.ico'){res.writeHead(308,{Location:'/favicon.svg'});res.end();return;}
+          if(path==='/robots.txt'||path==='/sitemap.xml'){
+            const value=path==='/robots.txt'?`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /account\nDisallow: /messages\nDisallow: /notifications\nDisallow: /reports\nDisallow: /saved\nDisallow: /drafts\nDisallow: /search\nSitemap: ${expectedOrigin}/sitemap.xml\n`:sitemap(db,expectedOrigin);
+            res.writeHead(200,{'Content-Type':path==='/robots.txt'?'text/plain; charset=utf-8':'application/xml; charset=utf-8'});res.end(method==='HEAD'?undefined:value);return;
+          }
+        }
         const pageRoute=/^\/(?:clubs(?:\/[\w-]{1,80})?|posts\/\d{1,16}|players(?:\/[\w-]{1,80})?|guides|teams|events|account|messages|notifications|reports|saved|drafts|search|rules)\/?$/.test(path);
         const asset = assets.get(path)||(pageRoute?assets.get('/'):null);
-        if (method !== 'GET' || !asset) fail(404, 'Страница не найдена.');
+        if (!['GET','HEAD'].includes(method)) fail(404, 'Страница не найдена.');
+        if(!asset){
+          const meta=pageMetadata(db,path,session(req));
+          res.setHeader('X-Robots-Tag','noindex, nofollow');res.writeHead(404,{'Content-Type':'text/html; charset=utf-8'});
+          res.end(method==='HEAD'?undefined:pageHTML(index.bytes.toString('utf8'),meta,expectedOrigin));return;
+        }
         const resource=publicAssets.get(assets.has(path)?path:'/');
+        if(asset[0]==='index.html'){
+          const meta=pageMetadata(db,path,session(req));
+          if(!meta.index)res.setHeader('X-Robots-Tag','noindex, nofollow');
+          res.writeHead(meta.status,{'Content-Type':resource.type});res.end(method==='HEAD'?undefined:pageHTML(resource.bytes.toString('utf8'),meta,expectedOrigin));return;
+        }
         if(asset[0]!=='index.html'&&url.searchParams.get('v')===resource.hash)res.setHeader('Cache-Control','public, max-age=31536000, immutable');
         res.writeHead(200, { 'Content-Type': resource.type });
-        res.end(resource.bytes); return;
+        res.end(method==='HEAD'?undefined:resource.bytes); return;
       }
       const user = session(req);
+      if(path==='/api/page-metadata'&&method==='GET'){
+        const target=url.searchParams.get('path');
+        if(!target||target.length>200||!target.startsWith('/')||target.startsWith('//'))fail(422,'Некорректный путь страницы.');
+        const meta=pageMetadata(db,target,user);send(200,{...meta,url:expectedOrigin+meta.path});return;
+      }
       let body = {};
       if (method !== 'GET') {
         if (req.headers.origin !== expectedOrigin || req.headers['x-community-request'] !== '1') fail(403, 'Запрос с другого источника отклонён.');

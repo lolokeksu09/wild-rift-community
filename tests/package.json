@@ -10,7 +10,7 @@
     "test:direct-ui": "node direct-ui.dom.cjs",
     "test:moderation-ui": "node moderation-ui.dom.cjs",
     "test:lfg-ui": "node lfg-ui.dom.cjs",
-    "test:browser": "node browser.mjs && node browser-community.mjs && node browser-players.mjs && node browser-discussions.mjs && node browser-clubs.mjs && node browser-events.mjs && node browser-home.mjs && node browser-drafts.mjs && node browser-post-management.mjs && node browser-polls.mjs && node browser-guides.mjs && node browser-recovery.mjs && node browser-premium.mjs && node browser-discovery.mjs && node browser-refinement.mjs && node browser-audit-fixes.mjs"
+    "test:browser": "node browser.mjs && node browser-community.mjs && node browser-players.mjs && node browser-discussions.mjs && node browser-clubs.mjs && node browser-events.mjs && node browser-home.mjs && node browser-drafts.mjs && node browser-post-management.mjs && node browser-polls.mjs && node browser-guides.mjs && node browser-recovery.mjs && node browser-premium.mjs && node browser-discovery.mjs && node browser-refinement.mjs && node browser-audit-fixes.mjs && node browser-pages.mjs"
   },
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
