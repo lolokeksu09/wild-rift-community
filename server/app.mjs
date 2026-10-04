@@ -1,6 +1,7 @@
 import { replaceCodes, consumeCode } from './recovery.mjs';
 import {catalogRoutes} from './catalog.mjs';
 import {pageMetadata,pageHTML,sitemap} from './pages.mjs';
+import {contactPolicy} from './contact-budget.mjs';
 import {guideRoutes} from './guides.mjs';
 import {pollRoutes} from './polls.mjs';
 import {postManagementRoutes} from './post-management.mjs';
@@ -46,7 +47,8 @@ const assets = new Map([
   ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']]
 ]);
-export async function createApp({ databasePath = ':memory:', now = Date.now, authLimit = 20, moderatorIds = [], publicOrigin = null, listenHost = '127.0.0.1', proxyClientHeader = false } = {}) {
+export async function createApp({ databasePath = ':memory:', now = Date.now, authLimit = 20, moderatorIds = [], publicOrigin = null, listenHost = '127.0.0.1', proxyClientHeader = false, directContactPolicy = {} } = {}) {
+  const contactLimits=contactPolicy(directContactPolicy);
   const publicAssets=new Map([...assets].map(([path,[file,type]])=>{
     const bytes=readFileSync(new URL(`./public/${file}`,import.meta.url));
     return [path,{bytes,type,hash:createHash('sha256').update(bytes).digest('hex').slice(0,20)}];
@@ -118,7 +120,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
-    const send = (status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); };
+    const send = (status, data) => { if(status===429&&Number.isSafeInteger(data.retryAfterSeconds)&&data.retryAfterSeconds>0)res.setHeader('Retry-After',String(data.retryAfterSeconds));res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); };
     try {
       const expectedOrigin = publicOrigin || `http://127.0.0.1:${server.address().port}`;
       const expectedHost = new URL(expectedOrigin).host;
@@ -325,7 +327,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (eventRoutes({db,user,path,method,body,url,send,now})) return;
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
       if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds,postFor})) return;
-      if (directRoutes({ db, user, path, method, body, url, send, now })) return;
+      if (directRoutes({ db, user, path, method, body, url, send, now,contactLimits })) return;
       if (method === 'GET' && path === '/api/feed') {
         const before = url.searchParams.get('before') || String(Number.MAX_SAFE_INTEGER);
         if (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before))) fail(422, 'Некорректный курсор.');

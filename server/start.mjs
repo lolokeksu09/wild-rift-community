@@ -10,7 +10,8 @@ const app = await createApp({
   moderatorIds: (process.env.COMMUNITY_MODERATOR_IDS || '').split(',').map(x=>x.trim()).filter(Boolean),
   publicOrigin: production ? process.env.PUBLIC_ORIGIN : null,
   listenHost: production ? '0.0.0.0' : '127.0.0.1',
-  proxyClientHeader: production
+  proxyClientHeader: production,
+  directContactPolicy:Object.fromEntries([['daily','WR_CONTACT_DAILY'],['newDaily','WR_CONTACT_NEW_DAILY'],['cooldownSeconds','WR_CONTACT_COOLDOWN_SECONDS'],['newCooldownSeconds','WR_CONTACT_NEW_COOLDOWN_SECONDS'],['newAccountHours','WR_CONTACT_NEW_ACCOUNT_HOURS']].filter(([,name])=>process.env[name]!==undefined).map(([key,name])=>[key,Number(process.env[name])]))
 });
 console.log(`Community: ${await app.listen(port)}`);
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { await app.close(); process.exit(0); });
