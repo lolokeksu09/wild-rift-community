@@ -3,6 +3,7 @@
 }
 
 139.100.205.135 {
+	encode zstd gzip
 	tls {
 		issuer acme {
 			dir https://acme-v02.api.letsencrypt.org/directory

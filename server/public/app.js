@@ -20,7 +20,16 @@ let user = null, csrf = null, clubs = [], selectedClub = null, view = inviteToke
 
 let memberState={q:'',role:''};
 let clubFilter={q:'',tag:'',scope:'all',sort:'new'};
-let renderedRoute=null;
+let renderedRoute=null;let clubCatalog={clubs:[],total:0,tags:[],next:null},catalogRequest=0,catalogTimer=null;
+function unsavedEditor(){
+ const form=document.querySelector('#profile,[data-post-edit-form],[data-guide-edit],[data-guide-create]');
+ return form&&[...form.querySelectorAll('input,textarea,select')].some(el=>{
+  if(el.type==='file')return el.files.length>0;
+  if(el.type==='checkbox'||el.type==='radio')return el.checked!==el.defaultChecked;
+  if(el.tagName==='SELECT')return el.value!==([...el.options].find(o=>o.defaultSelected)||el.options[0])?.value;
+  return el.value!==el.defaultValue;
+ });
+}
 function plural(n,one,few,many){const x=Math.abs(n)%100,y=x%10;return n+' '+(x>=11&&x<=14?many:y===1?one:y>=2&&y<=4?few:many);}
 function memberCount(c){const bots=c.bots??clubs.find(x=>x.id===c.id)?.bots??0;return plural(c.members,'участник','участника','участников')+(bots?' · '+plural(bots,'бот','бота','ботов'):'');}
 function parseRoute(path){
@@ -46,8 +55,8 @@ function routePath(){
  return path;
 }
 async function beforeRouteChange(){
- const form=document.querySelector('[data-post-edit-form],[data-guide-edit],[data-guide-create]');
- if(form&&[...form.querySelectorAll('input,textarea,select')].some(el=>el.tagName==='SELECT'?el.value!==([...el.options].find(o=>o.defaultSelected)||el.options[0])?.value:el.value!==el.defaultValue)&&!confirm('Уйти из редактора? Несохранённые изменения будут потеряны.'))return false;
+ const form=document.querySelector('#profile,[data-post-edit-form],[data-guide-edit],[data-guide-create]');
+ if(unsavedEditor()&&!confirm('Уйти из редактора? Несохранённые изменения будут потеряны.'))return false;
  try{await composerController?.flush();return true;}catch(e){notify(e.message);return false;}
 }
 function syncRoute(push=true){
@@ -60,7 +69,7 @@ function memberCard(m){
 function peoplePanel(data){
  if(!data)return '';return '<section class="panel people-panel"><div class="section-head"><h2>Люди сообщества</h2><button class="text-link" data-nav="members">Все →</button></div><div class="people-faces">'+data.members.slice(0,6).map(m=>'<a data-route href="/players/'+esc(m.id)+'" class="people-face">'+mediaUI.avatar(m.avatarId,m.name)+'<strong>'+esc(m.name)+'</strong>'+(m.isBot?'<span class="bot-badge">Бот</span>':'')+'</a>').join('')+'</div><p class="note">'+plural(data.total,'открытый профиль','открытых профиля','открытых профилей')+(data.bots?' · '+plural(data.bots,'демонстрационный бот','демонстрационных бота','демонстрационных ботов'):'')+'</p>'+(data.bots?'<p class="demo-disclosure">Боты помогают показать сообщество. Они не участвуют в матчах и не отвечают на сообщения.</p>':'')+'</section>';
 }
-function rulesPage(){return '<div class="pagehead"><div><span class="tiny-label">НАША КУЛЬТУРА</span><h1>Правила сообщества</h1><p class="muted">За каждым ником — человек. Сохраним место, в которое приятно возвращаться.</p></div></div><section class="panel community-rules"><h2>Уважай свою компанию</h2><p>Обсуждай действия в игре, а не оскорбляй игроков. Травля, угрозы и дискриминация недопустимы.</p><h2>Делись опытом честно</h2><p>Не выдавай себя за другого человека или сотрудника Riot. Указывай, когда материал устарел или содержит личное мнение. Ранг и игровые поля заполняются участниками и не проверяются по данным игры.</p><h2>Береги личные данные</h2><p>Не публикуй чужие контакты, пароли, резервные коды и личную переписку без разрешения. Соблюдай правила своего клуба и избегай спама.</p><h2>Демонстрационные боты</h2><p>Профили с отметкой «Бот» и их публикации созданы для наполнения ранней версии. Это не живые игроки, они не собирают реальные команды и не ведут личные беседы.</p><h2>Сообщить о нарушении</h2><p>В личном или клубном чате используй кнопку жалобы у сообщения. Своё обращение и результат можно посмотреть в разделе «Жалобы» после входа.</p><button class="btn quiet" data-nav="reports">Мои обращения →</button></section>';}
+function rulesPage(){return '<div class="pagehead"><div><span class="tiny-label">НАША КУЛЬТУРА</span><h1>Правила сообщества</h1><p class="muted">За каждым ником — человек. Сохраним место, в которое приятно возвращаться.</p></div></div><section class="panel community-rules"><h2>Уважай свою компанию</h2><p>Обсуждай действия в игре, а не оскорбляй игроков. Травля, угрозы и дискриминация недопустимы.</p><h2>Делись опытом честно</h2><p>Не выдавай себя за другого человека или сотрудника Riot. Указывай, когда материал устарел или содержит личное мнение. Ранг и игровые поля заполняются участниками и не проверяются по данным игры.</p><h2>Береги личные данные</h2><p>Не публикуй чужие контакты, пароли, резервные коды и личную переписку без разрешения. Соблюдай правила своего клуба и избегай спама.</p><h2>Демонстрационные боты</h2><p>Профили с отметкой «Бот» и их публикации созданы для наполнения ранней версии. Это не живые игроки, они не собирают реальные команды и не ведут личные беседы.</p><h2>Сообщить о нарушении</h2><p>Используй кнопку жалобы у сообщения, публикации, комментария или в профиле игрока. Своё обращение и результат можно посмотреть в разделе «Жалобы» после входа.</p><button class="btn quiet" data-nav="reports">Мои обращения →</button></section>';}
 
 async function api(path, method = 'GET', body, options = {}) {
   const headers = {};
@@ -96,19 +105,29 @@ function clubSpotlight(){
  return '<section class="club-spotlight"><div class="section-head"><div><span class="tiny-label">ОБЩИЕ ИНТЕРЕСЫ. СВОЯ АТМОСФЕРА.</span><h2>С чего начнётся твоя история?</h2></div><button class="text-link" data-nav="clubs">Все клубы →</button></div><div class="spotlight-rail">'+items.map((c,i)=>'<a data-route href="/clubs/'+esc(c.id)+'" class="spotlight-card accent-'+esc(c.accent||'azure')+'">'+(c.cover_id?'<img src="/api/media/'+esc(c.cover_id)+'" alt="" loading="lazy">':'')+'<span class="spotlight-number">0'+(i+1)+'</span><div class="spotlight-copy"><span class="spotlight-topic">'+esc(c.tags?.[0]||'Общение')+(c.isDemoClub?' · Демо':'')+'</span><h3>'+esc(c.name)+'</h3><p>'+esc(c.description)+'</p><span class="spotlight-bottom">'+memberCount(c)+' <b aria-hidden="true">↗</b></span></div></a>').join('')+'</div></section>';
 }
 function clubFilterHTML(){
- const tags=[...new Set(clubs.flatMap(c=>c.tags||[]))].sort((a,b)=>a.localeCompare(b,'ru'));
+ const tags=clubCatalog.tags;
  return '<section class="club-browser"><div class="club-browser-top"><label class="club-search">Название или интересы<input type="search" id="clubSearch" placeholder="Найди своих" autocomplete="off" value="'+esc(clubFilter.q)+'"></label><label class="field club-sort">Порядок<select id="clubSort"><option value="new" '+(clubFilter.sort==='new'?'selected':'')+'>Сначала новые</option><option value="discussion" '+(clubFilter.sort==='discussion'?'selected':'')+'>По свежим обсуждениям</option><option value="name" '+(clubFilter.sort==='name'?'selected':'')+'>По названию</option></select></label></div><div class="club-scopes" role="group" aria-label="Доступ к клубу">'+[['all','Все клубы'],['open','Открытые'],...(user?[['mine','Мои клубы']]:[])].map(([key,label])=>'<button class="filter-chip" data-club-scope="'+key+'" aria-pressed="'+(clubFilter.scope===key)+'">'+label+'</button>').join('')+'</div><div class="interest-filters" role="group" aria-label="Интересы"><button class="filter-chip" data-club-tag="" aria-pressed="'+!clubFilter.tag+'">Все темы</button>'+tags.map(tag=>'<button class="filter-chip" data-club-tag="'+esc(tag)+'" aria-pressed="'+(clubFilter.tag===tag)+'">'+esc(tag)+'</button>').join('')+'</div><div class="club-filter-summary"><span id="clubResultCount" role="status"></span><button class="text-link" data-club-reset>Сбросить фильтры</button></div></section>';
 }
-function applyClubFilters(){
- const grid=document.querySelector('.club-grid');if(!grid||view!=='clubs')return;const q=clubFilter.q.normalize('NFKC').toLowerCase().trim();
- const items=clubs.filter(c=>(!q||(c.name+' '+c.description+' '+(c.tags||[]).join(' ')).normalize('NFKC').toLowerCase().includes(q))&&(!clubFilter.tag||c.tags?.includes(clubFilter.tag))&&(clubFilter.scope!=='open'||c.access==='open')&&(clubFilter.scope!=='mine'||c.membership==='member'));
- if(clubFilter.sort==='name')items.sort((a,b)=>a.name.localeCompare(b.name,'ru'));if(clubFilter.sort==='discussion')items.sort((a,b)=>(b.lastPost?.created_at||0)-(a.lastPost?.created_at||0));
- grid.innerHTML=items.map(clubCard).join('');document.querySelector('#noClubResults').classList.toggle('hidden',items.length>0);document.querySelector('#clubResultCount').textContent='Показано '+items.length+' из '+clubs.length+' клубов';
- document.querySelectorAll('[data-club-tag]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.clubTag===clubFilter.tag)));document.querySelectorAll('[data-club-scope]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.clubScope===clubFilter.scope)));
+async function applyClubFilters(more=false){
+ const grid=document.querySelector('.club-grid');if(!grid||view!=='clubs')return;
+ const version=requestVersion,request=++catalogRequest;
+ const params=new URLSearchParams(clubFilter);if(more&&clubCatalog.next)params.set('after',clubCatalog.next);
+ const button=$('#clubMore');if(button)button.disabled=true;
+ try{
+  const data=await api('/api/clubs?'+params);if(version!==requestVersion||request!==catalogRequest||view!=='clubs')return;
+  clubCatalog={...data,clubs:more?[...clubCatalog.clubs,...data.clubs]:data.clubs};
+  for(const c of data.clubs){const i=clubs.findIndex(x=>x.id===c.id);if(i<0)clubs.push(c);else clubs[i]=c;}
+  const items=clubCatalog.clubs;
+  grid.innerHTML=items.map(clubCard).join('');$('#noClubResults').classList.toggle('hidden',items.length>0);
+  $('#clubResultCount').textContent='Показано '+items.length+' из '+data.total+' клубов';
+  if(button){button.hidden=!data.next;button.disabled=false;}
+  document.querySelectorAll('[data-club-tag]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.clubTag===clubFilter.tag)));
+  document.querySelectorAll('[data-club-scope]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.clubScope===clubFilter.scope)));
+ }catch(e){if(version===requestVersion&&request===catalogRequest){notify(e.message);if(button)button.disabled=false;}}
 }
 
 function clubCards() {
-  return `<div class="pagehead"><div><span class="tiny-label">НАЙДИ СВОЙ КРУГ</span><h1>Клубы</h1><p class="muted">Для тех, с кем совпадает настроение на игру.</p></div><span class="count-tag">${plural(clubs.length,'клуб','клуба','клубов')}</span></div>${clubs.length?`${clubFilterHTML()}<div class="club-grid">${clubs.map(clubCard).join('')}</div><div id="noClubResults" class="empty-state hidden"><h2>Пока нет совпадений</h2><p>Попробуй другую тему или название.</p><button class="btn quiet" data-club-reset>Показать все клубы</button></div>`:'<div class="empty-state"><span class="empty-mark" aria-hidden="true">＋</span><h3>Первый клуб может быть твоим</h3><p>Собери друзей или создай место для новых знакомств.</p></div>'}${user?`<form id="createClub" class="panel spaced"><span class="tiny-label">НАЧНИ СВОЮ ИСТОРИЮ</span><h2>Создать клуб</h2><label class="field">Название<input name="name" required minlength="2" maxlength="80" placeholder="Как назовём вашу компанию?"></label><label class="field">Описание<textarea name="description" maxlength="1000" placeholder="Кого ждёте и во что любите играть?"></textarea></label><label class="field">Доступ<select name="access"><option value="open">Открытый — вступление сразу</option><option value="request">По заявкам — посты только участникам</option></select></label>${errorLine}<button class="btn primary">Создать</button></form>`:'<div class="join-strip"><p>Твоя компания может начаться здесь.</p><button class="btn primary" data-nav="account">Присоединиться</button></div>'}`;
+  return `<div class="pagehead"><div><span class="tiny-label">НАЙДИ СВОЙ КРУГ</span><h1>Клубы</h1><p class="muted">Для тех, с кем совпадает настроение на игру.</p></div><span class="count-tag">${plural(clubCatalog.total,'клуб','клуба','клубов')}</span></div>${clubCatalog.total?`${clubFilterHTML()}<div class="club-grid">${clubs.map(clubCard).join('')}</div><button id="clubMore" class="btn quiet wide" data-clubs-more hidden>Ещё клубы</button><div id="noClubResults" class="empty-state hidden"><h2>Пока нет совпадений</h2><p>Попробуй другую тему или название.</p><button class="btn quiet" data-club-reset>Показать все клубы</button></div>`:'<div class="empty-state"><span class="empty-mark" aria-hidden="true">＋</span><h3>Первый клуб может быть твоим</h3><p>Собери друзей или создай место для новых знакомств.</p></div>'}${user?`<form id="createClub" class="panel spaced"><span class="tiny-label">НАЧНИ СВОЮ ИСТОРИЮ</span><h2>Создать клуб</h2><label class="field">Название<input name="name" required minlength="2" maxlength="80" placeholder="Как назовём вашу компанию?"></label><label class="field">Описание<textarea name="description" maxlength="1000" placeholder="Кого ждёте и во что любите играть?"></textarea></label><label class="field">Доступ<select name="access"><option value="open">Открытый — вступление сразу</option><option value="request">По заявкам — посты только участникам</option></select></label>${errorLine}<button class="btn primary">Создать</button></form>`:'<div class="join-strip"><p>Твоя компания может начаться здесь.</p><button class="btn primary" data-nav="account">Присоединиться</button></div>'}`;
 }
 function profile() {
   const mine=clubs.filter(c=>c.membership==='member');
@@ -138,7 +157,7 @@ function personalHome(feed,home,homeError,people){
 }
 function postHTML(p) {
   const member=clubs.some(c=>c.id===p.club_id&&c.membership==='member');
-  return `<article class="panel ${p.guide?`guide-post ${view==='post'?'guide-expanded':''}`:''}"><div class="post-author">${mediaUI.avatar(p.author_avatar_id,p.author_name)}<div><button type="button" class="author-link" data-player="${esc(p.author_id)}">${esc(p.author_name)}</button> ${p.isBot?'<span class="bot-badge">Бот</span>':''}<small>${esc(new Date(p.created_at).toLocaleString('ru-RU'))}${p.edited_at?` · <span title="${esc(new Date(p.edited_at).toLocaleString('ru-RU'))}">Изменено</span>`:''}</small></div></div>${guideUI?.badge(p.guide)||''}<h3 class="post-title"><a data-route href="/posts/${p.id}">${esc(p.title)}</a></h3>${p.isBot?'<p class="demo-disclosure">Демонстрационная публикация бота. Обсуждение открыто участникам клуба.</p>':''}${postText(p)}${p.guide&&view!=='post'?`<button class="btn quiet" data-guide-open="${p.id}">Читать руководство →</button>`:''}${mediaUI.image(p.image_id,'Изображение к публикации: '+p.title)}${pollUI?.card(p,user,member)||''}<div class="post-utilities">${shareButton('/posts/'+p.id,'Скопировать ссылку на публикацию')}${p.body.length>600?`<span class="reading-time">~${Math.max(1,Math.ceil(p.body.trim().split(/\s+/).length/180))} мин чтения</span>`:''}</div>${discussionUI.actions(p,user,member)}${view==='club'?clubUI.postTools(p,clubs.find(c=>c.id===p.club_id),clubPins.has(p.id),user):''}<div id="comments-${p.id}"></div></article>`;
+  return `<article class="panel ${p.guide?`guide-post ${view==='post'?'guide-expanded':''}`:''}"><div class="post-author">${mediaUI.avatar(p.author_avatar_id,p.author_name)}<div><button type="button" class="author-link" data-player="${esc(p.author_id)}">${esc(p.author_name)}</button> ${p.isBot?'<span class="bot-badge">Бот</span>':''}<small>${esc(new Date(p.created_at).toLocaleString('ru-RU'))}${p.edited_at?` · <span title="${esc(new Date(p.edited_at).toLocaleString('ru-RU'))}">Изменено</span>`:''}</small></div></div>${guideUI?.badge(p.guide)||''}<${view==='post'?'h1':'h3'} class="post-title"><a data-route href="/posts/${p.id}">${esc(p.title)}</a></${view==='post'?'h1':'h3'}>${p.isBot?'<p class="demo-disclosure">Демонстрационная публикация бота. Обсуждение открыто участникам клуба.</p>':''}${postText(p)}${p.guide&&view!=='post'?`<button class="btn quiet" data-guide-open="${p.id}">Читать руководство →</button>`:''}${mediaUI.image(p.image_id,'Изображение к публикации: '+p.title)}${pollUI?.card(p,user,member)||''}<div class="post-utilities">${shareButton('/posts/'+p.id,'Скопировать ссылку на публикацию')}${p.body.length>600?`<span class="reading-time">~${Math.max(1,Math.ceil(p.body.trim().split(/\s+/).length/180))} мин чтения</span>`:''}</div>${discussionUI.actions(p,user,member)}${view==='club'?clubUI.postTools(p,clubs.find(c=>c.id===p.club_id),clubPins.has(p.id),user):''}<div id="comments-${p.id}"></div></article>`;
 }
 async function render(options={}) {
   const nextRoute=routePath(),routeChanged=renderedRoute!==null&&renderedRoute!==nextRoute;
@@ -147,7 +166,7 @@ async function render(options={}) {
   mediaUI.cleanup();
   chatController?.destroy(); chatController = null;
   const version = ++requestVersion;
-  const activeNav={discover:'discover',clubs:'home',members:'people',club:'home',player:'account',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',drafts:'account',saved:'account',notifications:'notifications',post:'discover',editPost:'discover',search:'discover',guides:'discover',invite:'home'}[view];
+  const activeNav={discover:'discover',clubs:'home',members:'people',club:'home',player:'people',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',drafts:'account',saved:'account',notifications:'notifications',post:'discover',editPost:'discover',search:'discover',guides:'discover',invite:'home'}[view];
   for(const button of document.querySelectorAll('.primary-nav button, #reports, #notifications')){if(button.id===activeNav)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
   $('#main').setAttribute('aria-busy','true');
   $('#main').innerHTML='<div class=loading-state role=status>Загружаем сообщество…<div class=skeleton-page aria-hidden=true><div></div><div></div><div></div></div></div>';
@@ -158,7 +177,10 @@ async function render(options={}) {
     user = session.user; csrf = session.csrf;
     const result = await api('/api/clubs');
     if (version !== requestVersion) return;
-    clubs = result.clubs;
+    clubCatalog=result;clubs=result.clubs;
+    if(user){let after=null;do{const mine=await api('/api/clubs?scope=mine'+(after?'&after='+encodeURIComponent(after):''));if(version!==requestVersion)return;
+      for(const c of mine.clubs){const i=clubs.findIndex(x=>x.id===c.id);if(i<0)clubs.push(c);else clubs[i]=c;}after=mine.next;
+    }while(after);}
     $('#account').textContent = user ? 'Профиль' : 'Вход';
     document.body.classList.toggle('guest',!user);
     $('#notifications').hidden=!user;$('#reports').hidden=!user;
@@ -225,7 +247,7 @@ async function render(options={}) {
       return;
     }
     if (view === 'direct') { $('#main').innerHTML = user ? '<section id=directRoot></section>' : auth(); if(user){chatController = window.createDirectInbox({root:$('#directRoot'),user,api,initialHandle:directDraftHandle});directDraftHandle='';} return; }
-    if(view==='player'){const data=await api('/api/profiles/'+selectedPlayer);if(version!==requestVersion)return;$('#main').innerHTML=`<button class="back-link" data-nav="${playerReturnView}">← ${playerReturnView==='lfg'?'К поиску напарников':playerReturnView==='members'?'К участникам':'К обсуждениям'}</button><div class="section-head"><h1>Профиль игрока</h1>${shareButton('/players/'+data.profile.id,'Скопировать ссылку на профиль')}</div>${mediaUI.showcase(data.profile)}`;return;}
+    if(view==='player'){const data=await api('/api/profiles/'+selectedPlayer);if(version!==requestVersion)return;$('#main').innerHTML=`<button class="back-link" data-nav="${playerReturnView}">← ${playerReturnView==='lfg'?'К поиску напарников':playerReturnView==='members'?'К участникам':'К обсуждениям'}</button><div class="section-head"><h1>Профиль игрока</h1>${shareButton('/players/'+data.profile.id,'Скопировать ссылку на профиль')}</div>${mediaUI.showcase(data.profile)}${user&&user.id!==data.profile.id?`<button type="button" class="btn quiet" data-report-object="profile" data-target-id="${esc(data.profile.id)}">Пожаловаться на профиль</button>`:''}`;return;}
     if (view === 'account') {
       if (!user) { $('#main').innerHTML = auth(); return; }
       const viewer=user.id,data=await api('/api/recovery-codes');
@@ -234,7 +256,7 @@ async function render(options={}) {
     }
     if (view === 'club') {
       const detail=await api(`/api/clubs/${selectedClub}/detail`);if(version!==requestVersion)return;const club=detail.club;
-      const ci=clubs.findIndex(c=>c.id===club.id);if(ci>=0)clubs[ci]=club;
+      const ci=clubs.findIndex(c=>c.id===club.id);if(ci>=0)clubs[ci]=club;else clubs.push(club);
       const member=club.membership==='member',owner=club.myRole==='owner',staff=['owner','moderator'].includes(club.myRole),canRead=club.membership!=='banned'&&(club.access==='open'||member);
       if((!member&&['chat','members'].includes(clubTab))||(!owner&&clubTab==='settings'))clubTab='posts';
       let content='';clubPins=new Set();
@@ -265,7 +287,7 @@ async function comments(id,focus=null) {
     if(version!==requestVersion||viewer!==user?.id||!el.isConnected)return;
     const post=await api('/api/posts/'+id);if(version!==requestVersion||viewer!==user?.id||!el.isConnected)return;
     const member=clubs.some(c=>c.id===post.post.club_id&&c.membership==='member');
-    el.innerHTML=`${focusedPage?`<p class="note">Комментарии до выбранного ответа. <button class="text-link" data-comments="${id}">Показать последние</button></p>`:''}<div data-comment-list="${id}">${data.comments.map(c=>discussionUI.comment({...c,post_id:id},member)).join('')||'<p class="note">Первый ответ может быть твоим.</p>'}</div>${data.next?`<button class="btn quiet" data-comments-more="${id}" data-after="${data.next}">Ранее</button>`:''}${member?discussionUI.editor(id,errorLine):'<p class="note">Для ответа нужно вступить в клуб.</p>'}`;
+    el.innerHTML=`${focusedPage?`<p class="note">Комментарии до выбранного ответа. <button class="text-link" data-comments="${id}">Показать последние</button></p>`:''}<div data-comment-list="${id}">${data.comments.map(c=>discussionUI.comment({...c,post_id:id},member,user)).join('')||'<p class="note">Первый ответ может быть твоим.</p>'}</div>${data.next?`<button class="btn quiet" data-comments-more="${id}" data-after="${data.next}">Ранее</button>`:''}${member?discussionUI.editor(id,errorLine):'<p class="note">Для ответа нужно вступить в клуб.</p>'}`;
     if(focus){const target=el.querySelector(`[data-comment-id="${Number(focus)}"]`);target?.classList.add('comment-focused');target?.scrollIntoView?.({block:'center'});}
   }catch(e){if(version===requestVersion&&el.isConnected)el.innerHTML=`<p class="error">${esc(e.message)}</p><button class="btn quiet" data-comments="${id}">Повторить</button>`;}
 }
@@ -288,6 +310,12 @@ $('#confirmDelete').onclick = async () => { if (!pendingDelete) return; const id
 document.addEventListener('click', async event => {
   const b = event.target.closest('button'); if (!b) return;
   try {
+    if(b.dataset.reportObject){
+ const reason=prompt('Опиши нарушение (от 3 до 1000 символов).');if(reason===null)return;
+ if(reason.trim().length<3||reason.trim().length>1000){notify('Причина должна содержать от 3 до 1000 символов.');return;}
+ b.disabled=true;try{await api('/api/reports','POST',{kind:b.dataset.reportObject,targetId:b.dataset.reportObject==='profile'?b.dataset.targetId:Number(b.dataset.targetId),reason});notify('Жалоба отправлена. Результат появится в разделе «Жалобы».');}finally{b.disabled=false;}return;
+ }
+ if(b.hasAttribute('data-clubs-more')){await applyClubFilters(true);return;}
     if(b.hasAttribute('data-guide-catalog')){view='guides';await render();return;}
     if(b.hasAttribute('data-guide-reset')){guideState={};view='guides';await render();return;}
     if(b.dataset.guideOpen){if(view!=='post')postReturnView=view;selectedPost=b.dataset.guideOpen;selectedComment=null;view='post';await render();return;}
@@ -333,7 +361,7 @@ document.addEventListener('click', async event => {
     if(b.dataset.save){b.disabled=true;const saved=b.getAttribute('aria-pressed')==='true',version=requestVersion;await api(`/api/posts/${b.dataset.save}/saved`,saved?'DELETE':'PUT',{});if(version!==requestVersion||!b.isConnected)return;if(view==='saved'&&saved){await render();return;}b.setAttribute('aria-pressed',String(!saved));b.textContent=saved?'Сохранить':'В сохранённом';b.disabled=false;return;}
     if(b.dataset.reply){const form=$(`[data-comment-form="${b.dataset.replyPost}"]`);if(!form)return;form.dataset.parentId=b.dataset.reply;form.querySelector('.reply-target').classList.remove('hidden');form.querySelector('.reply-target span').textContent='Ответ '+b.dataset.replyName;form.elements.body.focus();return;}
     if(b.dataset.cancelReply){const form=$(`[data-comment-form="${b.dataset.cancelReply}"]`);delete form.dataset.parentId;form.querySelector('.reply-target').classList.add('hidden');return;}
-    if(b.dataset.commentsMore){b.disabled=true;const id=b.dataset.commentsMore,version=requestVersion;const data=await api(`/api/posts/${id}/comments?before=${b.dataset.after}`);if(version!==requestVersion||!b.isConnected)return;const member=Boolean($(`[data-comment-form="${id}"]`));$(`[data-comment-list="${id}"]`).insertAdjacentHTML('afterbegin',data.comments.map(c=>discussionUI.comment({...c,post_id:id},member)).join(''));if(data.next){b.dataset.after=data.next;b.disabled=false;}else b.remove();return;}
+    if(b.dataset.commentsMore){b.disabled=true;const id=b.dataset.commentsMore,version=requestVersion;const data=await api(`/api/posts/${id}/comments?before=${b.dataset.after}`);if(version!==requestVersion||!b.isConnected)return;const member=Boolean($(`[data-comment-form="${id}"]`));$(`[data-comment-list="${id}"]`).insertAdjacentHTML('afterbegin',data.comments.map(c=>discussionUI.comment({...c,post_id:id},member,user)).join(''));if(data.next){b.dataset.after=data.next;b.disabled=false;}else b.remove();return;}
     if(b.dataset.savedMore){b.disabled=true;const data=await api('/api/saved?before='+b.dataset.savedMore);if(!b.isConnected||data.viewerId!==user?.id)return;$('#savedPosts').insertAdjacentHTML('beforeend',data.posts.map(feedCard).join(''));if(data.next){b.dataset.savedMore=data.next;b.disabled=false;}else b.remove();return;}
     if(b.dataset.discussionMore){b.disabled=true;const data=await api('/api/discussions/notifications?before='+b.dataset.discussionMore);if(!b.isConnected||data.viewerId!==user?.id)return;$('#discussionEvents').insertAdjacentHTML('beforeend',data.notifications.map(discussionUI.notification).join(''));if(data.next){b.dataset.discussionMore=data.next;b.disabled=false;}else b.remove();return;}
     if(b.dataset.discussionRead){b.disabled=true;await api(`/api/discussions/notifications/${b.dataset.discussionRead}/read`,'POST',{});await render();updateDiscussionBadge();return;}
@@ -376,6 +404,7 @@ document.addEventListener('submit', async event => {
     }catch(e){formError(form,e);}finally{button.disabled=false;}return;
   }
   if(form.dataset.appeal||form.dataset.appealDecision){event.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('button');button.disabled=true;try{const route=form.dataset.appeal?`/api/reports/${form.dataset.appeal}/appeal`:`/api/moderation/reports/${form.dataset.appealDecision}/appeal-decision`;await api(route,'POST',Object.fromEntries(new FormData(form)));await render();}catch(e){formError(form,e);}finally{button.disabled=false;}return;}
+  if(form.dataset.moderationAction){event.preventDefault();if(!form.reportValidity())return;if(!confirm('Применить действие к материалу? Удаление публикации или комментария нельзя отменить. Скрытие профиля уберёт его из каталога.'))return;const b=form.querySelector('button');b.disabled=true;try{await api('/api/moderation/reports/'+form.dataset.moderationAction+'/action','POST',Object.fromEntries(new FormData(form)));await render();}catch(e){formError(form,e);}finally{b.disabled=false;}return;}
   if(form.dataset.reportDecision){event.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('button');button.disabled=true;try{await api(`/api/moderation/reports/${form.dataset.reportDecision}/decision`,'POST',Object.fromEntries(new FormData(form)));await render();}catch(e){formError(form,e);}finally{button.disabled=false;}return;}
   if (['recover','recoveryCodes'].includes(form.id)) {
     event.preventDefault(); if(!form.reportValidity())return;
@@ -428,18 +457,25 @@ async function updateMessageBadge(){
   const id=user?.id;
   if(!id){$('#direct').textContent='Сообщения';return;}
   badgeBusy=true;const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),10000);
-  try{const data=await api('/api/direct','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;
+  try{const data=await api('/api/direct/summary','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;
     if(data.viewerId!==id){$('#direct').textContent='Сообщения · обнови сеанс';return;}
     $('#direct').textContent=`Сообщения${data.unread?' · '+data.unread:''}${data.requests?' · запросы: '+data.requests:''}`;
   }catch{if(user?.id===id)$('#direct').textContent='Сообщения · нет связи';}
   finally{clearTimeout(deadline);badgeBusy=false;}
 }
-setInterval(updateMessageBadge,5000);
+
 
 function reportStatus(status){return ({pending:'Ожидает рассмотрения',upheld:'Нарушение подтверждено',dismissed:'Отклонено'})[status]||status;}
-function reportCard(r){return `<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p class="note">${r.kind==='direct'?'Личное сообщение':'Сообщение клуба'}</p><blockquote class="content">${esc(r.snapshot)}</blockquote><p>${esc(r.reason)}</p>${r.status==='pending'?`<form data-report-decision="${r.id}"><label class="field">Решение<select name="decision"><option value="upheld">Нарушение подтверждено</option><option value="dismissed">Отклонено</option></select></label><label class="field">Объяснение для заявителя<textarea name="note" required minlength="3" maxlength="1000"></textarea></label>${errorLine}<button class="btn primary">Сохранить решение</button></form>`:`<p>${esc(r.decision_note)}</p>`}${appealCard(r,true)}</article>`;}
+function actionResult(r){return '<p class="note">Выполнено: '+esc(({'remove-post':'публикация удалена','remove-comment':'комментарий удалён','hide-profile':'публичный профиль скрыт'})[r.applied_action])+'. '+esc(r.action_note)+'</p>';}
+function moderationActionCard(r){
+ if(r.applied_action)return actionResult(r);
+ const action={post:'remove-post',comment:'remove-comment',profile:'hide-profile'}[r.kind];
+ if(!action||(r.appeal_status||r.status)!=='upheld'||[r.reporter_id,r.sender_id].includes(user.id))return '';
+ return '<form data-moderation-action="'+r.id+'"><input type="hidden" name="action" value="'+action+'"><label class="field">Объяснение действия<textarea name="note" required minlength="3" maxlength="1000"></textarea></label>'+errorLine+'<button class="btn quiet">'+({post:'Удалить публикацию и обсуждение',comment:'Удалить комментарий',profile:'Скрыть публичный профиль'})[r.kind]+'</button><p class="note">Отдельное действие после решения. Удаление не отменяется апелляцией. Скрытие профиля не блокирует аккаунт.</p></form>';
+}
+function reportCard(r){return `<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p class="note">${esc(({direct:'Личное сообщение',club:'Сообщение клуба',post:'Публикация',comment:'Комментарий',profile:'Профиль'})[r.kind])}</p><blockquote class="content">${esc(r.snapshot)}</blockquote><p>${esc(r.reason)}</p>${r.status==='pending'?`<form data-report-decision="${r.id}"><label class="field">Решение<select name="decision"><option value="upheld">Нарушение подтверждено</option><option value="dismissed">Отклонено</option></select></label><label class="field">Объяснение для заявителя<textarea name="note" required minlength="3" maxlength="1000"></textarea></label>${errorLine}<button class="btn primary">Сохранить решение</button></form>`:`<p>${esc(r.decision_note)}</p>`}${moderationActionCard(r)}${appealCard(r,true)}</article>`;}
 
-function ownReportCard(r){return `<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p>${esc(r.reason)}</p><p>${esc(r.decision_note)}</p>${r.status!=='pending'&&!r.decision_seen?`<button class="btn quiet" data-report-read="${r.id}">Новое решение · отметить прочитанным</button>`:''}${appealCard(r,false)}</article>`;}
+function ownReportCard(r){return `<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p>${esc(r.reason)}</p><p>${esc(r.decision_note)}</p>${r.status!=='pending'&&!r.decision_seen?`<button class="btn quiet" data-report-read="${r.id}">Новое решение · отметить прочитанным</button>`:''}${r.applied_action?actionResult(r):''}${appealCard(r,false)}</article>`;}
 let reportBadgeBusy=false;
 async function updateReportBadge(){
  if(reportBadgeBusy)return;const id=user?.id;if(!id){$('#reports').textContent='Жалобы';return;}
@@ -448,7 +484,7 @@ async function updateReportBadge(){
  catch{if(user?.id===id)$('#reports').textContent='Жалобы · нет связи';}
  finally{clearTimeout(timer);reportBadgeBusy=false;}
 }
-setInterval(updateReportBadge,5000);
+
 
 function appealCard(r,moderator){
  if(r.status==='pending')return '';
@@ -466,9 +502,9 @@ async function updateLfgBadge(){
  catch{if(user?.id===id)$('#lfg').textContent='Найти команду · нет связи';}
  finally{clearTimeout(timer);lfgBadgeBusy=false;}
 }
-setInterval(updateLfgBadge,5000);
 
-document.addEventListener('input',event=>{if(event.target.id==='clubSearch'){clubFilter.q=event.target.value;applyClubFilters();}});
+
+document.addEventListener('input',event=>{if(event.target.id==='clubSearch'){clubFilter.q=event.target.value;clearTimeout(catalogTimer);catalogTimer=setTimeout(()=>applyClubFilters(),150);}});
 document.addEventListener('change',event=>{if(event.target.id==='clubSort'){clubFilter.sort=event.target.value;applyClubFilters();}});
 
 let discussionBadgeBusy=false;
@@ -480,14 +516,38 @@ async function updateDiscussionBadge(){
  finally{clearTimeout(timer);discussionBadgeBusy=false;}
 }
 async function updateEventBadge(){const button=$('#events'),id=user?.id;if(!button)return;if(!id){button.textContent='События';return;}try{const data=await api('/api/events/notifications/summary');if(user?.id===id)button.textContent='События'+(data.unread?' · '+data.unread:'');}catch{}}
-setInterval(()=>{updateDiscussionBadge();updateEventBadge();},5000);
+let badgeTimer=null,badgePolling=false,badgeInterval=5000,badgeSignature='';
+async function pollBadges(){
+ clearTimeout(badgeTimer);
+ if(document.hidden||!user||badgePolling){badgeTimer=setTimeout(pollBadges,5000);return;}
+ badgePolling=true;const id=user.id,controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),10000);
+ try{
+  const d=await api('/api/notifications/summary','GET',undefined,{signal:controller.signal});
+  if(user?.id!==id||d.viewerId!==id)return;
+  const signature=JSON.stringify([d.direct.unread,d.direct.requests,d.reports.unread,d.lfg.unread,d.discussions.unread,d.events.unread]);
+  badgeInterval=signature===badgeSignature?Math.min(badgeInterval*2,30000):5000;badgeSignature=signature;
+  $('#direct').textContent='Сообщения'+(d.direct.unread?' · '+d.direct.unread:'')+(d.direct.requests?' · запросы: '+d.direct.requests:'');
+  $('#reports').textContent='Жалобы'+(d.reports.unread?' · решений: '+d.reports.unread:'');
+  $('#lfg').textContent='Найти команду'+(d.lfg.unread?' · '+d.lfg.unread:'');
+  $('#notifications').textContent='Ответы'+(d.discussions.unread?' · '+d.discussions.unread:'');
+  $('#events').textContent='События'+(d.events.unread?' · '+d.events.unread:'');
+ }catch{badgeInterval=Math.min(badgeInterval*2,60000);}
+ finally{clearTimeout(deadline);badgePolling=false;badgeTimer=setTimeout(pollBadges,badgeInterval);}
+}
+document.addEventListener('visibilitychange',()=>{clearTimeout(badgeTimer);if(!document.hidden){badgeInterval=5000;pollBadges();}});
+badgeTimer=setTimeout(pollBadges,5000);
 
 
 
 
-document.addEventListener('click',event=>{const form=document.querySelector('[data-post-edit-form],[data-guide-edit],[data-guide-create]');if(form&&event.target.closest('button')&&!form.contains(event.target)&&[...form.querySelectorAll('input,textarea,select')].some(el=>el.tagName==='SELECT'?el.value!==([...el.options].find(o=>o.defaultSelected)||el.options[0])?.value:el.value!==el.defaultValue)&&!confirm('Уйти из редактора? Несохранённые изменения будут потеряны.')){event.preventDefault();event.stopImmediatePropagation();}},true);
+document.addEventListener('click',event=>{
+ const form=document.querySelector('#profile,[data-post-edit-form],[data-guide-edit],[data-guide-create]'),button=event.target.closest('button');
+ if(!form||!button||form.contains(button))return;
+ if(form.id==='profile'&&!button.matches('.primary-nav button,#reports,#notifications,#guestJoin,[data-nav],[data-open],[data-player],[data-home-compose],[data-search-open],[data-home-create-event],[data-home-create-group],[data-home-event],[data-home-group],[data-clear-image],[data-logout]'))return;
+ if(unsavedEditor()&&!confirm('Уйти из редактора? Несохранённые изменения будут потеряны.')){event.preventDefault();event.stopImmediatePropagation();}
+},true);
 
-window.addEventListener('beforeunload',event=>{const form=document.querySelector('[data-post-edit-form],[data-guide-edit],[data-guide-create]');if(form&&[...form.querySelectorAll('input,textarea,select')].some(el=>el.tagName==='SELECT'?el.value!==([...el.options].find(o=>o.defaultSelected)||el.options[0])?.value:el.value!==el.defaultValue)){event.preventDefault();event.returnValue='';}});
+window.addEventListener('beforeunload',event=>{if(unsavedEditor()){event.preventDefault();event.returnValue='';}});
 document.addEventListener('input',event=>{const form=event.target.closest('[data-guide-create],[data-guide-edit]');if(form)guideUI.draw(form);});
 
 document.addEventListener('click',async event=>{

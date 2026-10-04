@@ -14,8 +14,10 @@ export function backupKey(value) {
 function checkDatabase(path) {
   const db = new DatabaseSync(path, { readOnly: true });
   try {
-    if (db.prepare('PRAGMA user_version').get().user_version !== 19) throw Error('Backup requires matching schema 19.');
+    const schema=db.prepare('PRAGMA user_version').get().user_version;
+    if (![19,20].includes(schema)) throw Error('Backup requires supported schema 19 or 20.');
     if (db.prepare('PRAGMA integrity_check').get().integrity_check !== 'ok' || db.prepare('PRAGMA foreign_key_check').all().length) throw Error('Invalid backup database.');
+    return schema;
   } finally { db.close(); }
 }
 
@@ -28,7 +30,7 @@ export async function createBackup(sourcePath, destination, key) {
   try {
     const snapshot = join(temporary, 'snapshot.sqlite');
     await backup(source, snapshot);
-    checkDatabase(snapshot);
+    const schema=checkDatabase(snapshot);
     const nonce = randomBytes(12), header = Buffer.concat([magic, nonce]);
     const cipher = createCipheriv('aes-256-gcm', key, nonce);
     cipher.setAAD(header);
@@ -38,7 +40,7 @@ export async function createBackup(sourcePath, destination, key) {
     await pipeline(createReadStream(snapshot), cipher, createWriteStream(destination, { flags: 'r+', start: header.length }));
     const append = await open(destination, 'a');
     try { await append.writeFile(cipher.getAuthTag()); } finally { await append.close(); }
-    return { bytes: (await stat(destination)).size, schema: 19 };
+    return { bytes: (await stat(destination)).size, schema };
   } catch (error) {
     if (ownsOutput) rmSync(destination, { force: true });
     throw error;
@@ -63,13 +65,13 @@ export async function restoreBackup(archive, destination, key) {
     decipher.setAAD(header); decipher.setAuthTag(tag);
     const restored = join(temporary, 'restored.sqlite');
     await pipeline(createReadStream(archive, { start: 20, end: size - 17 }), decipher, createWriteStream(restored, { flags: 'wx', mode: 0o600 }));
-    checkDatabase(restored);
+    const schema=checkDatabase(restored);
     const db = new DatabaseSync(restored);
     try {
       // Old cookies and already-used recovery codes must not revive on rollback.
       db.exec('BEGIN; DELETE FROM sessions; DELETE FROM recovery_codes; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);');
     } finally { db.close(); }
     linkSync(restored, destination);
-    return { schema: 19, sessionsRevoked: true, recoveryCodesRevoked: true };
+    return { schema, sessionsRevoked: true, recoveryCodesRevoked: true };
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 }

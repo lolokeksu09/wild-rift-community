@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 19) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 20) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -257,6 +257,40 @@ export function openDatabase(path) {
     ) STRICT;
     PRAGMA user_version=19; COMMIT;`);
 
+  if (version < 20) {
+    // Rebuild the CHECK constraint, preserving report IDs and all child records.
+    db.exec('PRAGMA foreign_keys=OFF;');
+    try {
+      transaction(db,()=>{
+        const sequence=db.prepare("SELECT seq FROM sqlite_sequence WHERE name='reports'").get()?.seq||0;
+        db.exec(`CREATE TABLE reports_next (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, reporter_id TEXT NOT NULL REFERENCES users(id),
+          kind TEXT NOT NULL CHECK(kind IN ('direct','club','post','comment','profile')),
+          message_id INTEGER, target_id TEXT NOT NULL,
+          sender_id TEXT NOT NULL REFERENCES users(id), snapshot TEXT NOT NULL, reason TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','upheld','dismissed')),
+          decision_note TEXT NOT NULL DEFAULT '', moderator_id TEXT REFERENCES users(id), created_at INTEGER NOT NULL,
+          decision_seen INTEGER NOT NULL DEFAULT 0 CHECK(decision_seen IN (0,1)),
+          UNIQUE(reporter_id,kind,target_id)
+        ) STRICT;
+        INSERT INTO reports_next SELECT id,reporter_id,kind,message_id,CAST(message_id AS TEXT),sender_id,snapshot,reason,status,decision_note,moderator_id,created_at,decision_seen FROM reports;
+        DROP TABLE reports;
+        ALTER TABLE reports_next RENAME TO reports;
+        CREATE INDEX reports_reporter ON reports(reporter_id,status,decision_seen);
+        CREATE INDEX direct_messages_unread ON direct_messages(conversation_id,id,sender_id);
+        CREATE TABLE moderation_actions (
+          report_id INTEGER PRIMARY KEY REFERENCES reports(id), actor_id TEXT NOT NULL REFERENCES users(id),
+          action TEXT NOT NULL CHECK(action IN ('remove-post','remove-comment','hide-profile')),
+          note TEXT NOT NULL, created_at INTEGER NOT NULL
+        ) STRICT;
+        PRAGMA user_version=20;`);
+        db.prepare("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='reports'").run(sequence);
+        db.prepare("INSERT INTO sqlite_sequence(name,seq) SELECT 'reports',? WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='reports')").run(sequence);
+        if(db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Report migration integrity check failed.');
+      });
+    } catch(error) {db.close();throw error;}
+    finally {if(db.isOpen)db.exec('PRAGMA foreign_keys=ON;');}
+  }
   return db;
 }
 export function transaction(db, fn) {

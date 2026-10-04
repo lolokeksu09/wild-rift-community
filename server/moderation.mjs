@@ -1,20 +1,33 @@
 import {fail,text} from './security.mjs';
 import {transaction} from './database.mjs';
-export function moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds}){
+import {imageAttached} from './media.mjs';
+export function moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds,postFor}){
  if(!path.startsWith('/api/reports')&&!path.startsWith('/api/moderation'))return false;
  if(!user)fail(401,'Войди в аккаунт.');
  const get=(q,...p)=>db.prepare(q).get(...p),all=(q,...p)=>db.prepare(q).all(...p),run=(q,...p)=>db.prepare(q).run(...p);
+ const profileSnapshot=p=>{
+  const {riotId,riotVisible,demoBot,...game}=JSON.parse(p.game_profile||'{}');
+  return JSON.stringify({name:p.name,handle:p.handle,bio:p.bio,gameProfile:{...game,...(riotVisible?{riotId}: {})}});
+ };
  if(path==='/api/reports'&&method==='POST'){
-  const kind=body.kind,id=body.messageId,reason=text(body.reason,'Причина',3,1000);
-  if(!['direct','club'].includes(kind)||!Number.isSafeInteger(id)||id<1)fail(422,'Некорректное сообщение.');
+  const kind=body.kind,id=body.targetId??body.messageId,reason=text(body.reason,'Причина',3,1000);
+  if(!['direct','club','post','comment','profile'].includes(kind)||(kind==='profile'?typeof id!=='string'||!id||id.length>80:!Number.isSafeInteger(id)||id<1))fail(422,'Некорректный объект жалобы.');
   let message;
   if(kind==='direct')message=get(`SELECT m.* FROM direct_messages m JOIN direct_conversations c ON c.id=m.conversation_id WHERE m.id=? AND (c.user_low=? OR c.user_high=?)`,id,user.id,user.id);
-  else message=get(`SELECT m.* FROM messages m JOIN memberships s ON s.club_id=m.club_id WHERE m.id=? AND s.user_id=? AND s.status='member'`,id,user.id);
-  if(!message||message.sender_id===user.id)fail(404,'Сообщение недоступно для жалобы.');
+  else if(kind==='club')message=get(`SELECT m.* FROM messages m JOIN memberships s ON s.club_id=m.club_id WHERE m.id=? AND s.user_id=? AND s.status='member'`,id,user.id);
+  else if(kind==='post'){
+   const p=postFor(id,user);message={sender_id:p.author_id,body:p.title+'\n'+p.body};
+  }else if(kind==='comment'){
+   const c=get('SELECT * FROM comments WHERE id=?',id);if(c){postFor(c.post_id,user);message={sender_id:c.author_id,body:c.body};}
+  }else{
+   const p=get('SELECT * FROM users WHERE id=? AND profile_visible=1',id);
+   if(p)message={sender_id:p.id,body:profileSnapshot(p)};
+  }
+  if(!message||message.sender_id===user.id||get('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',user.id,message.sender_id,message.sender_id,user.id))fail(404,'Объект недоступен для жалобы.');
   const result=transaction(db,()=>{
-   const old=get('SELECT id FROM reports WHERE reporter_id=? AND kind=? AND message_id=?',user.id,kind,id);
+   const old=get('SELECT id FROM reports WHERE reporter_id=? AND kind=? AND target_id=?',user.id,kind,String(id));
    if(old)return {id:old.id,replayed:true};
-   const r=run(`INSERT INTO reports(reporter_id,kind,message_id,sender_id,snapshot,reason,created_at) VALUES(?,?,?,?,?,?,?)`,user.id,kind,id,message.sender_id,message.body,reason,now());return {id:Number(r.lastInsertRowid),replayed:false};
+   const r=run(`INSERT INTO reports(reporter_id,kind,message_id,target_id,sender_id,snapshot,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`,user.id,kind,kind==='profile'?null:id,String(id),message.sender_id,message.body,reason,now());return {id:Number(r.lastInsertRowid),replayed:false};
   });send(result.replayed?200:201,result);return true;
  }
  const appealRoute=path.match(/^\/api\/reports\/(\d+)\/appeal(\/read)?$/);
@@ -47,13 +60,44 @@ export function moderationRoutes({db,user,path,method,body,url,send,now,moderato
  }
  if(path==='/api/reports'&&method==='GET'){
   const raw=url.searchParams.get('before');if(raw!==null&&(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw))))fail(422,'Некорректный курсор.');
-  const rows=all('SELECT r.id,r.kind,r.message_id,r.reason,r.status,r.decision_note,r.decision_seen,r.created_at,a.reason AS appeal_reason,a.status AS appeal_status,a.note AS appeal_note,a.decision_seen AS appeal_seen FROM reports r LEFT JOIN report_appeals a ON a.report_id=r.id WHERE r.reporter_id=? AND r.id<? ORDER BY r.id DESC LIMIT 101',user.id,Number(raw??Number.MAX_SAFE_INTEGER));const reports=rows.slice(0,100);
+  const rows=all('SELECT r.id,r.kind,r.message_id,r.target_id,r.reason,r.status,r.decision_note,r.decision_seen,r.created_at,a.reason AS appeal_reason,a.status AS appeal_status,a.note AS appeal_note,a.decision_seen AS appeal_seen,x.action AS applied_action,x.note AS action_note FROM reports r LEFT JOIN report_appeals a ON a.report_id=r.id LEFT JOIN moderation_actions x ON x.report_id=r.id WHERE r.reporter_id=? AND r.id<? ORDER BY r.id DESC LIMIT 101',user.id,Number(raw??Number.MAX_SAFE_INTEGER));const reports=rows.slice(0,100);
   send(200,{viewerId:user.id,reports,next:rows.length>100?reports.at(-1).id:null});return true;
  }
  if(!moderatorIds.includes(user.id))fail(403,'Доступ только модератору сервиса.');
+ const actionRoute=path.match(/^\/api\/moderation\/reports\/(\d+)\/action$/);
+ if(actionRoute&&method==='POST'){
+  const id=Number(actionRoute[1]),note=text(body.note,'Объяснение действия',3,1000);
+  transaction(db,()=>{
+   const r=get('SELECT * FROM reports WHERE id=?',id),a=get('SELECT * FROM report_appeals WHERE report_id=?',id);
+   if(!r)fail(404,'Жалоба не найдена.');
+   if([r.reporter_id,r.sender_id].includes(user.id))fail(403,'Нужно независимое рассмотрение.');
+   if((a?.status||r.status)!=='upheld')fail(409,'Нужно окончательное решение о подтверждённом нарушении.');
+   const action={post:'remove-post',comment:'remove-comment',profile:'hide-profile'}[r.kind];
+   if(!action||body.action!==action)fail(422,'Действие недоступно для этой жалобы.');
+   const old=get('SELECT * FROM moderation_actions WHERE report_id=?',id);
+   if(old){if(old.actor_id===user.id&&old.action===action&&old.note===note)return;fail(409,'Действие уже выполнено.');}
+   if(r.kind==='post'){
+    const p=get('SELECT * FROM posts WHERE id=?',Number(r.target_id));
+    if(p&&p.title+'\n'+p.body!==r.snapshot)fail(409,'Публикация изменилась после жалобы. Проверь актуальный материал через управление клубом.');
+    run('DELETE FROM posts WHERE id=?',Number(r.target_id));
+    if(p?.image_id&&!imageAttached(db,p.image_id))run('DELETE FROM media WHERE id=?',p.image_id);
+   }else if(r.kind==='comment'){
+    const c=get('SELECT body FROM comments WHERE id=?',Number(r.target_id));
+    if(c&&c.body!==r.snapshot)fail(409,'Комментарий изменился после жалобы.');
+    // Keep replies, but remove references to the deleted parent and its context.
+    run('UPDATE comments SET parent_id=NULL WHERE parent_id=?',Number(r.target_id));
+    run('DELETE FROM comments WHERE id=?',Number(r.target_id));
+   }else{
+    const p=get('SELECT * FROM users WHERE id=?',r.target_id);
+    if(p?.profile_visible&&profileSnapshot(p)!==r.snapshot)fail(409,'Профиль изменился после жалобы. Проверь актуальное описание.');
+    run('UPDATE users SET profile_visible=0 WHERE id=?',r.target_id);
+   }
+   run('INSERT INTO moderation_actions VALUES(?,?,?,?,?)',id,user.id,action,note,now());
+  });send(200,{ok:true});return true;
+ }
  if(path==='/api/moderation/reports'&&method==='GET'){
   const raw=url.searchParams.get('before');if(raw!==null&&(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw))))fail(422,'Некорректный курсор.');
-  const reports=all('SELECT r.*,a.reason AS appeal_reason,a.status AS appeal_status,a.note AS appeal_note FROM reports r LEFT JOIN report_appeals a ON a.report_id=r.id WHERE r.id<? ORDER BY r.id DESC LIMIT 51',Number(raw??Number.MAX_SAFE_INTEGER));
+  const reports=all('SELECT r.*,a.reason AS appeal_reason,a.status AS appeal_status,a.note AS appeal_note,x.action AS applied_action,x.note AS action_note FROM reports r LEFT JOIN report_appeals a ON a.report_id=r.id LEFT JOIN moderation_actions x ON x.report_id=r.id WHERE r.id<? ORDER BY r.id DESC LIMIT 51',Number(raw??Number.MAX_SAFE_INTEGER));
   const page=reports.slice(0,50);send(200,{reports:page,next:reports.length>50?page.at(-1).id:null});return true;
  }
  const appealDecision=path.match(/^\/api\/moderation\/reports\/(\d+)\/appeal-decision$/);
