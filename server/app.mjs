@@ -64,6 +64,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
   moderatorIds = [...moderatorIds];
   const db = openDatabase(databasePath);
   db.function('wr_fold',{deterministic:true},fold);
+  db.function('wr_session_ref',{deterministic:true},(userId,hash)=>digest('wr-session:'+userId+':'+hash));
   const dummyPassword = await passwordHash(token());
   const counters = new Map(); let activeAuth = 0, activeUploads = 0;
   const sql = (query, ...params) => db.prepare(query).get(...params);
@@ -104,9 +105,10 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
     if(user && sql('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',user.id,post.author_id,post.author_id,user.id))fail(404,'Публикация недоступна.');
     return post;
   }
-  function newSession(user, previous, res) {
+  function newSession(user, previous, res,mutate=()=>{}) {
     const raw = token(), csrf = token();
     transaction(db, () => {
+      mutate();
       run('DELETE FROM sessions WHERE expires_at<=?', now());
       if (previous) run('DELETE FROM sessions WHERE hash=?', previous.session_hash);
       run('INSERT INTO sessions(hash,user_id,csrf,expires_at) VALUES(?,?,?,?)', digest(raw), user.id, csrf, now() + SESSION_MS);
@@ -190,6 +192,43 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         }
       }
       if (method === 'GET' && path === '/api/me') { send(200, { user: user ? safeUser(user) : null, csrf: user?.csrf || null }); return; }
+      if(path==='/api/sessions'&&method==='GET'){
+        signed(user);let cursor=null;const after=url.searchParams.get('after');
+        if(after!==null){try{cursor=JSON.parse(Buffer.from(after,'base64url').toString('utf8'));}catch{fail(422,'Некорректный курсор.');}
+          if(!Array.isArray(cursor)||cursor.length!==2||!Number.isSafeInteger(cursor[0])||!/^[a-f0-9]{64}$/.test(cursor[1]))fail(422,'Некорректный курсор.');}
+        const list=rows(`SELECT hash,expires_at,wr_session_ref(user_id,hash) id FROM sessions WHERE user_id=? AND expires_at>?
+          ${cursor?'AND (expires_at<? OR (expires_at=? AND wr_session_ref(user_id,hash)>?))':''}
+          ORDER BY expires_at DESC,id ASC LIMIT 101`,user.id,now(),...(cursor?[cursor[0],cursor[0],cursor[1]]:[]));
+        const sessions=list.slice(0,100).map(s=>({id:s.id,expiresAt:s.expires_at,current:s.hash===user.session_hash})),last=sessions.at(-1);
+        send(200,{viewerId:user.id,sessions,next:list.length>100?Buffer.from(JSON.stringify([last.expiresAt,last.id])).toString('base64url'):null});return;
+      }
+      const sessionToRevoke=/^\/api\/sessions\/([a-f0-9]{64})$/.exec(path);
+      if(sessionToRevoke&&method==='DELETE'){
+        const target=sql('SELECT hash FROM sessions WHERE user_id=? AND expires_at>? AND wr_session_ref(user_id,hash)=?',user.id,now(),sessionToRevoke[1]);
+        if(!target)fail(404,'Сеанс недоступен.');
+        run('DELETE FROM sessions WHERE user_id=? AND hash=?',user.id,target.hash);
+        const loggedOut=target.hash===user.session_hash;
+        if(loggedOut)res.setHeader('Set-Cookie',`wr_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`);
+        send(200,{ok:true,loggedOut});return;
+      }
+      if(path==='/api/me/password'&&method==='POST'){
+        rate(`password-change:${user.id}`,5);
+        const oldPassword=passwordValue(body.currentPassword),newPassword=passwordValue(body.newPassword);
+        if(oldPassword===newPassword)fail(422,'Новый пароль должен отличаться от текущего.');
+        if(activeAuth>=4)fail(429,'Сервер занят. Повтори чуть позже.');activeAuth++;
+        try{
+          if(!await passwordMatches(oldPassword,user.password))fail(401,'Неверный текущий пароль.');
+          const hash=await passwordHash(newPassword),current=session(req);
+          if(!current||current.id!==user.id||current.csrf!==user.csrf||current.password!==user.password)fail(403,'Сеанс изменился. Войди снова.');
+          const result=newSession(current,null,res,()=>{
+            const fresh=session(req);
+            if(!fresh||fresh.id!==user.id||fresh.csrf!==user.csrf||fresh.password!==user.password)fail(403,'Сеанс изменился. Войди снова.');
+            if(run('UPDATE users SET password=? WHERE id=? AND password=?',hash,user.id,user.password).changes!==1)fail(403,'Пароль уже изменился. Войди снова.');
+            run('DELETE FROM sessions WHERE user_id=?',user.id);run('DELETE FROM recovery_codes WHERE user_id=?',user.id);
+          });send(200,{...result,recoveryCodesRevoked:true});
+        }finally{activeAuth--;}
+        return;
+      }
       if (method === 'GET' && path === '/api/recovery-codes') {
         signed(user);
         send(200, { remaining: sql('SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id=?', user.id).n }); return;
