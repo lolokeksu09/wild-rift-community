@@ -31,3 +31,17 @@ APK: app/build/outputs/apk/debug/app-debug.apk. Debug-подпись време�
 MainActivity создаёт зависимости. ui/ содержит Compose/тему, features/ — ViewModel/UiState, data/ — модели/парсер/API/Repository. Сеансов и приватного дискового кеша в A01 нет. Только GET; TLS проверяется штатно, переходы HTTP запрещены.
 
 Следующий этап после проверки A01 — [A02](../docs/android/ROADMAP.md): безопасный вход и общий аккаунт.
+
+## APK в GitHub Releases
+
+Владелец 05.10.2026 поручил сразу выкладывать готовые новые APK в Releases без повторного подтверждения. Пилотные сборки публикуются как prerelease; это не перевод сервера в новую версию и не подтверждение проверки на устройстве.
+
+[Скачать 0.1.0-preview](https://github.com/lolokeksu09/wild-rift-community/releases/tag/android-v0.1.0-preview): APK в Assets. Репозиторий приватный; требуется GitHub-аккаунт с доступом. SHA256 и ограничения записаны в описании версии.
+
+После сборки, lint и существенных тестов создать уникальные versionName/versionCode и тег `android-v<версия>-preview`, подготовить честные release notes с исходным commit и фактическими проверками. До постоянной подписи публиковать только preview. Для PowerShell из корня репозитория:
+
+```powershell
+.\tools\publish-android-preview.ps1 -ApkPath <путь-к-APK> -Tag <android-vX.Y.Z-preview> -SourceCommit <полный-SHA-кода-APK> -NotesPath <путь-к-описанию>
+```
+
+Скрипт использует существующий GitHub-вход через Git credential helper, не сохраняет и не печатает токен. Создаёт draft, загружает APK, сверяет серверный SHA256 и размер, затем публикует prerelease. Другой файл под существующим тегом не заменяет. При сбое проверять оставшийся draft; не создавать дубль и не удалять предыдущие версии. После публикации дать пользователю ссылку и обновить STATUS.md. Новая публикация preview сама по себе не запускает deployment сервера.
