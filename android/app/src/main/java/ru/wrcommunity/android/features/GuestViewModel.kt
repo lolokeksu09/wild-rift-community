@@ -30,6 +30,7 @@ class GuestViewModel(private val saved: SavedStateHandle, private val repo: Gues
     private var catalogVersion = 0
     private var clubVersion = 0
     private var postVersion = 0
+    private var lastAccountBoundary = 0L
     init {
         catalog()
         saved.get<String>("clubId")?.let { loadClub(it) }
@@ -124,5 +125,15 @@ class GuestViewModel(private val saved: SavedStateHandle, private val repo: Gues
         val next=if(mutable.value.screen==2)1 else 0
         if(mutable.value.screen==2){postJob?.cancel();postVersion++;change { it.copy(post=Load()) };saved.remove<Long>("postId")}
         saved["screen"]=next;change { it.copy(screen=next) }
+    }
+    fun resetForAccountChange(boundary:Long) {
+        if(lastAccountBoundary==boundary)return
+        lastAccountBoundary=boundary
+        catalogJob?.cancel();clubJob?.cancel();postJob?.cancel()
+        catalogVersion++;clubVersion++;postVersion++
+        saved.remove<String>("clubId");saved.remove<Long>("postId");saved["screen"]=0
+        val current=mutable.value
+        mutable.value=GuestState(query=current.query,tag=current.tag,sort=current.sort)
+        catalog()
     }
 }

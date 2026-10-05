@@ -44,7 +44,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun CommunityApp(model: GuestViewModel, api: CommunityApi) {
+@Composable fun CommunityApp(model: GuestViewModel, api: CommunityApi, accountName:String?=null) {
     val state by model.state.collectAsStateWithLifecycle()
     val catalogScroll=rememberLazyListState()
     val clubScroll=rememberSaveable(state.club.data?.club?.id, saver=LazyListState.Saver){ LazyListState() }
@@ -54,7 +54,7 @@ import java.util.Locale
             navigationIcon={ if(state.screen>0) IconButton(onClick=model::back){
                 Icon(Icons.AutoMirrored.Filled.ArrowBack,contentDescription="Назад")
             }},
-            actions={ Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surfaceVariant,modifier=Modifier.padding(end=16.dp)){ Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.PersonOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text("Гость",style=MaterialTheme.typography.labelLarge)} } }) }
+            actions={ Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surfaceVariant,modifier=Modifier.padding(end=16.dp)){ Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.PersonOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text(accountName ?: "Гость",style=MaterialTheme.typography.labelLarge,maxLines=1)} } }) }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).imePadding()) {
             AnimatedContent(targetState=state.screen,transitionSpec={
@@ -117,7 +117,7 @@ import java.util.Locale
             items(catalog.page.items,key={it.id}) { club -> ClubCard(club,api){ model.openClub(club.id) } }
             if(state.catalog.next!=null)item { More(state.catalog.moreBusy,"Ещё клубы"){model.catalog(more=true)} }
         }
-        item { Text("Гостевой просмотр открытых клубов. Вход и переписка появятся в следующих обновлениях.",
+        item { Text("Здесь открытые клубы. Аккаунт доступен в разделе «Профиль»; участие и переписка появятся в следующих обновлениях.",
             style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
@@ -218,7 +218,7 @@ import java.util.Locale
                     }
                 }
             }
-            item{Text("Сейчас доступно чтение. Возможность отвечать появится после добавления входа.",
+            item{Text("Сейчас доступно чтение. Возможность отвечать появится в следующем обновлении клубов.",
                 style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
         }
     }

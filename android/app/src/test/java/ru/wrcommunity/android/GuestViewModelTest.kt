@@ -59,6 +59,14 @@ class GuestViewModelTest {
         assertNull(model.state.value.post.data)
         assertTrue(model.state.value.post.error!!.denied)
     }
+    @Test fun accountSwitchClearsPostRouteAndComments()=runTest(dispatcher) {
+        val saved=SavedStateHandle();val model=GuestViewModel(saved,Repository());advanceUntilIdle()
+        model.openClub("club-1");advanceUntilIdle();model.openPost(1);advanceUntilIdle()
+        assertNotNull(model.state.value.post.data)
+        model.resetForAccountChange(1);advanceUntilIdle()
+        assertNull(model.state.value.post.data);assertNull(model.state.value.club.data)
+        assertEquals(0,model.state.value.screen);assertNull(saved.get<String>("clubId"));assertNull(saved.get<Long>("postId"))
+    }
     @Test fun backCancelsPendingPostAndKeepsCatalog()=runTest(dispatcher) {
         val repo=Repository();val pending=CompletableDeferred<Page<Comment>>()
         repo.commentAction={pending.await()}

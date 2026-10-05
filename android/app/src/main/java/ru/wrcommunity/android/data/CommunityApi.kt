@@ -12,11 +12,13 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 class ApiException(val status: Int, message: String) : IOException(message)
 class CommunityApi(origin: String, private val client: OkHttpClient = defaultClient(),
-                   allowLoopbackForTests: Boolean = false) {
+                   allowLoopbackForTests: Boolean = false, private val sessions: SessionCookies? = null) {
     private val base: HttpUrl = origin.toHttpUrl().also {
         require(it.username.isEmpty() && it.password.isEmpty() && it.encodedPath == "/" && it.query == null && it.fragment == null)
         require(it.scheme == "https" || (allowLoopbackForTests && it.scheme == "http" && it.host in listOf("localhost", "127.0.0.1")))
@@ -24,17 +26,25 @@ class CommunityApi(origin: String, private val client: OkHttpClient = defaultCli
     companion object {
         fun defaultClient() = OkHttpClient.Builder()
             .connectTimeout(12, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS)
-            .callTimeout(25, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
+            .callTimeout(25, TimeUnit.SECONDS).retryOnConnectionFailure(false)
+            .followRedirects(false).followSslRedirects(false).build()
     }
     private fun identifier(id: String): String {
         require(Regex("[-a-zA-Z0-9_]{1,80}").matches(id))
         return id
     }
-    private suspend fun request(path: String, query: Map<String, String> = emptyMap()): ByteArray {
+    private suspend fun request(path: String, query: Map<String, String> = emptyMap(),
+                                method: String = "GET", payload: JSONObject? = null, csrf: String? = null): ByteArray {
         val url = base.newBuilder().addPathSegments(path).apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()
-        val request = Request.Builder().url(url).header("Accept", if(path.startsWith("api/media/")) "image/webp" else "application/json").get().build()
+        val request = Request.Builder().url(url).header("Accept", if(path.startsWith("api/media/")) "image/webp" else "application/json").apply {
+            if(method=="GET") get() else {
+                header("Origin",base.toString().removeSuffix("/"));header("X-Community-Request","1")
+                if(csrf!=null) header("X-CSRF-Token",csrf)
+                method(method,(payload ?: JSONObject()).toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            }
+        }.build()
         return suspendCancellableCoroutine { continuation ->
-            val call = client.newCall(request)
+            val call = (sessions?.client(client) ?: client).newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) { if (!continuation.isCancelled) continuation.resumeWithException(e) }
@@ -75,4 +85,9 @@ class CommunityApi(origin: String, private val client: OkHttpClient = defaultCli
     suspend fun comments(id: Long, before: String?) = JsonModels.comments(request("api/posts/$id/comments",
         before?.let { mapOf("before" to it) } ?: emptyMap()).toString(Charsets.UTF_8))
     suspend fun image(id: String) = request("api/media/${identifier(id)}")
+    suspend fun account(path:String="api/me",method:String="GET",payload:JSONObject?=null,csrf:String?=null):JSONObject {
+        require(path in setOf("api/me","api/login","api/register","api/logout","api/logout-all","api/recover",
+            "api/me/password","api/recovery-codes","api/sessions") || Regex("api/sessions/[a-f0-9]{64}").matches(path))
+        return JSONObject(request(path,method=method,payload=payload,csrf=csrf).toString(Charsets.UTF_8))
+    }
 }
