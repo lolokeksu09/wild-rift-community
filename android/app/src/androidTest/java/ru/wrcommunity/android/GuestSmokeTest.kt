@@ -35,21 +35,27 @@ class GuestSmokeTest {
                 api.posts(club.id,null).items.firstOrNull()?.let{club to it}
             } ?: error("The real server needs an accessible club and post for guest smoke testing.")
         }
-        awaitText(selection.first.name)
+        rule.waitUntil(45_000) { rule.onAllNodesWithText("Открытые клубы ·", substring=true).fetchSemanticsNodes().isNotEmpty() }
         awaitText("Найди свою компанию")
         capture("01-catalog")
         rule.onNodeWithText("Поиск клубов").performTextInput(selection.first.name)
         rule.onNodeWithContentDescription("Найти клубы").performClick()
+        rule.waitUntil(45_000) { rule.onAllNodesWithText("Открытые клубы ·", substring=true).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("catalog-list").performScrollToNode(hasText(selection.first.name))
+        rule.onNodeWithText(selection.first.name).performClick()
         awaitText(selection.first.name)
-        rule.onNodeWithText(selection.first.name).performScrollTo().performClick()
-        awaitText("Публикации")
         capture("02-club")
-        rule.onNodeWithText(selection.second.title).performScrollTo().performClick()
-        awaitText("Обсуждение")
+        rule.onNodeWithTag("club-list").performScrollToNode(hasText(selection.second.title))
+        rule.onNodeWithText(selection.second.title).performClick()
+        awaitText(selection.second.title)
         capture("03-post")
+        rule.onNodeWithTag("post-list").performScrollToNode(hasText("Обсуждение"))
+        rule.onNodeWithText("Обсуждение").assertIsDisplayed()
         rule.onNodeWithContentDescription("Назад").performClick()
-        awaitText("Публикации")
+        rule.waitUntil(20_000) { rule.onAllNodesWithTag("club-list").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithContentDescription("Назад").performClick()
+        rule.waitUntil(20_000) { rule.onAllNodesWithTag("catalog-list").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("catalog-list").performScrollToNode(hasText("Найди свою компанию"))
         awaitText("Найди свою компанию")
         try {
             shell("settings put system font_scale 2.0")

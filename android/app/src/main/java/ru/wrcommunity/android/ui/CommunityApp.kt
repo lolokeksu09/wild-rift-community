@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -73,7 +74,7 @@ import java.util.Locale
 @Composable private fun CatalogScreen(state: GuestState, model: GuestViewModel, scroll: LazyListState, api: CommunityApi) {
     val keyboard=LocalSoftwareKeyboardController.current
     LaunchedEffect(state.catalog.busy){ if(state.catalog.busy) scroll.scrollToItem(0) }
-    LazyColumn(state=scroll,modifier=Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),
+    LazyColumn(state=scroll,modifier=Modifier.fillMaxSize().testTag("catalog-list"),contentPadding=PaddingValues(16.dp),
         verticalArrangement=Arrangement.spacedBy(16.dp)) {
         item {
             Text("Найди свою компанию",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
@@ -134,7 +135,7 @@ import java.util.Locale
     }
 }
 @Composable private fun ClubScreen(load: Load<ClubContent>, model: GuestViewModel, scroll: LazyListState, api: CommunityApi) {
-    LazyColumn(state=scroll,modifier=Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),
+    LazyColumn(state=scroll,modifier=Modifier.fillMaxSize().testTag("club-list"),contentPadding=PaddingValues(16.dp),
         verticalArrangement=Arrangement.spacedBy(16.dp)) {
         if(load.busy)item{Loading()}
         load.error?.let { item{ErrorCard(it){model.loadClub(more=load.data!=null)}} }
@@ -188,7 +189,7 @@ import java.util.Locale
             }
         }
     }
-    LazyColumn(modifier=Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
+    LazyColumn(modifier=Modifier.fillMaxSize().testTag("post-list"),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
         if(load.busy)item{Loading()}
         load.error?.let{item{ErrorCard(it){model.loadPost(more=load.data!=null)}}}
         load.data?.let { content ->
