@@ -1,17 +1,33 @@
-# Android-клиент
+# Android · гостевой клиент 0.1.0-preview
 
-Статус: подготовка структуры, без Gradle-проекта и APK. Основной путь — Kotlin + Jetpack Compose, один app-модуль.
+Один app-модуль Kotlin/Compose. Реальные HTTPS-запросы к существующему серверу: каталог открытых клубов → клуб → пост и комментарии. Поиск, темы, сортировка, страницы, изображения/просмотр фото, состояния ошибок и возврат.
 
-Начать с [A01](../docs/android/STATUS.md). [Архитектура](../docs/android/ARCHITECTURE.md), [дизайн](../docs/android/DESIGN_SYSTEM.md), [экраны](../docs/android/SCREENS.md), [API](../docs/android/API_CONTRACT.md).
+Вход, отправка, личные сообщения и push ещё не реализованы. Название временное; applicationId ru.wrcommunity.android.preview предназначен для пилота.
 
-## Окружение первого этапа
+## Сборка
 
-На машине подготовки обнаружены JDK 17 и Android SDK/adb; наличие инструментов не подтверждает совместимость будущей сборки. На A01 выбрать совместимую стабильную связку Android Gradle Plugin, Gradle Wrapper, Kotlin, Compose BOM и JDK по официальным требованиям. Закрепить версии; не использовать динамические + или alpha без обоснования.
+JDK 17, Gradle Wrapper 8.14.3, AGP 8.11.1, Kotlin/Compose compiler 2.2.0, Compose BOM 2025.06.01; compile/target SDK 36, minSdk 26 (Android 8). Выбрана стабильная совместимая матрица, а не динамические latest: [требования AGP](https://developer.android.com/build/releases/agp-8-11-0-release-notes). Обновления библиотек и lint-предупреждения отслеживаются отдельно.
 
-В репозитории появятся settings.gradle.kts, build.gradle.kts, gradle.properties, wrapper и app/. Коммитить Wrapper и исходники. local.properties, ключи подписи и сборки остаются вне Git. applicationId для теста зафиксировать как временный до выбора публичного имени; minSdk, compileSdk, targetSdk указать с обоснованием.
+Указать SDK через ANDROID_HOME либо локальный local.properties с sdk.dir (не коммитить). Из android/:
 
-## Проверка готовности
+```text
+gradlew.bat assembleDebug assembleDebugAndroidTest lintDebug testDebugUnitTest
+```
 
-После появления проекта выполнить через Wrapper: assembleDebug, lintDebug и подходящие unit-тесты; затем установить APK на устройство/эмулятор и пройти гостевой сценарий. Записать версии, команды, устройство, результат, ограничения и путь APK. Эти проверки пока не выполнялись — клиента ещё нет.
+Linux/macOS: ./gradlew вместо gradlew.bat. Gradle distributionSha256Sum и SHA-256 Wrapper JAR закреплены по официальным контрольным суммам.
 
-Постоянная подпись выпуска, магазин и политика данных — отдельные этапы. Не использовать debug-подпись как постоянную релизную.
+APK: app/build/outputs/apk/debug/app-debug.apk. Debug-подпись временная, не постоянная релизная. После подключения своего устройства: adb install -r app/build/outputs/apk/debug/app-debug.apk.
+
+## Проверки
+
+8 unit-тестов: курсоры/демо-маркеры/null поля, кодирование поисковых запросов, запрет cleartext и чужого redirect, устаревший поиск, повтор страницы, отзыв доступа и возврат во время загрузки.
+
+[Android CI](../.github/workflows/android.yml) собирает APK, lint/tests и запускает инструментальный гостевой сценарий на API 35. Smoke-тест читает настоящий сервер, выбирает существующий открытый клуб с постом, проверяет путь и возврат, снимает экраны и проверяет 200% текста. Он зависит от доступности сервера и публичного контента; не изменяет пользовательские данные.
+
+Локальная установка пока не подтверждена: Windows-эмулятор не загрузился в этой среде. Итог CI/установки и ограничения отражаются в [STATUS](../docs/android/STATUS.md). TalkBack, реальный телефон, minimum API 26 и плавность движения ещё требуют ручной проверки.
+
+## Устройство кода
+
+MainActivity создаёт зависимости. ui/ содержит Compose/тему, features/ — ViewModel/UiState, data/ — модели/парсер/API/Repository. Сеансов и приватного дискового кеша в A01 нет. Только GET; TLS проверяется штатно, переходы HTTP запрещены.
+
+Следующий этап после проверки A01 — [A02](../docs/android/ROADMAP.md): безопасный вход и общий аккаунт.
