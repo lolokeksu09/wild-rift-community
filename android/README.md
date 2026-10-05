@@ -38,6 +38,8 @@ MainActivity создаёт зависимости. ui/ содержит Compose
 
 [Скачать 0.1.0-preview](https://github.com/lolokeksu09/wild-rift-community/releases/tag/android-v0.1.0-preview): APK в Assets. Репозиторий приватный; требуется GitHub-аккаунт с доступом. SHA256 и ограничения записаны в описании версии.
 
+Текущий [APK 0.2.0-preview](https://github.com/lolokeksu09/wild-rift-community/releases/tag/android-v0.2.0-preview) добавляет аккаунт и профиль. Оба выпуска сохраняются; сертификат локальных APK совпадает, фактическое обновление телефона ещё требует проверки.
+
 После сборки, lint и существенных тестов создать уникальные versionName/versionCode и тег `android-v<версия>-preview`, подготовить честные release notes с исходным commit и фактическими проверками. До постоянной подписи публиковать только preview. Для PowerShell из корня репозитория:
 
 ```powershell
