@@ -18,6 +18,8 @@ class GuestContractTest {
         assertEquals("opaque_+/=",catalog.page.next)
         assertEquals(12,catalog.page.items.single().bots)
         assertTrue(catalog.page.items.single().isDemo)
+        val comments=JsonModels.comments("""{"comments":[{"id":1,"author_name":"Бот","body":"Ответ","isBot":1}],"next":null}""")
+        assertTrue(comments.items.single().isBot)
     }
     @Test fun unicodeQueryAndOpaqueCursorAreEncodedWithoutCredentialHeaders()=runBlocking {
         val server=MockWebServer();server.start(java.net.InetAddress.getByName("127.0.0.1"),0)

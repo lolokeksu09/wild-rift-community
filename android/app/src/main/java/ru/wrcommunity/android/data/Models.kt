@@ -15,6 +15,11 @@ data class Catalog(val page: Page<Club>, val tags: List<String>, val total: Int)
 object JsonModels {
     private fun JSONObject.optional(key: String): String? =
         if (isNull(key)) null else get(key).toString().takeIf { it.isNotBlank() }
+    private fun JSONObject.flag(key: String): Boolean = when(val value=opt(key)) {
+        is Boolean -> value
+        is Number -> value.toInt()==1
+        else -> false
+    }
     private fun JSONArray.strings() = List(length()) { getString(it) }
     private fun <T> JSONArray.mapObjects(parse: (JSONObject) -> T): List<T> =
         List(length()) { parse(getJSONObject(it)) }
@@ -39,7 +44,7 @@ object JsonModels {
     fun comments(raw: String): Page<Comment> {
         val o = JSONObject(raw)
         return Page(o.getJSONArray("comments").mapObjects {
-            Comment(it.getLong("id"), it.getString("author_name"), it.getString("body"), it.optBoolean("isBot"))
+            Comment(it.getLong("id"), it.getString("author_name"), it.getString("body"), it.flag("isBot"))
         }, o.optional("next"))
     }
 }
