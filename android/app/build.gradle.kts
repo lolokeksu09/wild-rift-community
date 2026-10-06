@@ -10,8 +10,8 @@ android {
         applicationId = "ru.wrcommunity.android.preview"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0-preview"
+        versionCode = 3
+        versionName = "0.3.0-preview"
         buildConfigField("String", "API_ORIGIN", "\"https://139.100.205.135\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -47,3 +47,4 @@ dependencies {
     testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 }
+

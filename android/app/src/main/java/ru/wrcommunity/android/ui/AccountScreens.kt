@@ -32,23 +32,31 @@ import java.time.format.DateTimeFormatter
 
 @Composable fun AccountCommunityApp(guest:GuestViewModel,account:AccountViewModel,api:CommunityApi) {
     val state by account.state.collectAsStateWithLifecycle()
+    var welcome by rememberSaveable { mutableStateOf(true) }
+    var authMode by rememberSaveable { mutableStateOf("login") }
+    val guestState by guest.state.collectAsStateWithLifecycle()
     var profile by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(state.boundary){guest.resetForAccountChange(state.boundary)}
+    BackHandler(!welcome && !profile && guestState.screen==0){welcome=true}
     BackHandler(profile){profile=false}
     val activity=LocalActivity.current
     DisposableEffect(profile){
         if(profile)activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         onDispose{activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)}
     }
+    if(welcome){
+        WelcomeScreen(state.user?.name,onExplore={welcome=false;profile=false},onAccount={mode->authMode=mode;welcome=false;profile=true;account.refresh()})
+        return
+    }
     Scaffold(bottomBar={NavigationBar {
         NavigationBarItem(selected=!profile,onClick={profile=false;account.clearCodes()},icon={Icon(Icons.Default.Groups,null)},label={Text("Клубы")})
         NavigationBarItem(selected=profile,onClick={profile=true;account.refresh()},icon={Icon(Icons.Default.PersonOutline,null)},label={Text("Профиль")})
     }}){padding->Box(Modifier.fillMaxSize().padding(padding)){
-        if(profile)AccountScreen(state,account) else CommunityApp(guest,api,state.user?.handle)
+        if(profile)AccountScreen(state,account,authMode) else CommunityApp(guest,api,state.user?.handle)
     }}
 }
 
-@Composable internal fun AccountScreen(state:AccountState,model:AccountViewModel) {
+@Composable internal fun AccountScreen(state:AccountState,model:AccountViewModel,initialMode:String="login") {
     val keyboard=LocalSoftwareKeyboardController.current
     LaunchedEffect(state.notice){if(state.notice!=null)keyboard?.hide()}
     LazyColumn(Modifier.fillMaxSize().imePadding().testTag("account-list"),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -56,7 +64,7 @@ import java.time.format.DateTimeFormatter
         if(!state.ready)item{CircularProgressIndicator()}
         state.error?.let{item{MessageCard(it)}}
         state.notice?.let{item{MessageCard(it)}}
-        if(state.user==null && state.ready)item{SignInForm(state,model)}
+        if(state.user==null && state.ready)item{SignInForm(state,model,initialMode)}
         state.user?.let{user->
             item{Text("@${user.handle}",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.titleLarge)}
             item{ProfileForm(user,state.busy,model)}
@@ -74,8 +82,8 @@ import java.time.format.DateTimeFormatter
         visualTransformation=if(secret)PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
         shape=RoundedCornerShape(16.dp))
 }
-@Composable private fun SignInForm(state:AccountState,model:AccountViewModel) {
-    var mode by rememberSaveable{mutableStateOf("login")}
+@Composable private fun SignInForm(state:AccountState,model:AccountViewModel,initialMode:String) {
+    var mode by rememberSaveable{mutableStateOf(initialMode)}
     var handle by rememberSaveable{mutableStateOf("")}
     var name by rememberSaveable{mutableStateOf("")}
     var password by remember{mutableStateOf("")}
@@ -165,3 +173,4 @@ import java.time.format.DateTimeFormatter
         confirmButton={TextButton(onClick={confirm=null;when(action){"all"->model.logout(true);"local"->model.forget();"codes"->model.codes(password);else->model.revoke(action)}}){Text("Подтвердить")}},
         dismissButton={TextButton(onClick={confirm=null}){Text("Отмена")}})}
 }
+
