@@ -42,3 +42,19 @@ test('HTML metadata, status and sitemap enforce privacy and escape stored text',
  assert.equal((await get('/account')).r.headers.get('x-robots-tag'),'noindex, nofollow');
  assert.equal((await get('/posts/'+post)).r.headers.get('cache-control'),'no-store');
 });
+test('replacement patterns in stored text stay literal in server HTML',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'wr-pages-dollar-')),file=join(dir,'db.sqlite'),app=await createApp({databasePath:file});
+ const origin=await app.listen(),db=openDatabase(file);t.after(async()=>{db.close();await app.close();rmSync(dir,{recursive:true,force:true});});
+ const {escapeHTML}=await import('../pages.mjs');
+ const name="Имя $& $' $`",bio='Био $1 $$ $`',clubName="Клуб $' $&",description='Описание $` $<x>',title="Гайд $` $' $& $1 $$ конец",body="Текст $' $`";
+ db.prepare('INSERT INTO users(id,handle,name,bio,password,created_at,profile_visible) VALUES(?,?,?,?,?,0,1)').run('author','author',name,bio,'unused');
+ db.prepare('INSERT INTO clubs(id,owner_id,name,description,access,created_at) VALUES(?,?,?,?,?,0)').run('open','author',clubName,description,'open');
+ const post=db.prepare('INSERT INTO posts(club_id,author_id,title,body,created_at) VALUES(?,?,?,?,0)').run('open','author',title,body).lastInsertRowid;
+ const baseline=await (await fetch(origin+'/rules')).text(),count=(html,re)=>(html.match(re)||[]).length;
+ for(const [path,heading,text] of [['/posts/'+post,title,body],['/players/author',name,bio],['/clubs/open',clubName,description],["/missing$&$'",'Страница не найдена',null]]){
+  const html=await (await fetch(origin+path)).text(),full=escapeHTML(heading+' — Wild Rift Community');
+  for(const re of [/<script /g,/<title>/g,/<\/head>/g,/<!doctype/gi,/<meta name="description"/g])assert.equal(count(html,re),count(baseline,re),path+' '+re);
+  assert(html.includes(`<title>${full}</title>`),path);assert(html.includes(`<meta property="og:title" content="${full}">`),path);
+  if(text)assert(html.includes(`<meta name="description" content="${escapeHTML(text)}">`),path);
+ }
+});

@@ -91,10 +91,9 @@ if test -n "${DEMO_OWNER_HANDLE:-}" && ! test -f "$root/demo-owner-assigned-v1";
   ownership_copy="before-demo-ownership-$(date -u +%Y%m%dT%H%M%S%N).sqlite"
   docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$root/data:/data" "$image" node server/demo-ownership-cli.mjs /data/community.sqlite "$DEMO_OWNER_HANDLE" --apply "/data/$ownership_copy" </dev/null
   mv "$root/data/$ownership_copy" "$backup/$ownership_copy"
-  owner_assigned=true
-fi
-if test -n "${DEMO_OWNER_HANDLE:-}"; then
+  # Verify only the release that assigns ownership; the owner may transfer clubs later.
   docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$root/data:/data" "$image" node server/demo-ownership-cli.mjs /data/community.sqlite "$DEMO_OWNER_HANDLE" --check </dev/null
+  owner_assigned=true
 fi
 cat "$bundle/compose.yaml" > compose.yaml
 # Leave Caddy serving maintenance during app startup.
