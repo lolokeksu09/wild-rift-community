@@ -43,8 +43,8 @@ class WelcomeUiTest {
         compose.setContent { CommunityTheme { WelcomeScreen(null,{},{}) } }
         val screen=compose.onNodeWithTag("welcome-fullscreen").getUnclippedBoundsInRoot()
         val cover=compose.onNodeWithTag("welcome-cover-0").getUnclippedBoundsInRoot()
-        assertEquals(screen.width.value,cover.width.value,1f)
-        assertEquals(screen.height.value,cover.height.value,1f)
+        assertEquals((screen.right-screen.left).value,(cover.right-cover.left).value,1f)
+        assertEquals((screen.bottom-screen.top).value,(cover.bottom-cover.top).value,1f)
         compose.onNodeWithTag("welcome-step-0").assertIsSelected()
         compose.onNodeWithTag("welcome-previous").assertIsNotEnabled()
         capture("intro-0")
