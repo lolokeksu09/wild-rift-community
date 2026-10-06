@@ -1,5 +1,8 @@
 package ru.wrcommunity.android
 
+import android.graphics.Bitmap
+import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -11,14 +14,22 @@ import ru.wrcommunity.android.ui.WelcomeScreen
 
 class WelcomeUiTest {
     @get:Rule val compose=createComposeRule()
+    private fun capture(name:String) {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val directory=File(instrumentation.targetContext.getExternalFilesDir(null),"screenshots").apply{mkdirs()}
+        instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
+            File(directory,"$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }
+            bitmap.recycle()
+        }
+    }
     @Test fun guestActionsSelectTheirDestination(){
         var destination=""
         compose.setContent { CommunityTheme { WelcomeScreen(null,{destination="clubs"},{destination=it}) } }
-        compose.onNodeWithTag("welcome-explore").performScrollTo().performClick()
+        compose.onNodeWithTag("welcome-explore").performClick()
         compose.runOnIdle { assertEquals("clubs",destination) }
-        compose.onNodeWithTag("welcome-login").performScrollTo().performClick()
+        compose.onNodeWithTag("welcome-login").performClick()
         compose.runOnIdle { assertEquals("login",destination) }
-        compose.onNodeWithTag("welcome-register").performScrollTo().performClick()
+        compose.onNodeWithTag("welcome-register").performClick()
         compose.runOnIdle { assertEquals("register",destination) }
     }
     @Test fun signedSessionOffersContinue(){
@@ -30,20 +41,28 @@ class WelcomeUiTest {
     }
     @Test fun swipeAndButtonsNavigateFourCards(){
         compose.setContent { CommunityTheme { WelcomeScreen(null,{},{}) } }
+        val screen=compose.onNodeWithTag("welcome-fullscreen").getUnclippedBoundsInRoot()
+        val cover=compose.onNodeWithTag("welcome-cover-0").getUnclippedBoundsInRoot()
+        assertEquals(screen.width.value,cover.width.value,1f)
+        assertEquals(screen.height.value,cover.height.value,1f)
         compose.onNodeWithTag("welcome-step-0").assertIsSelected()
         compose.onNodeWithTag("welcome-previous").assertIsNotEnabled()
-        compose.onNodeWithTag("welcome-pager").performScrollTo().performTouchInput {
+        capture("intro-0")
+        compose.onNodeWithTag("welcome-pager").performTouchInput {
             swipeLeft(startX=width*.8f,endX=width*.2f,durationMillis=500)
         }
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("welcome-step-1") and isSelected()).fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()
         compose.onNodeWithTag("welcome-step-1").assertIsSelected()
-        compose.onNodeWithTag("welcome-next").performScrollTo().performClick()
+        capture("intro-1")
+        compose.onNodeWithTag("welcome-next").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("welcome-step-2").assertIsSelected()
+        capture("intro-2")
         compose.onNodeWithTag("welcome-step-3").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("welcome-step-3").assertIsSelected()
+        capture("intro-3")
         compose.onNodeWithTag("welcome-next").assertIsNotEnabled()
         compose.onNodeWithTag("welcome-previous").performClick()
         compose.waitForIdle()
@@ -52,7 +71,7 @@ class WelcomeUiTest {
     @Test fun selectedCardSurvivesRestoration(){
         val restoration=StateRestorationTester(compose)
         restoration.setContent { CommunityTheme { WelcomeScreen(null,{},{}) } }
-        compose.onNodeWithTag("welcome-step-2").performScrollTo().performClick()
+        compose.onNodeWithTag("welcome-step-2").performClick()
         compose.waitForIdle()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithTag("welcome-step-2").assertIsSelected()

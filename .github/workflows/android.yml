@@ -91,7 +91,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          released=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name=="android-v0.4.0-preview" and .draft==false) | .id')
+          released=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name=="android-v0.5.0-preview" and .draft==false) | .id')
           if test -n "$released"; then echo 'released=true' >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
@@ -136,36 +136,39 @@ jobs:
           ram-size: 2048M
           emulator-boot-timeout: 300
           disable-animations: false
-          script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ru.wrcommunity.android.WelcomeUiTest
+          script: |
+            cd android && ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ru.wrcommunity.android.WelcomeUiTest
+            adb pull /sdcard/Android/data/ru.wrcommunity.android.preview/files/screenshots android/app/build/device-screenshots
       - name: Publish verified APK
         if: steps.guard.outputs.released != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          apk=wr-community-0.4.0-preview.apk
-          tag=android-v0.4.0-preview
+          apk=wr-community-0.5.0-preview.apk
+          tag=android-v0.5.0-preview
           cp android/app/build/outputs/apk/debug/app-debug.apk "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           sha256sum "$apk" > SHA256SUMS.txt
           hash=$(sha256sum "$apk" | cut -d ' ' -f1)
-          cp docs/android/RELEASE_0_4.md release-notes.md
+          cp docs/android/RELEASE_0_5.md release-notes.md
           printf '\nИсходный commit APK: `%s`.\nSHA256: `%s`.\n' "$GITHUB_SHA" "$hash" >> release-notes.md
           if gh release view "$tag" >/dev/null 2>&1; then
             echo 'Version already exists; do not overwrite a published APK.'
             exit 1
           fi
-          gh release create "$tag" --target "$GITHUB_SHA" --title 'Android 0.4.0-preview — свайпаемые карточки' --notes-file release-notes.md --prerelease --draft
+          gh release create "$tag" --target "$GITHUB_SHA" --title 'Android 0.5.0-preview — полноэкранные обложки' --notes-file release-notes.md --prerelease --draft
           gh release upload "$tag" "$apk" SHA256SUMS.txt
-          uploaded=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name=="android-v0.4.0-preview") | .assets[] | select(.name=="wr-community-0.4.0-preview.apk") | .digest')
+          uploaded=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name=="android-v0.5.0-preview") | .assets[] | select(.name=="wr-community-0.5.0-preview.apk") | .digest')
           test "$uploaded" = "sha256:$hash"
           gh release edit "$tag" --draft=false
       - name: Save build reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: android-0.4-build
+          name: android-0.5-build
           path: |
             android/app/build/outputs/apk/debug/*.apk
             android/app/build/reports/
+            android/app/build/device-screenshots/
           retention-days: 14

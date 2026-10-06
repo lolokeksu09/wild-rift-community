@@ -35,7 +35,7 @@ class GuestSmokeTest {
                 api.posts(club.id,null).items.firstOrNull()?.let{club to it}
             } ?: error("The real server needs an accessible club and post for guest smoke testing.")
         }
-        rule.onNodeWithTag("welcome-explore").performScrollTo().performClick()
+        rule.onNodeWithTag("welcome-explore").performClick()
         rule.waitUntil(45_000) { rule.onAllNodesWithText("Открытые клубы ·", substring=true).fetchSemanticsNodes().isNotEmpty() }
         awaitText("Найди свою компанию")
         capture("01-catalog")

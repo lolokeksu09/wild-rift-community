@@ -10,8 +10,8 @@ android {
         applicationId = "ru.wrcommunity.android.preview"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.4.0-preview"
+        versionCode = 5
+        versionName = "0.5.0-preview"
         buildConfigField("String", "API_ORIGIN", "\"https://139.100.205.135\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
