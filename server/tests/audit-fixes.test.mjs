@@ -41,8 +41,6 @@ test('public reports enforce object access, snapshot privacy, retries and indepe
   const results=await Promise.all([b.call('/api/reports','POST',payload),b.call('/api/reports','POST',payload)]);
   assert.deepEqual(results.map(r=>r.status).sort(),[200,201]);reports.push(results[0].id);
  }
- await x.call('/api/blocks','POST',{userId:a.id});
- for(const [kind,targetId] of [['post',post],['comment',comment],['profile',a.id]])assert.equal((await x.call('/api/reports','POST',{kind,targetId,reason:'Нарушение правил'})).status,404);
  await f.restart([m.id,a.id]);
  const queue=(await m.call('/api/moderation/reports')).reports;
  assert.equal(queue.length,3);assert(!queue.find(r=>r.kind==='profile').snapshot.includes('SecretName'));assert(!queue.find(r=>r.kind==='profile').snapshot.includes('demoBot'));
@@ -150,4 +148,43 @@ test('ownership CLI defaults to read-only, creates verified backup before apply 
   const backup=new DatabaseSync(copy,{readOnly:true});assert.notEqual(backup.prepare('SELECT owner_id FROM clubs LIMIT 1').get().owner_id,'human');assert.deepEqual(backup.prepare('PRAGMA foreign_key_check').all(),[]);backup.close();
   assert.notEqual(run('--apply',copy).status,0);
  }finally{db?.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+test('blocks do not prevent reports or hide club content from its staff',async t=>{
+ const f=await fixture(t),[owner,victim,mod,author]=f.clients;
+ const club=(await owner.call('/api/clubs','POST',{name:'Staff',description:'',access:'open'})).id;
+ for(const c of [victim,mod,author])await c.call('/api/clubs/'+club+'/join','POST',{});
+ await owner.call('/api/clubs/'+club+'/moderators','PUT',{userId:mod.id});
+ await author.call('/api/me','PATCH',{profileVisible:true});
+ const post=(await author.call('/api/clubs/'+club+'/posts','POST',{title:'Spam',body:'Spam body',clientId:'staff-spam-post-0001'})).id;
+ const parent=(await author.call('/api/posts/'+post+'/comments','POST',{body:'Spam comment',clientId:'staff-spam-comm-0001'})).id;
+ const reply=(await victim.call('/api/posts/'+post+'/comments','POST',{body:'Ответ',parentId:parent,clientId:'staff-reply-comm-0001'})).id;
+ const dm=await author.call('/api/direct','POST',{handle:'reporter',body:'Оскорбление',clientId:'staff-direct-msg-0001'});
+ const message=(await victim.call('/api/direct')).conversations.find(c=>c.id===dm.id).first_message_id;
+ // Either side may block first; the reporter keeps the right to report what they could access.
+ for(const [blocker,target] of [[victim,author],[author,victim]]){
+  await blocker.call('/api/blocks','POST',{userId:target.id});
+  for(const [kind,targetId] of [['direct',message],['post',post],['comment',parent],['profile',author.id]])assert([200,201].includes((await victim.call('/api/reports','POST',{kind,targetId,reason:'Нарушение правил'})).status),kind);
+  await blocker.call('/api/blocks','DELETE',{userId:target.id});
+ }
+ for(const staff of [owner,mod])await author.call('/api/blocks','POST',{userId:staff.id});
+ for(const staff of [owner,mod]){
+  assert((await staff.call('/api/clubs/'+club+'/posts')).posts.some(p=>p.id===post));
+  assert.equal((await staff.call('/api/posts/'+post)).status,200);
+  const list=await staff.call('/api/posts/'+post+'/comments');assert.equal(list.canModerate,true);assert.equal(list.clubId,club);assert(list.comments.some(c=>c.id===parent));
+  // Reading is exempt for moderation; interacting with the blocker stays closed.
+  assert.equal((await staff.call('/api/posts/'+post+'/comments','POST',{body:'x',clientId:'staff-blocked-comm-01'+staff.id.slice(0,3)})).status,404);
+ }
+ assert.equal((await victim.call('/api/posts/'+post+'/comments')).canModerate,false);
+ assert.equal((await victim.call('/api/clubs/'+club+'/comments/'+parent,'DELETE',{})).status,403);
+ assert.equal((await mod.call('/api/clubs/'+club+'/pins/'+post,'PUT',{})).status,200);
+ assert.equal((await mod.call('/api/clubs/'+club+'/comments/'+parent,'DELETE',{})).status,200);
+ assert.equal((await mod.call('/api/clubs/'+club+'/comments/'+parent,'DELETE',{})).status,404);
+ const kept=(await victim.call('/api/posts/'+post+'/comments')).comments;assert(!kept.some(c=>c.id===parent));assert.equal(kept.find(c=>c.id===reply).parent_id,null);
+ assert((await owner.call('/api/clubs/'+club+'/audit')).entries.some(e=>e.action==='comment-remove'&&e.target_id===String(parent)));
+ assert.equal((await owner.call('/api/clubs/'+club+'/posts/'+post,'DELETE',{})).status,200);
+ // A staff member's own block still hides that author's new content.
+ await author.call('/api/blocks','DELETE',{userId:owner.id});await owner.call('/api/blocks','POST',{userId:author.id});
+ const next=(await author.call('/api/clubs/'+club+'/posts','POST',{title:'Next',body:'Body',clientId:'staff-spam-post-0002'})).id;
+ assert(!(await owner.call('/api/clubs/'+club+'/posts')).posts.some(p=>p.id===next));
 });

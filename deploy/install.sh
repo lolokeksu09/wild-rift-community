@@ -84,7 +84,8 @@ if [[ "${SEED_DEMO_COMMUNITY:-0}" == 1 ]] && ! test -f "$root/demo-seeded-v1"; t
 fi
 if test -n "${DEMO_OWNER_HANDLE:-}" && ! test -f "$root/demo-owner-assigned-v1"; then
   [[ "$DEMO_OWNER_HANDLE" =~ ^[a-zA-Z0-9_]{3,24}$ ]]
-  test -f "$root/data/community.sqlite" && "$had_data"
+  test -f "$root/data/community.sqlite"
+  "$had_data"
   # Validate on a migrated isolated cold copy before changing live ownership.
   docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$backup/data:/backup:ro" "$image" node --input-type=module -e "import {cpSync} from 'node:fs';import {openDatabase} from './server/database.mjs';import {demoOwnershipPlan} from './server/demo-ownership.mjs';cpSync('/backup','/tmp/check',{recursive:true});const d=openDatabase('/tmp/check/community.sqlite');try{const p=demoOwnershipPlan(d,process.argv[1]);console.log(JSON.stringify({owner:p.target.handle,clubs:p.clubs.length}));}finally{d.close();}" "$DEMO_OWNER_HANDLE" </dev/null
   migration=true

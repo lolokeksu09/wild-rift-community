@@ -3,7 +3,7 @@ import {randomUUID,createHmac} from 'node:crypto';
 import {fail,text,digest} from './security.mjs';
 import {transaction} from './database.mjs';
 import {clubSummary} from './club-summary.mjs';
-import {unblocked,postExtras,attemptId} from './discussions.mjs';
+import {unblocked,postExtras,attemptId,staffOf} from './discussions.mjs';
 
 export function clubRole(db,club,user){
  if(!user||db.prepare('SELECT status FROM memberships WHERE club_id=? AND user_id=?').get(club.id,user.id)?.status!=='member')return null;
@@ -26,8 +26,15 @@ function publicClub(db,club,user){
 export function clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFor}){
  const removePost=path.match(/^\/api\/clubs\/([\w-]+)\/posts\/(\d+)$/);
  if(removePost){
-  if(method!=='DELETE')fail(405,'Метод не поддерживается.');const club=clubStaff(db,removePost[1],user),postId=number(Number(removePost[2]),1,Number.MAX_SAFE_INTEGER,'публикацию');if(db.prepare('SELECT club_id FROM posts WHERE id=?').get(postId)?.club_id!==club.id)fail(404,'Публикация не из этого клуба.');const post=postFor(postId,user,true);
+  if(method!=='DELETE')fail(405,'Метод не поддерживается.');const club=clubStaff(db,removePost[1],user),postId=number(Number(removePost[2]),1,Number.MAX_SAFE_INTEGER,'публикацию');if(db.prepare('SELECT club_id FROM posts WHERE id=?').get(postId)?.club_id!==club.id)fail(404,'Публикация не из этого клуба.');const post=postFor(postId,user,true,true);
   transaction(db,()=>{db.prepare('DELETE FROM posts WHERE id=?').run(post.id);if(post.image_id&&!imageAttached(db,post.image_id))db.prepare('DELETE FROM media WHERE id=?').run(post.image_id);audit(db,user,club.id,String(post.id),'post-remove',now);});send(200,{ok:true});return true;
+ }
+ const removeComment=path.match(/^\/api\/clubs\/([\w-]+)\/comments\/(\d+)$/);
+ if(removeComment){
+  if(method!=='DELETE')fail(405,'Метод не поддерживается.');const club=clubStaff(db,removeComment[1],user),commentId=number(Number(removeComment[2]),1,Number.MAX_SAFE_INTEGER,'комментарий');
+  const comment=db.prepare('SELECT cm.id FROM comments cm JOIN posts p ON p.id=cm.post_id WHERE cm.id=? AND p.club_id=?').get(commentId,club.id);if(!comment)fail(404,'Комментарий не из этого клуба.');
+  // Keep replies, but remove references to the deleted parent and its context.
+  transaction(db,()=>{db.prepare('UPDATE comments SET parent_id=NULL WHERE parent_id=?').run(comment.id);db.prepare('DELETE FROM comments WHERE id=?').run(comment.id);audit(db,user,club.id,String(comment.id),'comment-remove',now);});send(200,{ok:true});return true;
  }
  const inviteAction=path.match(/^\/api\/club-invites\/(preview|accept)$/);
  const match=path.match(/^\/api\/clubs\/([\w-]+)\/(detail|settings|members|join|leave|decision|ban|kick|unban|moderators|pins|audit|invites|transfer)(?:\/([\w-]+))?$/);
@@ -59,7 +66,7 @@ export function clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFo
   send(200,{club:publicClub(db,club,user),transfer:transfer||null});return true;
  }
  if(action==='pins'&&!extra&&method==='GET'){
-  clubFor(id,user,false);const posts=db.prepare(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id FROM club_pins cp JOIN posts p ON p.id=cp.post_id JOIN users u ON u.id=p.author_id WHERE cp.club_id=:club AND ${unblocked()} ORDER BY cp.created_at DESC,p.id DESC LIMIT 3`).all({club:id,viewer:user?.id||''});send(200,{posts:postExtras(db,posts,user,now)});return true;
+  clubFor(id,user,false);const posts=db.prepare(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id FROM club_pins cp JOIN posts p ON p.id=cp.post_id JOIN users u ON u.id=p.author_id WHERE cp.club_id=:club AND ${unblocked('p',staffOf(db,id,user?.id))} ORDER BY cp.created_at DESC,p.id DESC LIMIT 3`).all({club:id,viewer:user?.id||''});send(200,{posts:postExtras(db,posts,user,now)});return true;
  }
  if(!user)fail(401,'Сначала войди в аккаунт.');
  if(action==='join'||action==='leave'){
@@ -116,7 +123,7 @@ export function clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFo
   }send(200,{ok:true});return true;
  }
  if(action==='pins'&&extra){
-  const postId=number(Number(extra),1,Number.MAX_SAFE_INTEGER,'публикацию');if(get('SELECT club_id FROM posts WHERE id=?',postId)?.club_id!==id)fail(404,'Публикация не из этого клуба.');postFor(postId,user,true);
+  const postId=number(Number(extra),1,Number.MAX_SAFE_INTEGER,'публикацию');if(get('SELECT club_id FROM posts WHERE id=?',postId)?.club_id!==id)fail(404,'Публикация не из этого клуба.');postFor(postId,user,true,true);
   if(!['PUT','DELETE'].includes(method))fail(405,'Метод не поддерживается.');
   transaction(db,()=>{if(method==='PUT'){if(get('SELECT 1 FROM club_pins WHERE post_id=?',postId))return;if(get('SELECT count(*) n FROM club_pins WHERE club_id=?',id).n>=3)fail(409,'Можно закрепить до 3 публикаций.');run('INSERT INTO club_pins VALUES(?,?,?,?)',postId,id,user.id,now());audit(db,user,id,String(postId),'pin',now);}else{if(run('DELETE FROM club_pins WHERE post_id=? AND club_id=?',postId,id).changes)audit(db,user,id,String(postId),'unpin',now);}});send(200,{ok:true});return true;
  }

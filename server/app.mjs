@@ -12,7 +12,7 @@ import {communityMemberRoutes} from './community-members.mjs';
 import {isDemo} from './demo.mjs';
 import {eventRoutes} from './events.mjs';
 import {clubRoutes,clubRole,audit as clubAudit} from './clubs.mjs';
-import { discussionRoutes, postExtras, attemptId, mentions, unblocked } from './discussions.mjs';
+import { discussionRoutes, postExtras, attemptId, mentions, unblocked, staffOf } from './discussions.mjs';
 import { playerRoutes, fold } from './players.mjs';
 import { profileFields, profileView } from './profiles.mjs';
 import { readImage, encodeImage, saveImage, ownedImage, imageAttached } from './media.mjs';
@@ -99,11 +99,13 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
     if (!club || club.owner_id !== user.id) fail(403, 'Действие доступно владельцу клуба.');
     return club;
   }
-  function postFor(id, user, write = false) {
+  // ignoreBlocks: reports and club staff actions. An author's block does not hide a post from its club staff for reading.
+  function postFor(id, user, write = false, ignoreBlocks = false) {
     const post = sql('SELECT * FROM posts WHERE id=?', id);
     if (!post) fail(404, 'Публикация недоступна.');
     clubFor(post.club_id, user, write);
-    if(user && sql('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',user.id,post.author_id,post.author_id,user.id))fail(404,'Публикация недоступна.');
+    if(user && !ignoreBlocks && (sql('SELECT 1 FROM blocks WHERE blocker_id=? AND target_id=?',user.id,post.author_id)
+      || (sql('SELECT 1 FROM blocks WHERE blocker_id=? AND target_id=?',post.author_id,user.id) && (write || !staffOf(db,post.club_id,user.id)))))fail(404,'Публикация недоступна.');
     return post;
   }
   function newSession(user, previous, res,mutate=()=>{}) {
@@ -439,7 +441,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           if (method === 'GET') {
             const before = url.searchParams.get('before') || String(Number.MAX_SAFE_INTEGER);
             if (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before))) fail(422, 'Некорректный курсор.');
-            const result = rows(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id FROM posts p JOIN users u ON u.id=p.author_id WHERE p.club_id=:club AND p.id<:before AND ${unblocked()} ORDER BY p.id DESC LIMIT 21`, {club:id,before:Number(before),viewer:user?.id||''});
+            const result = rows(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id FROM posts p JOIN users u ON u.id=p.author_id WHERE p.club_id=:club AND p.id<:before AND ${unblocked('p',staffOf(db,id,user?.id))} ORDER BY p.id DESC LIMIT 21`, {club:id,before:Number(before),viewer:user?.id||''});
             const more = result.length > 20; const posts = result.slice(0, 20);
             send(200, { posts:postExtras(db,posts,user,now), next: more ? posts.at(-1).id : null }); return;
           }
