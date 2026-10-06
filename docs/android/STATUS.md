@@ -81,3 +81,11 @@
 В Android добавлены четыре карточки на HorizontalPager: объяснение сообщества, игровые интересы, клубы и профиль. Свайп, стрелки, доступные индикаторы, светлый текст и вертикальная прокрутка; PagerState сохраняет выбранную страницу. Вход, регистрация, действующий сеанс и каталог сохраняют прежние переходы. versionCode 4; сервер и данные не изменяются.
 
 [Описание выпуска](RELEASE_0_4.md). Публикация настроена после сборки, lint/JVM-тестов и инструментальных WelcomeUiTest на API 35. На момент фиксации исходников эти проверки ещё не выполнены; результат и наличие APK проверяются в Android Actions и Releases. Ручная установка, TalkBack и API 26 остаются непроверенными. Временная подпись CI может потребовать переустановки и повторного входа.
+
+### Публикация 0.4.0-preview подтверждена
+
+[APK в Releases](https://github.com/lolokeksu09/wild-rift-community/releases/tag/android-v0.4.0-preview) опубликован 06.10.2026: draft=false, prerelease=true; `wr-community-0.4.0-preview.apk`, 17794625 байт, sha256:90a14bcbdf05b1165013e62409d2d163f99406f1f16c6cc34b13d138cab1689c. Исходный commit APK `aeb41a7f0bb06f6fd46c03caaff5e831b594a15a`; последующее обновление этого статуса не меняет APK.
+
+[Android release CI](https://github.com/lolokeksu09/wild-rift-community/actions/runs/37497563384) прошёл assembleDebug, assembleDebugAndroidTest, lintDebug, testDebugUnitTest и 4 WelcomeUiTest на Android 15/API 35 (0 failures/0 skipped). Проверены переходы гостя, действующий сеанс, свайп/стрелки/индикаторы и восстановление страницы. Подпись APK v2 валидна; digest asset совпал с локальным SHA256. [Verify](https://github.com/lolokeksu09/wild-rift-community/actions/runs/37497569462) прошёл серверные, DOM, Docker и Chromium проверки.
+
+Первый тест свайпа проверял страницу сразу после жеста; уточнён видимый участок жеста и добавлено ожидание выбранной страницы, исходная проверка сохранена. Исправлены старые проблемы Android CI: нехватка места для userdata (освобождаются неиспользуемые SDK NDK/.NET только на runner) и раздельные shell команды после cd. Полный Android guest CI в PR выполняется отдельно; на момент записи его результат ещё ожидается. Ручная установка нового APK, TalkBack и API 26 не подтверждены. Временная подпись CI может потребовать переустановки и входа.
