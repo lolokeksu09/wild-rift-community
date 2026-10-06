@@ -1,8 +1,7 @@
 package ru.wrcommunity.android
 
-import android.graphics.Bitmap
 import androidx.test.platform.app.InstrumentationRegistry
-import java.io.File
+import java.io.FileInputStream
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -15,11 +14,12 @@ import ru.wrcommunity.android.ui.WelcomeScreen
 class WelcomeUiTest {
     @get:Rule val compose=createComposeRule()
     private fun capture(name:String) {
-        val instrumentation=InstrumentationRegistry.getInstrumentation()
-        val directory=File(instrumentation.targetContext.getExternalFilesDir(null),"screenshots").apply{mkdirs()}
-        instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
-            File(directory,"$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }
-            bitmap.recycle()
+        val automation=InstrumentationRegistry.getInstrumentation().uiAutomation
+        // Shared Download storage survives AGP uninstalling the test application.
+        for(command in listOf("mkdir -p /sdcard/Download/wr-onboarding","screencap -p /sdcard/Download/wr-onboarding/$name.png")) {
+            automation.executeShellCommand(command).use { descriptor ->
+                FileInputStream(descriptor.fileDescriptor).use { it.readBytes() }
+            }
         }
     }
     @Test fun guestActionsSelectTheirDestination(){

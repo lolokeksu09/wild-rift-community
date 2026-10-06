@@ -62,7 +62,7 @@ jobs:
           disable-animations: false
           script: |
             cd android && ./gradlew --no-daemon connectedDebugAndroidTest
-            adb pull /sdcard/Android/data/ru.wrcommunity.android.preview/files/screenshots android/app/build/device-screenshots
+            adb pull /sdcard/Download/wr-onboarding android/app/build/device-screenshots
       - name: Save APK and validation reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -138,7 +138,7 @@ jobs:
           disable-animations: false
           script: |
             cd android && ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ru.wrcommunity.android.WelcomeUiTest
-            adb pull /sdcard/Android/data/ru.wrcommunity.android.preview/files/screenshots android/app/build/device-screenshots
+            adb pull /sdcard/Download/wr-onboarding android/app/build/device-screenshots
       - name: Publish verified APK
         if: steps.guard.outputs.released != 'true'
         env:
