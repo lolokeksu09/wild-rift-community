@@ -16,7 +16,7 @@ let selectedPlayer=null,playerReturnView='discover',directDraftHandle='';
 let lfgState={},eventState={};
 let chatController = null;
 let authReturn=null;
-let user = null, csrf = null, clubs = [], selectedClub = null, view = inviteToken?'invite':'discover', requestVersion = 0, pendingDelete = null;
+let user = null, csrf = null, clubs = [], selectedClub = null, view = inviteToken?'invite':'welcome', requestVersion = 0, pendingDelete = null;
 
 let memberState={q:'',role:''};
 let clubFilter={q:'',tag:'',scope:'all',sort:'new'};
@@ -33,7 +33,7 @@ function unsavedEditor(){
 function plural(n,one,few,many){const x=Math.abs(n)%100,y=x%10;return n+' '+(x>=11&&x<=14?many:y===1?one:y>=2&&y<=4?few:many);}
 function memberCount(c){const bots=c.bots??clubs.find(x=>x.id===c.id)?.bots??0;return plural(c.members,'участник','участника','участников')+(bots?' · '+plural(bots,'бот','бота','ботов'):'');}
 function parseRoute(path){
- const routes={'/':'discover','/clubs':'clubs','/players':'members','/guides':'guides','/teams':'lfg','/events':'events','/account':'account','/messages':'direct','/notifications':'notifications','/reports':'reports','/saved':'saved','/drafts':'drafts','/search':'search','/rules':'rules'};
+ const routes={'/':'welcome','/feed':'discover','/clubs':'clubs','/players':'members','/guides':'guides','/teams':'lfg','/events':'events','/account':'account','/messages':'direct','/notifications':'notifications','/reports':'reports','/saved':'saved','/drafts':'drafts','/search':'search','/rules':'rules'};
  const clean=path==='/'?path:path.replace(/\/$/,'');if(routes[clean])return {view:routes[clean]};
  const m=/^\/(clubs|posts|players)\/([\w-]{1,80})$/.exec(clean);
  if(!m||(m[1]==='posts'&&!/^\d{1,16}$/.test(m[2])))return null;
@@ -50,7 +50,7 @@ function routePath(){
  if(view==='club')return '/clubs/'+encodeURIComponent(selectedClub);
  if(view==='post'||view==='editPost')return '/posts/'+selectedPost;
  if(view==='player')return '/players/'+encodeURIComponent(selectedPlayer);
- const paths={discover:'/',clubs:'/clubs',members:'/players',guides:'/guides',lfg:'/teams',events:'/events',account:'/account',direct:'/messages',notifications:'/notifications',reports:'/reports',saved:'/saved',drafts:'/drafts',search:'/search',rules:'/rules'};
+ const paths={welcome:'/',discover:'/feed',clubs:'/clubs',members:'/players',guides:'/guides',lfg:'/teams',events:'/events',account:'/account',direct:'/messages',notifications:'/notifications',reports:'/reports',saved:'/saved',drafts:'/drafts',search:'/search',rules:'/rules'};
  let path=paths[view]||'/';
  if(view==='account'&&authReturn?.view==='club')path+='?return='+encodeURIComponent('/clubs/'+authReturn.id);
  return path;
@@ -176,8 +176,12 @@ function postHTML(p) {
   const member=clubs.some(c=>c.id===p.club_id&&c.membership==='member');
   return `<article class="panel ${p.guide?`guide-post ${view==='post'?'guide-expanded':''}`:''}"><div class="post-author">${mediaUI.avatar(p.author_avatar_id,p.author_name)}<div><button type="button" class="author-link" data-player="${esc(p.author_id)}">${esc(p.author_name)}</button> ${p.isBot?'<span class="bot-badge">Бот</span>':''}<small>${esc(new Date(p.created_at).toLocaleString('ru-RU'))}${p.edited_at?` · <span title="${esc(new Date(p.edited_at).toLocaleString('ru-RU'))}">Изменено</span>`:''}</small></div></div>${guideUI?.badge(p.guide)||''}<${view==='post'?'h1':'h3'} class="post-title"><a data-route href="/posts/${p.id}">${esc(p.title)}</a></${view==='post'?'h1':'h3'}>${p.isBot?'<p class="demo-disclosure">Демонстрационная публикация бота. Обсуждение открыто участникам клуба.</p>':''}${postText(p)}${p.guide&&view!=='post'?`<button class="btn quiet" data-guide-open="${p.id}">Читать руководство →</button>`:''}${mediaUI.image(p.image_id,'Изображение к публикации: '+p.title)}${pollUI?.card(p,user,member)||''}<div class="post-utilities">${shareButton('/posts/'+p.id,'Скопировать ссылку на публикацию')}${p.body.length>600?`<span class="reading-time">~${Math.max(1,Math.ceil(p.body.trim().split(/\s+/).length/180))} мин чтения</span>`:''}</div>${discussionUI.actions(p,user,member)}${view==='club'?clubUI.postTools(p,clubs.find(c=>c.id===p.club_id),clubPins.has(p.id),user):''}<div id="comments-${p.id}"></div></article>`;
 }
+function welcomePage(){
+ return `<section class="launch" aria-labelledby="launch-title"><header class="launch-header"><a class="launch-brand" href="/" aria-label="Wild Rift Community — начало"><span class="launch-brand-mark" aria-hidden="true">W</span><span>WILD RIFT<small>COMMUNITY</small></span></a><span class="launch-status"><i aria-hidden="true"></i> ТВОЙ КРУГ В РИФТЕ</span></header><div class="launch-stage"><div class="launch-art" aria-hidden="true"><div class="launch-halo"></div><svg class="launch-emblem" viewBox="0 0 400 400" fill="none"><defs><linearGradient id="launch-gold" x1="70" y1="50" x2="330" y2="350" gradientUnits="userSpaceOnUse"><stop stop-color="#f4dfb5"/><stop offset=".5" stop-color="#c49a61"/><stop offset="1" stop-color="#8574a9"/></linearGradient></defs><circle cx="200" cy="200" r="176"/><circle class="launch-orbit" cx="200" cy="200" r="155" stroke-dasharray="2 14"/><path class="launch-frame" d="M200 51 349 200 200 349 51 200Z"/><path class="launch-crystal" d="m200 100 82 100-82 100-82-100Z"/><path class="launch-rune" d="m147 173 25 78 28-44 28 44 25-78M200 130v43M200 268v13"/><path d="M200 13v19m0 336v19M13 200h19m336 0h19"/><circle cx="200" cy="51" r="4"/><circle cx="349" cy="200" r="4"/><circle cx="200" cy="349" r="4"/><circle cx="51" cy="200" r="4"/></svg><span class="launch-art-label">ХОРОШИЙ МАТЧ. ЛУЧШАЯ КОМПАНИЯ.</span></div><div class="launch-copy"><span class="launch-eyebrow">НЕЗАВИСИМОЕ СООБЩЕСТВО</span><h1 id="launch-title">Твой Рифт.<br><em>Твои люди.</em></h1><p class="launch-description">Найди компанию на следующий матч.<br>Общайся, делись опытом и оставайся<br class="launch-desktop-break"> на связи после игры.</p>${user?`<p class="launch-greeting">С возвращением, <strong>${esc(user.name)}</strong></p><div class="launch-actions"><button class="launch-primary" data-nav="discover">Продолжить <span aria-hidden="true">↗</span></button><button class="launch-secondary" data-nav="clubs">Найти компанию</button></div>`:`<div class="launch-actions"><button class="launch-primary" data-nav="clubs">Найти компанию <span aria-hidden="true">↗</span></button><div class="launch-auth"><button class="launch-secondary" data-auth-mode="login">Войти</button><button class="launch-secondary" data-auth-mode="register">Создать аккаунт</button></div><button class="launch-browse" data-nav="discover">Посмотреть обсуждения <span aria-hidden="true">→</span></button></div>`}<div class="launch-interests"><span>Клубы по интересам</span><i aria-hidden="true">·</i><span>Игра вместе</span><i aria-hidden="true">·</i><span>Общение</span></div></div></div><footer class="launch-footer"><span>Здесь начинается твоя история.</span><button data-nav="rules">Правила сообщества ↗</button></footer></section>`;
+}
 async function render(options={}) {
   const nextRoute=routePath(),routeChanged=renderedRoute!==null&&renderedRoute!==nextRoute;
+  document.body.classList.toggle('launch-mode',view==='welcome');
   syncRoute(options.history!==false);
   updatePageMetadata();
   composerController?.destroy();composerController=null;
@@ -191,12 +195,14 @@ async function render(options={}) {
     $('#main').innerHTML='<section class="panel"><h1>Страница не найдена</h1><p>Проверь ссылку или вернись на главную.</p><button class="btn quiet" data-nav="discover">На главную</button></section>';
     $('#main').setAttribute('aria-busy','false');renderedRoute=nextRoute;return;
   }
-  $('#main').innerHTML='<div class=loading-state role=status>Загружаем сообщество…<div class=skeleton-page aria-hidden=true><div></div><div></div><div></div></div></div>';
+  if(view==='welcome')$('#main').innerHTML=welcomePage();
+  else $('#main').innerHTML='<div class=loading-state role=status>Загружаем сообщество…<div class=skeleton-page aria-hidden=true><div></div><div></div><div></div></div></div>';
   try {
     const session = await api('/api/me');
     if (version !== requestVersion) return;
     if(user?.id!==session.user?.id){lfgState={};eventState={};clubFilter={q:'',tag:'',scope:'all',sort:'new'};directDraftHandle='';composerUI?.reset();searchState={query:'',club:''};guideState={};}
     user = session.user; csrf = session.csrf;
+    if(view==='welcome'){document.body.classList.toggle('guest',!user);$('#main').innerHTML=welcomePage();return;}
     const result = await api('/api/clubs');
     if (version !== requestVersion) return;
     clubCatalog=result;clubs=result.clubs;
@@ -333,6 +339,7 @@ $('#confirmDelete').onclick = async () => { if (!pendingDelete) return; const id
 document.addEventListener('click', async event => {
   const b = event.target.closest('button'); if (!b) return;
   try {
+    if(b.dataset.authMode){authReturn=null;view='account';await render();const form=$('#'+b.dataset.authMode);form?.scrollIntoView?.({block:'center'});form?.querySelector('input')?.focus();return;}
     if(b.dataset.reportObject){
  const reason=prompt('Опиши нарушение (от 3 до 1000 символов).');if(reason===null)return;
  if(reason.trim().length<3||reason.trim().length>1000){notify('Причина должна содержать от 3 до 1000 символов.');return;}
@@ -612,3 +619,4 @@ document.addEventListener('click',async event=>{
    catch{let dialog=$('#shareDialog');if(!dialog){dialog=document.createElement('dialog');dialog.id='shareDialog';dialog.className='share-dialog';dialog.setAttribute('aria-labelledby','shareTitle');dialog.innerHTML='<h2 id="shareTitle">Ссылка на страницу</h2><p class="note">Скопируй ссылку. Закрытое содержимое доступно только участникам.</p><label class="field">Ссылка<input readonly aria-label="Ссылка на страницу"></label><button class="btn quiet" data-share-close>Закрыть</button>';dialog.querySelector('button').onclick=()=>dialog.close();document.body.append(dialog);}dialog.querySelector('input').value=url;dialog.showModal();dialog.querySelector('input').select();}
  }
 });
+

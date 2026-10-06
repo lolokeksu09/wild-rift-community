@@ -11,7 +11,7 @@ try {
  const errors=[];
  // Empty community must remain useful without invented activity.
  const empty=await browser.newContext({viewport:{width:390,height:844}}),ep=await empty.newPage();
- await ep.goto(origin);await ep.locator('.community-hero').waitFor();await ep.screenshot({path:'ui-screenshots/premium-empty-390.png',fullPage:true});
+ await ep.goto(origin+'/feed');await ep.locator('.community-hero').waitFor();await ep.screenshot({path:'ui-screenshots/premium-empty-390.png',fullPage:true});
  await ep.locator('#lfg').click();await ep.getByRole('heading',{name:'Сейчас нет открытых команд'}).waitFor();assert.equal(await ep.locator('#login').count(),0);await empty.close();
  await api('/api/register','POST',{handle:'premium_fixture',name:'Игрок',password:'Premium-local-test-123'});
  const names=['После матча','Школа Рифта','ARAM и разговоры'];
@@ -21,7 +21,7 @@ try {
  await api('/api/events','POST',{clientId:'premium-event-fixture-001',title:'Вечер ARAM с компанией',description:'Играем вместе',mode:'aram',region:'EU',language:'Русский',timezone:'UTC',startsAt:Date.now()+3600000,durationHours:1,roles:['mid','jungle'],ownerRole:'mid'});
  for(const width of [360,390,768,1440]){
    const context=await browser.newContext({viewport:{width,height:width<700?844:1000}}),p=await context.newPage();p.on('pageerror',e=>errors.push(e.message));
-   await p.goto(origin);await p.locator('.feed-entry').waitFor();assert.equal(await p.locator('#notifications').isVisible(),false);assert.equal(await p.locator('#reports').isVisible(),false);
+   await p.goto(origin+'/feed');await p.locator('.feed-entry').waitFor();assert.equal(await p.locator('#notifications').isVisible(),false);assert.equal(await p.locator('#reports').isVisible(),false);
    assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
    assert.equal(await p.locator('.discovery-club').count(),3);
    await p.screenshot({path:`ui-screenshots/premium-home-${width}.png`,fullPage:true});
@@ -35,3 +35,4 @@ try {
  }
  assert.deepEqual(errors,[]);await owner.close();
 }finally{await browser.close();await app.close();}
+
