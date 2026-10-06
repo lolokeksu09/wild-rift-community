@@ -83,6 +83,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      - name: Check existing publication
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          released=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name=="android-v0.3.0-preview" and .draft==false) | .id')
+          if test -n "$released"; then echo 'released=true' >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
           distribution: temurin
@@ -91,6 +98,7 @@ jobs:
         with:
           log-accepted-android-sdk-licenses: false
       - name: Build and validate preview
+        if: steps.guard.outputs.released != 'true'
         run: |
           set -euo pipefail
           echo '7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172  android/gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
@@ -99,6 +107,7 @@ jobs:
           cd android
           ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest lintDebug testDebugUnitTest
       - name: Publish verified APK
+        if: steps.guard.outputs.released != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -117,7 +126,7 @@ jobs:
           fi
           gh release create "$tag" --target "$GITHUB_SHA" --title 'Android 0.3.0-preview — стартовый экран' --notes-file release-notes.md --prerelease --draft
           gh release upload "$tag" "$apk" SHA256SUMS.txt
-          uploaded=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.assets[] | select(.name=="wr-community-0.3.0-preview.apk") | .digest')
+          uploaded=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name=="android-v0.3.0-preview") | .assets[] | select(.name=="wr-community-0.3.0-preview.apk") | .digest')
           test "$uploaded" = "sha256:$hash"
           gh release edit "$tag" --draft=false
       - name: Save build reports
