@@ -86,6 +86,8 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.hash=? AND expires_at>?`, digest(raw), now());
   }
   function signed(user) { if (!user) fail(401, 'Сначала войди в аккаунт.'); return user; }
+  // Read limits key on the proxy-supplied address; auth routes reject a missing one separately.
+  const readerKey = (req, user) => user ? 'user:' + user.id : 'ip:' + (proxyClientHeader ? (isIP(req.headers['x-wr-client-ip'] || '') ? req.headers['x-wr-client-ip'] : 'unknown') : req.socket.remoteAddress);
   function clubFor(id, user, write = false) {
     const club = sql('SELECT * FROM clubs WHERE id=?', id);
     if (!club) fail(404, 'Клуб не найден.');
@@ -136,6 +138,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         if(method==='GET'||method==='HEAD'){
           if(path==='/favicon.ico'){res.writeHead(308,{Location:'/favicon.svg'});res.end();return;}
           if(path==='/robots.txt'||path==='/sitemap.xml'){
+            if(path==='/sitemap.xml')rate('sitemap:'+readerKey(req,null),10);
             const value=path==='/robots.txt'?`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /account\nDisallow: /messages\nDisallow: /notifications\nDisallow: /reports\nDisallow: /saved\nDisallow: /drafts\nDisallow: /search\nSitemap: ${expectedOrigin}/sitemap.xml\n`:sitemap(db,expectedOrigin);
             res.writeHead(200,{'Content-Type':path==='/robots.txt'?'text/plain; charset=utf-8':'application/xml; charset=utf-8'});res.end(method==='HEAD'?undefined:value);return;
           }
@@ -159,6 +162,8 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         res.end(method==='HEAD'?undefined:resource.bytes); return;
       }
       const user = session(req);
+      // Search scans whole tables in a single-threaded server; bound it per account or guest address.
+      if(method==='GET'&&(['/api/posts/search','/api/guides'].includes(path)||(['/api/clubs','/api/community-members','/api/players'].includes(path)&&url.searchParams.get('q'))))rate('search:'+readerKey(req,user),120);
       if(path==='/api/page-metadata'&&method==='GET'){
         const target=url.searchParams.get('path');
         if(!target||target.length>200||!target.startsWith('/')||target.startsWith('//'))fail(422,'Некорректный путь страницы.');
