@@ -205,8 +205,9 @@ function createWelcomeCarousel(){
   current=Math.max(0,Math.min(cards.length-1,index));
   steps.forEach((step,i)=>{if(i===current)step.setAttribute('aria-current','step');else step.removeAttribute('aria-current');});
   cards.forEach((card,i)=>{if(i===current)card.removeAttribute('aria-hidden');else card.setAttribute('aria-hidden','true');});
+  const nextFocused=document.activeElement===next;
   previous.disabled=current===0;next.hidden=current===cards.length-1;
-  if(next.hidden&&document.activeElement===next)track.focus({preventScroll:true});
+  if(next.hidden&&nextFocused)track.focus({preventScroll:true});
   root.querySelector('[data-launch-progress]').textContent='Карточка '+(current+1)+' из '+cards.length+': '+names[current];
   if(scroll){
    destination=current;
