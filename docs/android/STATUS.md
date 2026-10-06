@@ -75,3 +75,9 @@
 [APK в Releases](https://github.com/lolokeksu09/wild-rift-community/releases/tag/android-v0.3.0-preview) опубликован 06.10.2026. GitHub подтвердил draft=false, prerelease=true, uploaded: `wr-community-0.3.0-preview.apk`, 17 778 237 байт, SHA256 `cd210806786665a566d8f92dd4e8cf3e687cfc8702ab7bf6fbcab92089f5d2be`. Исходный commit APK `f093bff020471285029a9a033e15959c40c0b077`; последующее исправление публикации не меняет этот файл.
 
 [Сборка](https://github.com/lolokeksu09/wild-rift-community/actions/runs/37487660733): assembleDebug, assembleDebugAndroidTest, lintDebug и testDebugUnitTest успешно завершились. Проверена подпись v2 и серверный digest загруженного APK. Первый job остановился после загрузки из-за GET draft по неопубликованному тегу; [восстановление публикации](https://github.com/lolokeksu09/wild-rift-community/actions/runs/37488917534) проверило исходный commit, успех validation-step, digest/размер APK и опубликовало тот же draft через release ID. Старые assets не заменялись. Ручная установка, TalkBack и выполнение новых UI-тестов на устройстве не заявляются.
+
+## Карточки знакомства · 06.10.2026 · 0.4.0-preview
+
+В Android добавлены четыре карточки на HorizontalPager: объяснение сообщества, игровые интересы, клубы и профиль. Свайп, стрелки, доступные индикаторы, светлый текст и вертикальная прокрутка; PagerState сохраняет выбранную страницу. Вход, регистрация, действующий сеанс и каталог сохраняют прежние переходы. versionCode 4; сервер и данные не изменяются.
+
+[Описание выпуска](RELEASE_0_4.md). Публикация настроена после сборки, lint/JVM-тестов и инструментальных WelcomeUiTest на API 35. На момент фиксации исходников эти проверки ещё не выполнены; результат и наличие APK проверяются в Android Actions и Releases. Ручная установка, TalkBack и API 26 остаются непроверенными. Временная подпись CI может потребовать переустановки и повторного входа.

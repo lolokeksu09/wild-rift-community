@@ -1,6 +1,7 @@
 package ru.wrcommunity.android
 
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -26,5 +27,31 @@ class WelcomeUiTest {
         compose.onNodeWithText("Продолжить").assertExists()
         compose.onNodeWithTag("welcome-login").assertDoesNotExist()
         compose.onNodeWithTag("welcome-register").assertDoesNotExist()
+    }
+    @Test fun swipeAndButtonsNavigateFourCards(){
+        compose.setContent { CommunityTheme { WelcomeScreen(null,{},{}) } }
+        compose.onNodeWithTag("welcome-step-0").assertIsSelected()
+        compose.onNodeWithTag("welcome-previous").assertIsNotEnabled()
+        compose.onNodeWithTag("welcome-pager").performTouchInput { swipeLeft() }
+        compose.waitForIdle()
+        compose.onNodeWithTag("welcome-step-1").assertIsSelected()
+        compose.onNodeWithTag("welcome-next").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("welcome-step-2").assertIsSelected()
+        compose.onNodeWithTag("welcome-step-3").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("welcome-step-3").assertIsSelected()
+        compose.onNodeWithTag("welcome-next").assertIsNotEnabled()
+        compose.onNodeWithTag("welcome-previous").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("welcome-step-2").assertIsSelected()
+    }
+    @Test fun selectedCardSurvivesRestoration(){
+        val restoration=StateRestorationTester(compose)
+        restoration.setContent { CommunityTheme { WelcomeScreen(null,{},{}) } }
+        compose.onNodeWithTag("welcome-step-2").performScrollTo().performClick()
+        compose.waitForIdle()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithTag("welcome-step-2").assertIsSelected()
     }
 }
