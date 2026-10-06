@@ -48,9 +48,11 @@ test('deploy verifies demo ownership only in the release that assigns it', async
   const start = install.findIndex(line => line.startsWith('if test -n "${DEMO_OWNER_HANDLE:-}" && ! test -f "$root/demo-owner-assigned-v1"; then'));
   const end = install.findIndex((line, i) => i > start && line === 'fi');
   assert(start >= 0 && end > start);
-  const calls = install.map((line, i) => [line, i]).filter(([line]) => line.includes('demo-ownership-cli.mjs'));
-  assert.deepEqual(calls.map(([line]) => /--(apply|check)\b/.exec(line)?.[1]), ['apply', 'check']);
-  for (const [, i] of calls) assert(i > start && i < end);
+  const ownership = /demo-ownership(-cli)?\.mjs|demoOwnershipPlan|transferDemoOwnership/;
+  const calls = install.map((line, i) => [line, i]).filter(([line]) => ownership.test(line));
+  assert.deepEqual(calls.filter(([line]) => line.includes('demo-ownership-cli.mjs')).map(([line]) => /--(apply|check)\b/.exec(line)?.[1]), ['apply', 'check']);
+  for (const [line, i] of calls) { assert(i > start && i < end, line); assert(!line.includes('||'), line); }
+  assert(end < install.findIndex(line => line.startsWith('published=true')));
   const workflow = readFileSync(new URL('../../.github/workflows/vds-deploy.yml', import.meta.url), 'utf8');
-  assert(!workflow.includes('demo-ownership-cli.mjs'));
+  assert(!ownership.test(workflow));
 });

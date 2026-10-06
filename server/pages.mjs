@@ -44,7 +44,7 @@ export function pageMetadata(db,path,user){
 }
 export function pageHTML(template,meta,origin){
  const title=escapeHTML(`${meta.title} — ${brand}`),description=escapeHTML(meta.description),canonical=escapeHTML(origin+meta.path);
- // Replacement functions keep "$&", "$'" and "$`" in stored text literal.
+ // Replacement functions keep "$&", "$`" and "$$" in stored text literal.
  return template.replace(/<title>[^<]*<\/title>/,()=>`<title>${title}</title>`)
  .replace(/<meta name="description" content="[^"]*">/,()=>`<meta name="description" content="${description}">`)
  .replace('</head>',()=>`<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="canonical" href="${canonical}"><meta name="robots" content="${meta.index?'index,follow':'noindex,nofollow'}"><meta property="og:type" content="${meta.type||'website'}"><meta property="og:title" content="${title}"><meta property="og:description" content="${description}"><meta property="og:url" content="${canonical}"><meta property="og:site_name" content="${brand}"></head>`);
