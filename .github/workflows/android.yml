@@ -61,9 +61,8 @@ jobs:
           emulator-boot-timeout: 300
           disable-animations: false
           script: |
-            cd android
-            ./gradlew --no-daemon connectedDebugAndroidTest
-            adb pull /sdcard/Android/data/ru.wrcommunity.android.preview/files/screenshots app/build/device-screenshots
+            cd android && ./gradlew --no-daemon connectedDebugAndroidTest
+            adb pull /sdcard/Android/data/ru.wrcommunity.android.preview/files/screenshots android/app/build/device-screenshots
       - name: Save APK and validation reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -98,6 +97,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle.kts
+            android/gradle/wrapper/gradle-wrapper.properties
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
         with:
           log-accepted-android-sdk-licenses: false

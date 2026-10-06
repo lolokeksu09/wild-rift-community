@@ -32,7 +32,10 @@ class WelcomeUiTest {
         compose.setContent { CommunityTheme { WelcomeScreen(null,{},{}) } }
         compose.onNodeWithTag("welcome-step-0").assertIsSelected()
         compose.onNodeWithTag("welcome-previous").assertIsNotEnabled()
-        compose.onNodeWithTag("welcome-pager").performTouchInput { swipeLeft() }
+        compose.onNodeWithTag("welcome-pager").performScrollTo().performTouchInput {
+            swipeLeft(startX=width*.8f,endX=width*.2f,durationMillis=500)
+        }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("welcome-step-1") and isSelected()).fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()
         compose.onNodeWithTag("welcome-step-1").assertIsSelected()
         compose.onNodeWithTag("welcome-next").performScrollTo().performClick()
