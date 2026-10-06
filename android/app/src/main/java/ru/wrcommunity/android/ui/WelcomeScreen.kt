@@ -27,11 +27,19 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import ru.wrcommunity.android.R
+
+private val welcomeFont=FontFamily(
+    Font(R.font.manrope_medium,FontWeight.Medium),
+    Font(R.font.manrope_extrabold,FontWeight.ExtraBold)
+)
 
 private data class IntroCover(val artwork:Int,val title:String,val body:String)
 private val introCovers=listOf(
@@ -66,17 +74,25 @@ private val introCovers=listOf(
                 Column(Modifier.fillMaxSize().padding(horizontal=28.dp)
                     .padding(top=100.dp,bottom=footerHeight+18.dp),verticalArrangement=Arrangement.Bottom) {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
-                        Text(cover.title,color=white,fontSize=46.sp,lineHeight=48.sp,letterSpacing=(-1.2).sp,
-                            fontWeight=FontWeight.Black,modifier=Modifier.semantics { heading() })
+                        Text(cover.title,color=white,fontSize=44.sp,lineHeight=46.sp,letterSpacing=(-1.4).sp,
+                            fontFamily=welcomeFont,fontWeight=FontWeight.ExtraBold,
+                            style=LocalTextStyle.current.copy(lineBreak=LineBreak.Heading),modifier=Modifier.semantics { heading() })
                         Spacer(Modifier.height(16.dp))
-                        Text(cover.body,color=white.copy(alpha=.84f),fontSize=16.sp,lineHeight=23.sp)
+                        Text(cover.body,color=white.copy(alpha=.84f),fontSize=16.sp,lineHeight=24.sp,fontFamily=welcomeFont,fontWeight=FontWeight.Medium,letterSpacing=(-.2).sp)
                     }
                 }
             }
         }
-        Column(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(start=28.dp,top=14.dp)) {
-            Text("Wild Rift",color=white,fontSize=17.sp,fontWeight=FontWeight.Bold,letterSpacing=(-.3).sp)
-            Text("Community",color=white.copy(alpha=.75f),fontSize=12.sp,letterSpacing=.6.sp)
+        Row(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(start=24.dp,top=16.dp),
+            verticalAlignment=Alignment.CenterVertically) {
+            Image(painterResource(R.drawable.ic_brand),contentDescription=null,modifier=Modifier.size(40.dp))
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text("Wild Rift",color=white,fontFamily=welcomeFont,fontSize=21.sp,lineHeight=24.sp,
+                    fontWeight=FontWeight.ExtraBold,letterSpacing=(-.7).sp)
+                Text("Community",color=Color(0xffdfc18b),fontFamily=welcomeFont,fontSize=11.sp,lineHeight=16.sp,
+                    fontWeight=FontWeight.Medium,letterSpacing=.9.sp)
+            }
         }
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { footerHeightPx=it.height }
             .navigationBarsPadding().padding(horizontal=24.dp).padding(bottom=12.dp),
