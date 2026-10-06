@@ -1,6 +1,7 @@
 import {fail,text} from './security.mjs';
 import {transaction} from './database.mjs';
 import {imageAttached} from './media.mjs';
+import {sanctionFor} from './sanctions.mjs';
 export function moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds,postFor}){
  if(!path.startsWith('/api/reports')&&!path.startsWith('/api/moderation'))return false;
  if(!user)fail(401,'Войди в аккаунт.');
@@ -99,7 +100,8 @@ export function moderationRoutes({db,user,path,method,body,url,send,now,moderato
  if(path==='/api/moderation/reports'&&method==='GET'){
   const raw=url.searchParams.get('before');if(raw!==null&&(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw))))fail(422,'Некорректный курсор.');
   const reports=all('SELECT r.*,a.reason AS appeal_reason,a.status AS appeal_status,a.note AS appeal_note,x.action AS applied_action,x.note AS action_note FROM reports r LEFT JOIN report_appeals a ON a.report_id=r.id LEFT JOIN moderation_actions x ON x.report_id=r.id WHERE r.id<? ORDER BY r.id DESC LIMIT 51',Number(raw??Number.MAX_SAFE_INTEGER));
-  const page=reports.slice(0,50);send(200,{reports:page,next:reports.length>50?page.at(-1).id:null});return true;
+  // Moderators see the author's current escalation before upholding another violation.
+  const page=reports.slice(0,50).map(r=>({...r,senderSanction:sanctionFor(db,r.sender_id,now())}));send(200,{reports:page,next:reports.length>50?page.at(-1).id:null});return true;
  }
  const appealDecision=path.match(/^\/api\/moderation\/reports\/(\d+)\/appeal-decision$/);
  if(appealDecision&&method==='POST'){

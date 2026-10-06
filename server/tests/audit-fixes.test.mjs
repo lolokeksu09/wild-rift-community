@@ -188,3 +188,51 @@ test('blocks do not prevent reports or hide club content from its staff',async t
  const next=(await author.call('/api/clubs/'+club+'/posts','POST',{title:'Next',body:'Body',clientId:'staff-spam-post-0002'})).id;
  assert(!(await owner.call('/api/clubs/'+club+'/posts')).posts.some(p=>p.id===next));
 });
+
+test('confirmed violations escalate account sanctions; mass reports on one object count once',async t=>{
+ const f=await fixture(t),[a,b,m,x]=f.clients;
+ await f.restart([m.id,x.id]);
+ const club=(await a.call('/api/clubs','POST',{name:'Sanctions',description:'',access:'open'})).id;
+ for(const c of [b,m,x])await c.call('/api/clubs/'+club+'/join','POST',{});
+ const posts=[];for(let n=1;n<=5;n++)posts[n]=(await a.call('/api/clubs/'+club+'/posts','POST',{title:'Нарушение '+n,body:'Текст',clientId:'sanction-post-'+String(n).padStart(6,'0')})).id;
+ const violate=async(n,reporters=[b])=>{
+  const post=posts[n];
+  for(const r of reporters){const report=await r.call('/api/reports','POST',{kind:'post',targetId:post,reason:'Нарушение правил'});const mod=r===m?x:m;assert.equal((await mod.call(`/api/moderation/reports/${report.id}/decision`,'POST',{decision:'upheld',note:'Подтверждено'})).status,200);}
+  return post;
+ };
+ await violate(1,[b,m]);
+ // Two reporters on one post are one violation: a warning, no restriction.
+ assert.deepEqual([(await a.call('/api/me')).sanction.level,(await a.call('/api/me')).sanction.violations],['warning',1]);
+ await violate(2);
+ const me=await a.call('/api/me');assert.equal(me.sanction.level,'restricted');assert(me.sanction.until>Date.now()+23*3600000);
+ for(const [path,method,body] of [['/api/clubs/'+club+'/posts','POST',{title:'t',body:'b',clientId:'sanction-post-blocked1'}],['/api/clubs/'+club+'/messages','POST',{body:'x',clientId:'sanction-chat-blocked1'}],['/api/clubs','POST',{name:'New',description:'',access:'open'}],['/api/me','PATCH',{bio:'new'}]])
+  assert.equal((await a.call(path,method,body)).status,403,path);
+ assert.equal((await a.call('/api/me','PATCH',{profileVisible:false})).status,200,'hiding the profile stays possible');
+ assert.equal((await a.call('/api/reports','POST',{kind:'profile',targetId:b.id,reason:'Проверка'})).status,404,'reports stay available (404 = unpublished profile)');
+ const queue=(await m.call('/api/moderation/reports')).reports;assert.equal(queue.find(r=>r.sender_id===a.id).senderSanction.level,'restricted');
+ await violate(3);await violate(4);await violate(5);
+ const login=await a.call('/api/me');assert.equal(login.status,200);assert.equal(login.user,null,'suspension ends the session');
+ const again=f.client();const denied=await again.call('/api/login','POST',{handle:'author',password:'Audit-test-password-123'});
+ assert.equal(denied.status,403);assert.match(denied.error,/приостановлен/);
+});
+
+test('authors delete own posts after leaving but not while banned; stale unattached uploads expire',async t=>{
+ const f=await fixture(t),[owner,author]=f.clients;
+ const club=(await owner.call('/api/clubs','POST',{name:'Leave',description:'',access:'request'})).id;
+ await author.call('/api/clubs/'+club+'/join','POST',{});await owner.call('/api/clubs/'+club+'/decision','POST',{userId:author.id,decision:'approve'});
+ const [kept,removed]=[1,2].map(n=>'leave-post-00000'+n);const posts=[];for(const id of [kept,removed])posts.push((await author.call('/api/clubs/'+club+'/posts','POST',{title:id,body:'Текст',clientId:id})).id);
+ await author.call('/api/clubs/'+club+'/leave','POST',{});
+ assert.equal((await author.call('/api/posts/'+posts[1])).status,403,'a private club stays unreadable after leaving');
+ assert.equal((await author.call('/api/posts/'+posts[1],'DELETE',{})).status,200);
+ assert.equal((await owner.call('/api/posts/'+posts[1])).status,404);
+ assert.equal((await owner.call('/api/posts/'+posts[0],'DELETE',{})).status,403,'only the author removes through this route');
+ await author.call('/api/clubs/'+club+'/join','POST',{});await owner.call('/api/clubs/'+club+'/ban','POST',{userId:author.id});
+ assert.equal((await author.call('/api/posts/'+posts[0],'DELETE',{})).status,403);
+ const {openDatabase}=await import('../database.mjs'),{saveImage}=await import('../media.mjs');
+ const db=openDatabase(':memory:');t.after(()=>db.close());
+ db.prepare("INSERT INTO users(id,handle,name,password,created_at) VALUES('u','u','U','x',0)").run();
+ const image=(key,time)=>saveImage(db,{id:'u'},key.padEnd(16,'0'),Buffer.from(key),{bytes:Buffer.from('webp'),width:1,height:1,size:4},()=>time).image.id;
+ const day=86400000,orphan=image('orphan',0),avatar=image('avatar',0);db.prepare('UPDATE users SET avatar_id=? WHERE id=?').run(avatar,'u');
+ image('fresh',day-1);assert(db.prepare('SELECT 1 FROM media WHERE id=?').get(orphan),'younger than a day stays');
+ image('later',day+1);assert(!db.prepare('SELECT 1 FROM media WHERE id=?').get(orphan));assert(db.prepare('SELECT 1 FROM media WHERE id=?').get(avatar),'attached images stay');
+});
