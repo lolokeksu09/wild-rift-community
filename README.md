@@ -15,6 +15,8 @@
 4. [API первого этапа](docs/android/API_CONTRACT.md), [этапы разработки](docs/android/ROADMAP.md).
 5. [Аудит репозитория](docs/android/REPOSITORY_AUDIT.md), [все документы](docs/README.md).
 
+Стартовое знакомство с четырьмя карточками и горизонтальным свайпом — [ONBOARDING.md](docs/ONBOARDING.md).
+
 ## Структура
 
 | Каталог | Назначение |
