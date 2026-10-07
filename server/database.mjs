@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 20) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 21) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -284,6 +284,34 @@ export function openDatabase(path) {
           note TEXT NOT NULL, created_at INTEGER NOT NULL
         ) STRICT;
         PRAGMA user_version=20;`);
+        db.prepare("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='reports'").run(sequence);
+        db.prepare("INSERT INTO sqlite_sequence(name,seq) SELECT 'reports',? WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='reports')").run(sequence);
+        if(db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Report migration integrity check failed.');
+      });
+    } catch(error) {db.close();throw error;}
+    finally {if(db.isOpen)db.exec('PRAGMA foreign_keys=ON;');}
+  }
+  if (version < 21) {
+    // Widen the report kinds (group announcement, event, club page); same rebuild as 19→20.
+    db.exec('PRAGMA foreign_keys=OFF;');
+    try {
+      transaction(db,()=>{
+        const sequence=db.prepare("SELECT seq FROM sqlite_sequence WHERE name='reports'").get()?.seq||0;
+        db.exec(`CREATE TABLE reports_next (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, reporter_id TEXT NOT NULL REFERENCES users(id),
+          kind TEXT NOT NULL CHECK(kind IN ('direct','club','post','comment','profile','lfg','event','club_page')),
+          message_id INTEGER, target_id TEXT NOT NULL,
+          sender_id TEXT NOT NULL REFERENCES users(id), snapshot TEXT NOT NULL, reason TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','upheld','dismissed')),
+          decision_note TEXT NOT NULL DEFAULT '', moderator_id TEXT REFERENCES users(id), created_at INTEGER NOT NULL,
+          decision_seen INTEGER NOT NULL DEFAULT 0 CHECK(decision_seen IN (0,1)),
+          UNIQUE(reporter_id,kind,target_id)
+        ) STRICT;
+        INSERT INTO reports_next SELECT id,reporter_id,kind,message_id,target_id,sender_id,snapshot,reason,status,decision_note,moderator_id,created_at,decision_seen FROM reports;
+        DROP TABLE reports;
+        ALTER TABLE reports_next RENAME TO reports;
+        CREATE INDEX reports_reporter ON reports(reporter_id,status,decision_seen);
+        PRAGMA user_version=21;`);
         db.prepare("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='reports'").run(sequence);
         db.prepare("INSERT INTO sqlite_sequence(name,seq) SELECT 'reports',? WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='reports')").run(sequence);
         if(db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Report migration integrity check failed.');

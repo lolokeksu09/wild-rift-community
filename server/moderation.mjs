@@ -1,6 +1,7 @@
 import {fail,text} from './security.mjs';
 import {transaction} from './database.mjs';
 import {imageAttached} from './media.mjs';
+import {sanctionFor} from './sanctions.mjs';
 export function moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds,postFor}){
  if(!path.startsWith('/api/reports')&&!path.startsWith('/api/moderation'))return false;
  if(!user)fail(401,'Войди в аккаунт.');
@@ -11,23 +12,35 @@ export function moderationRoutes({db,user,path,method,body,url,send,now,moderato
  };
  if(path==='/api/reports'&&method==='POST'){
   const kind=body.kind,id=body.targetId??body.messageId,reason=text(body.reason,'Причина',3,1000);
-  if(!['direct','club','post','comment','profile'].includes(kind)||(kind==='profile'?typeof id!=='string'||!id||id.length>80:!Number.isSafeInteger(id)||id<1))fail(422,'Некорректный объект жалобы.');
+  const textual=['profile','club_page'].includes(kind);
+  if(!['direct','club','post','comment','profile','lfg','event','club_page'].includes(kind)||(textual?typeof id!=='string'||!id||id.length>80:!Number.isSafeInteger(id)||id<1))fail(422,'Некорректный объект жалобы.');
   let message;
   if(kind==='direct')message=get(`SELECT m.* FROM direct_messages m JOIN direct_conversations c ON c.id=m.conversation_id WHERE m.id=? AND (c.user_low=? OR c.user_high=?)`,id,user.id,user.id);
   else if(kind==='club')message=get(`SELECT m.* FROM messages m JOIN memberships s ON s.club_id=m.club_id WHERE m.id=? AND s.user_id=? AND s.status='member'`,id,user.id);
   else if(kind==='post'){
-   const p=postFor(id,user);message={sender_id:p.author_id,body:p.title+'\n'+p.body};
+   const p=postFor(id,user,false,true);message={sender_id:p.author_id,body:p.title+'\n'+p.body};
   }else if(kind==='comment'){
-   const c=get('SELECT * FROM comments WHERE id=?',id);if(c){postFor(c.post_id,user);message={sender_id:c.author_id,body:c.body};}
+   const c=get('SELECT * FROM comments WHERE id=?',id);if(c){postFor(c.post_id,user,false,true);message={sender_id:c.author_id,body:c.body};}
+  }else if(kind==='lfg'){
+   // An announcement is reportable while open to anyone, or to people who took part in it.
+   const g=get('SELECT * FROM lfg_groups WHERE id=?',id);
+   if(g&&((!g.closed&&g.expires_at>now())||get('SELECT 1 FROM lfg_members WHERE group_id=? AND user_id=?',id,user.id)))message={sender_id:g.owner_id,body:g.title+'\n'+g.description};
+  }else if(kind==='event'){
+   const e=get('SELECT * FROM game_events WHERE id=?',id);
+   if(e&&(!e.cancelled||get('SELECT 1 FROM event_slots WHERE event_id=? AND user_id=?',id,user.id)))message={sender_id:e.owner_id,body:e.title+'\n'+e.description};
+  }else if(kind==='club_page'){
+   const c=get('SELECT * FROM clubs WHERE id=?',id),m=c&&get('SELECT status FROM memberships WHERE club_id=? AND user_id=?',id,user.id);
+   if(c&&m?.status!=='banned'&&(c.access==='open'||m?.status==='member'))message={sender_id:c.owner_id,body:c.name+'\n'+c.description};
   }else{
    const p=get('SELECT * FROM users WHERE id=? AND profile_visible=1',id);
    if(p)message={sender_id:p.id,body:profileSnapshot(p)};
   }
-  if(!message||message.sender_id===user.id||get('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',user.id,message.sender_id,message.sender_id,user.id))fail(404,'Объект недоступен для жалобы.');
+  // Blocking either way must not prevent reporting content the reporter could access.
+  if(!message||message.sender_id===user.id)fail(404,'Объект недоступен для жалобы.');
   const result=transaction(db,()=>{
    const old=get('SELECT id FROM reports WHERE reporter_id=? AND kind=? AND target_id=?',user.id,kind,String(id));
    if(old)return {id:old.id,replayed:true};
-   const r=run(`INSERT INTO reports(reporter_id,kind,message_id,target_id,sender_id,snapshot,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`,user.id,kind,kind==='profile'?null:id,String(id),message.sender_id,message.body,reason,now());return {id:Number(r.lastInsertRowid),replayed:false};
+   const r=run(`INSERT INTO reports(reporter_id,kind,message_id,target_id,sender_id,snapshot,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`,user.id,kind,textual?null:id,String(id),message.sender_id,message.body,reason,now());return {id:Number(r.lastInsertRowid),replayed:false};
   });send(result.replayed?200:201,result);return true;
  }
  const appealRoute=path.match(/^\/api\/reports\/(\d+)\/appeal(\/read)?$/);
@@ -98,7 +111,8 @@ export function moderationRoutes({db,user,path,method,body,url,send,now,moderato
  if(path==='/api/moderation/reports'&&method==='GET'){
   const raw=url.searchParams.get('before');if(raw!==null&&(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw))))fail(422,'Некорректный курсор.');
   const reports=all('SELECT r.*,a.reason AS appeal_reason,a.status AS appeal_status,a.note AS appeal_note,x.action AS applied_action,x.note AS action_note FROM reports r LEFT JOIN report_appeals a ON a.report_id=r.id LEFT JOIN moderation_actions x ON x.report_id=r.id WHERE r.id<? ORDER BY r.id DESC LIMIT 51',Number(raw??Number.MAX_SAFE_INTEGER));
-  const page=reports.slice(0,50);send(200,{reports:page,next:reports.length>50?page.at(-1).id:null});return true;
+  // Moderators see the author's current escalation before upholding another violation.
+  const page=reports.slice(0,50).map(r=>({...r,senderSanction:sanctionFor(db,r.sender_id,now())}));send(200,{reports:page,next:reports.length>50?page.at(-1).id:null});return true;
  }
  const appealDecision=path.match(/^\/api\/moderation\/reports\/(\d+)\/appeal-decision$/);
  if(appealDecision&&method==='POST'){
