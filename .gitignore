@@ -18,6 +18,8 @@ uploads/
 
 # Local database (never publish or commit)
 data/
+!android/app/src/main/java/**/data/
+!android/app/src/main/java/**/data/**
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
@@ -25,3 +27,14 @@ data/
 # Backup archives and generated browser screenshots
 *.wrbackup
 tests/ui-screenshots/
+
+# Android local configuration, generated output and signing secrets
+android/**/.gradle/
+android/**/.kotlin/
+android/**/local.properties
+android/**/captures/
+android/.idea/
+*.apk
+*.aab
+*.jks
+*.keystore

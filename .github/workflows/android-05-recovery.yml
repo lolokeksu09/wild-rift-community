@@ -1,0 +1,59 @@
+name: Publish validated Android 0.5
+on:
+  push:
+    branches: [codex/android-account-client]
+    paths: ['.github/workflows/android-05-recovery.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify source and retrieve tested APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=37502491105
+          source=20ed63ad3e4592a6f880fa152f64c71e6347971e
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" --jq '.head_sha')" = "$source"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/jobs/112402761242" --jq '.steps[] | select(.name=="Build and validate preview") | .conclusion')" = success
+          gh run download "$run" --name android-0.5-build --dir validated
+          echo '8d9ce33394e3f4779f04a3c69ad37d5a4749a153610eb7a89aa9828fb202fa56  validated/outputs/apk/debug/app-debug.apk' | sha256sum -c -
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          report=Path("validated/reports/androidTests/connected/debug/ru.wrcommunity.android.WelcomeUiTest.html").read_text()
+          for kind,count in [("tests",4),("failures",0),("skipped",0)]:
+              match=re.search(r'id="'+kind+r'">\s*<div class="counter">(\d+)</div>',report)
+              assert match and int(match.group(1))==count, kind
+          assert report.count('class="success">passed')==4
+          PY
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose validated/outputs/apk/debug/app-debug.apk
+      - name: Publish immutable verified APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          apk=wr-community-0.5.0-preview.apk
+          tag=android-v0.5.0-preview
+          source=20ed63ad3e4592a6f880fa152f64c71e6347971e
+          hash=8d9ce33394e3f4779f04a3c69ad37d5a4749a153610eb7a89aa9828fb202fa56
+          cp validated/outputs/apk/debug/app-debug.apk "$apk"
+          sha256sum "$apk" > SHA256SUMS.txt
+          cp docs/android/RELEASE_0_5.md release-notes.md
+          printf '\nИсходный commit APK: `%s`.\nSHA256: `%s`.\nПроверки: 4/4 WelcomeUiTest; lint и JVM-тесты пройдены в запуске 37502491105. Этот запуск остановился после тестов только при экспорте скриншотов; опубликован тот же APK, проверенный по SHA256.\n' "$source" "$hash" >> release-notes.md
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo 'Existing version must not be overwritten.'
+            exit 1
+          fi
+          gh release create "$tag" --target "$source" --title 'Android 0.5.0-preview — полноэкранные обложки' --notes-file release-notes.md --prerelease --draft
+          gh release upload "$tag" "$apk" SHA256SUMS.txt
+          uploaded=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name=="android-v0.5.0-preview") | .assets[] | select(.name=="wr-community-0.5.0-preview.apk") | .digest')
+          test "$uploaded" = "sha256:$hash"
+          gh release edit "$tag" --draft=false
