@@ -12,7 +12,7 @@ import java.io.IOException
 
 data class AccountState(val ready:Boolean=false,val busy:Boolean=false,val user:Account?=null,
     val error:String?=null,val notice:String?=null,val boundary:Long=0,val devices:List<DeviceSession> = emptyList(),
-    val codes:List<String> = emptyList())
+    val codes:List<String> = emptyList(),val sanction:Sanction?=null)
 
 class AccountViewModel(private val repo:Accounts):ViewModel() {
     private val mutable=MutableStateFlow(AccountState())
@@ -23,7 +23,7 @@ class AccountViewModel(private val repo:Accounts):ViewModel() {
     private fun identity(value:Identity) {
         val previous=mutable.value.user?.id
         csrf=value.csrf
-        mutable.value=mutable.value.copy(user=value.user,ready=true,
+        mutable.value=mutable.value.copy(user=value.user,sanction=if(value.user==null)null else value.sanction,ready=true,
             boundary=mutable.value.boundary+if(previous!=value.user?.id)1 else 0,
             devices=if(previous==value.user?.id)mutable.value.devices else emptyList(),codes=emptyList())
     }
@@ -33,8 +33,10 @@ class AccountViewModel(private val repo:Accounts):ViewModel() {
         job=viewModelScope.launch {
             try{action()}catch(e:CancellationException){throw e}catch(e:Exception){
                 if(e is ApiException && e.status in listOf(401,403) && mutable.value.user!=null) {
-                    if(e.status==401)identity(Identity(null,null))
-                    try{identity(repo.restore())}catch(refreshError:Exception){if(refreshError is CancellationException)throw refreshError}
+                    if(e.status==401){
+                        identity(Identity(null,null))
+                        try{repo.forget()}catch(clearError:Exception){if(clearError is CancellationException)throw clearError}
+                    } else try{identity(repo.restore())}catch(refreshError:Exception){if(refreshError is CancellationException)throw refreshError}
                 }
                 mutable.value=mutable.value.copy(error=when(e){
                     is ApiException -> when(e.status){

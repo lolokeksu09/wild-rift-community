@@ -18,6 +18,14 @@ class MemorySession:SessionStore {
 class AccountContractTest {
     private val token="a".repeat(64)
     private fun response(user:Boolean=true)="""{"user":${if(user)"""{"id":"account-a","handle":"tester","name":"Имя","bio":"","profileVisible":false,"gameProfile":{},"avatarId":null}""" else "null"},"csrf":${if(user)"\"csrf-fixture\"" else "null"}}"""
+    @Test fun sanctionIsOptionalAndPreservesServerDeadline(){
+        assertNull(identity(org.json.JSONObject(response())).sanction)
+        assertNull(identity(org.json.JSONObject(response()).put("sanction",org.json.JSONObject.NULL)).sanction)
+        val json=org.json.JSONObject(response()).put("sanction",org.json.JSONObject().put("level","restricted").put("violations",2).put("until",1770000000123L))
+        assertEquals(Sanction("restricted",2,1770000000123L),identity(json).sanction)
+        json.put("sanction",org.json.JSONObject().put("level","warning").put("violations",1).put("until",org.json.JSONObject.NULL))
+        assertEquals(Sanction("warning",1,null),identity(json).sanction)
+    }
     @Test fun loginProfileRestoreLogoutUseExactHeadersAndEncryptedStoreBoundary()=runBlocking {
         val certificate=HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
         val serverTls=HandshakeCertificates.Builder().heldCertificate(certificate).build()

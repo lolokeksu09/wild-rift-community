@@ -12,7 +12,7 @@ const app=await createApp({databasePath}),origin=await app.listen(),browser=awai
 try{for(const width of [360,390,768,1440]){
  const context=await browser.newContext({viewport:{width,height:900}}),p=await context.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
  assert.equal((await p.goto(origin+'/missing-page')).status(),404);await p.getByRole('heading',{name:'Страница не найдена'}).waitFor();assert.equal(new URL(p.url()).pathname,'/missing-page');
- await p.getByRole('button',{name:'На главную',exact:true}).click();await p.locator('.welcome-hero').waitFor();await p.waitForFunction(()=>document.title.startsWith('Твои люди'));
+ await p.getByRole('button',{name:'На главную',exact:true}).click();await p.locator('.welcome-hero').waitFor();await p.waitForFunction(()=>document.title.startsWith('Обсуждения'));
  await p.locator('#home').click();await p.waitForFunction(()=>document.title.startsWith('Клубы'));
  await p.goto(origin+'/clubs/'+demoId('club:0'));await p.locator('.club-overview').waitFor();await p.waitForFunction(()=>document.title.startsWith('После матча'));
  await p.goto(origin+'/posts/'+post.id);await p.locator('.post-title').waitFor();assert.equal(await p.title(),post.title+' — Wild Rift Community');
@@ -22,3 +22,4 @@ try{for(const width of [360,390,768,1440]){
  assert.equal((await p.goto(origin+'/posts/999999')).status(),404);await p.waitForFunction(()=>document.querySelector('#main').getAttribute('aria-busy')==='false');assert((await p.title()).includes('Страница не найдена'));
  assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);await context.close();console.log(`PASS ${width}px: HTML status, public metadata, SPA navigation and history`);
 }}finally{await browser.close();await app.close();rmSync(dir,{recursive:true,force:true});}
+

@@ -12,7 +12,7 @@ try {
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
     try {
-      await page.goto(origin); await page.locator('#account').click();
+      await page.goto(origin+'/feed'); await page.locator('#account').click();
       await page.locator('#register [name=name]').fill('Игрок');
       await page.locator('#register [name=handle]').fill('browser_recovery');
       await page.locator('#register [name=password]').fill('Browser-recovery-only-1234');
@@ -52,3 +52,4 @@ try {
   }
 } finally { await browser.close(); }
 console.log('PASS recovery browser: generation, clearing, logout, reset, new login, storage and four widths');
+

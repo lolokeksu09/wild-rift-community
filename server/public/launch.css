@@ -1,0 +1,53 @@
+/* Standalone entrance. Scoped to preserve the community interface. */
+body.launch-mode{background:#0b0d12}
+.launch-mode .shell{display:block;min-height:100svh}
+.launch-mode .sidebar,.launch-mode .topbar,.launch-mode .community-footer{display:none}
+.launch-mode .workspace,.launch-mode .layout{margin:0;padding:0;max-width:none;width:100%}
+.launch-mode #main{width:100%;min-width:0;padding:0}
+.launch{position:relative;isolation:isolate;overflow:hidden;min-height:100svh;padding:36px max(28px,calc((100vw - 1240px)/2));display:flex;flex-direction:column;color:#f3f0e9;background:radial-gradient(ellipse at 76% 42%,#342c442b,transparent 55%),radial-gradient(ellipse at 12% 85%,#483a2420,transparent 50%),#0b0d12}
+.launch::before{content:'';position:absolute;z-index:-1;inset:0;background-image:linear-gradient(#ffffff02 1px,transparent 1px),linear-gradient(90deg,#ffffff02 1px,transparent 1px);background-size:72px 72px;mask-image:linear-gradient(transparent,#000,transparent);pointer-events:none}
+.launch-header,.launch-footer{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.launch-brand{display:flex;align-items:center;gap:13px;text-decoration:none;color:#f0e6d2;font-size:14px;font-weight:700;letter-spacing:.2em}
+.launch-brand small{display:block;font-size:9px;font-weight:500;letter-spacing:.35em;color:#aba7b3;margin-top:4px}
+.launch-brand-mark{display:grid;place-items:center;width:44px;height:48px;font-family:Georgia,serif;font-size:27px;font-weight:400;letter-spacing:-.18em;padding-right:5px;color:#e0c18a;border:1px solid #b8955f5c;clip-path:polygon(0 0,100% 0,100% 76%,50% 100%,0 76%);background:linear-gradient(135deg,#ceab6a15,#ae9bcd0c)}
+.launch-status{display:flex;gap:9px;align-items:center;color:#ada5b4;font-size:10px;letter-spacing:.15em}
+.launch-status i{width:5px;height:5px;border-radius:50%;background:#d9ba82;box-shadow:0 0 12px #d9ba8277}
+.launch-stage{display:grid;grid-template-columns:1.05fr 1fr;gap:52px;align-items:center;flex:1;padding:64px 0 76px}
+.launch-copy{grid-row:1;grid-column:1;max-width:570px}
+.launch-eyebrow{color:#c2a773;font-size:10px;letter-spacing:.25em}
+.launch h1{font-size:clamp(52px,5.2vw,78px);line-height:1.08;letter-spacing:-.045em;margin:22px 0 24px;font-weight:750}
+.launch h1 em{font-style:normal;color:#dfc18b;background:linear-gradient(100deg,#f0dcaf,#caa778);background-clip:text;-webkit-text-fill-color:transparent}
+.launch-description{font-size:17px;line-height:1.8;color:#a8a6b3;margin:0 0 34px}
+.launch-actions{max-width:380px;display:grid;gap:12px}
+.launch button{font:inherit;cursor:pointer}
+.launch-primary,.launch-secondary{min-height:54px;border-radius:12px;padding:14px 20px;font-size:14px!important;font-weight:650!important;transition:background .2s,transform .2s}
+.launch-primary{display:flex;align-items:center;justify-content:space-between;gap:15px;color:#241d15;border:1px solid #e9d4a3;background:linear-gradient(110deg,#edd8aa,#cbab77);box-shadow:0 6px 30px #c1a16a18}
+.launch-primary:hover{background:#f1dcb2;transform:translateY(-2px)}
+.launch-primary span{font-size:23px;font-weight:400}
+.launch-secondary{background:#ffffff03;border:1px solid #74687970;color:#e2dde9}
+.launch-secondary:hover{background:#b3a0c51a;border-color:#a397af}
+.launch-auth{display:grid;grid-template-columns:1fr 1.35fr;gap:12px}
+.launch-browse{justify-self:center;background:none;border:0;color:#aaa4b4;padding:12px;font-size:13px!important}
+.launch-browse:hover,.launch-footer button:hover{color:#f0d7a6}
+.launch-interests{display:flex;flex-wrap:wrap;align-items:center;gap:10px;color:#8f8799;font-size:11px;margin-top:28px}
+.launch-interests i{font-style:normal;color:#c3a779}
+.launch-greeting{font-size:14px;color:#aaa4b4;overflow-wrap:anywhere;margin:-12px 0 24px}
+.launch-greeting strong{color:#e5d7bb}
+.launch-art{grid-column:2;grid-row:1;position:relative;display:grid;place-items:center;padding:20px 0}
+.launch-halo{position:absolute;width:90%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,#b79a651c,transparent 60%);box-shadow:0 0 140px #b795cb09;pointer-events:none}
+.launch-emblem{width:min(100%,480px);position:relative;stroke:url(#launch-gold);stroke-width:.7;filter:drop-shadow(0 0 18px #cca57612)}
+.launch-emblem>circle:first-of-type{opacity:.28}
+.launch-orbit{opacity:.45;transform-origin:200px 200px;animation:launch-orbit 100s linear infinite}
+.launch-frame{stroke-width:1.1;opacity:.65}
+.launch-crystal{stroke-width:1.5;fill:#d1b17c04}
+.launch-rune{stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.launch-art-label{font-size:9px;letter-spacing:.22em;color:#968778;text-align:center;position:relative;margin-top:10px}
+.launch-footer{padding-top:22px;border-top:1px solid #ffffff09;color:#807988;font-size:11px;line-height:1.6}
+.launch-footer button{border:0;background:none;color:#a49aaf;padding:8px 0;font-size:11px}
+.launch a:focus-visible,.launch button:focus-visible{outline:2px solid #ead2a0;outline-offset:5px}
+@keyframes launch-orbit{to{transform:rotate(360deg)}}
+@media(min-width:1800px){.launch-stage{max-height:1000px}}
+@media(max-width:800px){.launch{padding:24px 28px;min-height:100svh}.launch-stage{grid-template-columns:1fr;gap:0;padding:20px 0 38px}.launch-art{grid-row:1;grid-column:1;padding:10px 0 18px}.launch-emblem{width:260px}.launch-art-label{display:none}.launch-copy{grid-row:2;grid-column:1;text-align:center;max-width:none}.launch h1{font-size:54px;margin:16px 0 20px}.launch-eyebrow{font-size:9px}.launch-description{font-size:15px;line-height:1.7;margin-bottom:26px}.launch-actions{margin:auto;width:100%;max-width:400px}.launch-interests{justify-content:center;margin-top:20px}.launch-status{font-size:8px;letter-spacing:.1em}.launch-footer{gap:12px}.launch-brand{font-size:11px;gap:10px}.launch-brand small{font-size:8px}.launch-brand-mark{width:36px;height:40px;font-size:23px}}
+@media(max-width:420px){.launch{padding:20px 22px;padding-top:max(20px,env(safe-area-inset-top));padding-bottom:max(20px,env(safe-area-inset-bottom))}.launch-status{display:none}.launch-stage{padding:14px 0 28px}.launch-emblem{width:218px}.launch-art{padding:0 0 14px}.launch h1{font-size:46px}.launch-description{font-size:14px}.launch-primary,.launch-secondary{min-height:52px}.launch-footer{font-size:10px}.launch-footer button{font-size:10px}.launch-interests{font-size:10px;gap:8px}}
+@media(prefers-reduced-motion:reduce){.launch-orbit{animation:none}.launch-primary,.launch-secondary{transition:none}.launch-primary:hover{transform:none}}
+.launch-mode .shell{max-width:none;border:0}

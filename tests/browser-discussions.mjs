@@ -12,7 +12,7 @@ try{
    const club=await owner.api('/api/clubs','POST',{name:'Вечерние обсуждения',description:'Играем вместе и делимся опытом.',access:'request'});
    await member.api(`/api/clubs/${club.id}/join`,'POST',{});await owner.api(`/api/clubs/${club.id}/decision`,'POST',{userId:member.id,decision:'approve'});
    const post=await owner.api(`/api/clubs/${club.id}/posts`,'POST',{title:'После матча: что получилось?',body:'@disc_member Как сыграли сегодня? Обсудим решения и следующий матч.',clientId:'browser-post-attempt'});
-   await member.page.goto(origin);await member.page.locator('.welcome-hero').waitFor();
+   await member.page.goto(origin+'/feed');await member.page.locator('.welcome-hero').waitFor();
    await member.page.keyboard.press('Tab');assert.equal(await member.page.locator('.skip').evaluate(el=>document.activeElement===el),true);assert((await member.page.locator('.skip').boundingBox()).width>100);await member.page.keyboard.press('Tab');
    const headerBoxes=await member.page.locator('#notifications,#reports').evaluateAll(els=>els.map(el=>({top:el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom})));assert.equal(headerBoxes[0].top,headerBoxes[1].top,'Header actions share one row');
    const reactions=member.page.locator(`[data-post-actions="${post.id}"]`);
@@ -47,3 +47,4 @@ try{
   }finally{for(const c of contexts)await c.close();await app.close();}
  }
 }finally{await browser.close();}
+

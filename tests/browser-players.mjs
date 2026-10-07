@@ -11,7 +11,7 @@ try{
   const candidate=await peer('mate'+width,true,fields);await peer('quiet'+width,true,{...fields,rank:'Алмаз',microphone:'no'});await peer('hidden'+width,false,fields);const blocked=await peer('blocked'+width,true,fields);
   await candidate.request('/api/lfg','POST',{clientId:'browser-player-group-'+width,title:'Вечерняя группа '+width,mode:'ranked',region:'Европа',language:'Русский',role:'jungle',rank:'Мастер',voice:'required',description:'Ищем спокойную компанию.',capacity:2,durationHours:1});
   const context=await browser.newContext({viewport:{width,height:900}}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto(origin);await page.locator('.welcome-hero').waitFor();await page.locator('#account').click();await page.locator('#register').waitFor();
+  await page.goto(origin+'/feed');await page.locator('.welcome-hero').waitFor();await page.locator('#account').click();await page.locator('#register').waitFor();
   for(const [key,value] of Object.entries({name:'Ищем напарника',handle:'viewer'+width,password:'Browser-player-test-12345'}))await page.locator(`#register [name=${key}]`).fill(value);
   await page.locator('#register button').click();await page.locator('#createClub').waitFor();
   const blockStatus=await page.evaluate(async userId=>{const session=await (await fetch('/api/me')).json();return (await fetch('/api/blocks',{method:'POST',headers:{'Content-Type':'application/json','X-Community-Request':'1','X-CSRF-Token':session.csrf},body:JSON.stringify({userId})})).status;},blocked.id);assert.equal(blockStatus,200);
@@ -37,3 +37,4 @@ try{
   assert.deepEqual(errors,[],`${width}: browser errors`);console.log(`PASS ${width}px: player filters, privacy, profile return, explicit message request and group filters`);await context.close();
  }
 }finally{if(browser)await browser.close();await app.close();}
+

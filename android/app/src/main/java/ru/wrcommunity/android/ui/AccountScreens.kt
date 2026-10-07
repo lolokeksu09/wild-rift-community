@@ -64,6 +64,14 @@ import java.time.format.DateTimeFormatter
         if(!state.ready)item{CircularProgressIndicator()}
         state.error?.let{item{MessageCard(it)}}
         state.notice?.let{item{MessageCard(it)}}
+        state.sanction?.let{sanction->item{
+            val until=sanction.until?.let{DateTimeFormatter.ofPattern("d MMM, HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it))}
+            MessageCard(when(sanction.level){
+                "restricted" -> "Публикации и изменение профиля ограничены"+(until?.let{" до $it."} ?: ".")+" Читать и отправлять жалобы можно."
+                "suspended" -> "Аккаунт приостановлен"+(until?.let{" до $it."} ?: ".")
+                else -> "Предупреждение модерации. Подтверждённых нарушений: ${sanction.violations}."
+            })
+        }}
         if(state.user==null && state.ready)item{SignInForm(state,model,initialMode)}
         state.user?.let{user->
             item{Text("@${user.handle}",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.titleLarge)}

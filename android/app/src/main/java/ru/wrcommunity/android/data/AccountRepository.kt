@@ -7,14 +7,16 @@ import org.json.JSONObject
 
 data class Account(val id:String,val handle:String,val name:String,val bio:String,val visible:Boolean,
                    val game:Map<String,String>,val avatarId:String?)
-data class Identity(val user:Account?,val csrf:String?)
+data class Sanction(val level:String,val violations:Int,val until:Long?)
+data class Identity(val user:Account?,val csrf:String?,val sanction:Sanction?=null)
 data class DeviceSession(val id:String,val expiresAt:Long,val current:Boolean)
 fun accountUser(o:JSONObject)=Account(o.getString("id"),o.getString("handle"),o.getString("name"),o.optString("bio"),
     o.optBoolean("profileVisible"),o.optJSONObject("gameProfile")?.let{g->
         listOf("riotId","rank","region","language","playTime").associateWith{g.optString(it)}} ?: emptyMap(),
     if(o.isNull("avatarId"))null else o.getString("avatarId"))
-private fun identity(o:JSONObject)=Identity(if(o.isNull("user"))null else accountUser(o.getJSONObject("user")),
-    if(o.isNull("csrf"))null else o.getString("csrf"))
+internal fun identity(o:JSONObject)=Identity(if(o.isNull("user"))null else accountUser(o.getJSONObject("user")),
+    if(o.isNull("csrf"))null else o.getString("csrf"),
+    o.optJSONObject("sanction")?.let{Sanction(it.getString("level"),it.getInt("violations"),if(it.isNull("until"))null else it.getLong("until"))})
 
 interface Accounts {
     suspend fun restore():Identity
