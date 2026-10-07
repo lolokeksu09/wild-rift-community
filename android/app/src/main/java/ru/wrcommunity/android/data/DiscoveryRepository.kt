@@ -1,7 +1,12 @@
 package ru.wrcommunity.android.data
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
@@ -52,6 +57,38 @@ class DiscoverySubmission {
 
 class DiscoveryRepository(private val client:FeatureClient) {
     suspend fun page(path:String,query:Map<String,String> = emptyMap())=verified(client.get(path,query))
+    /** Guests compose only public resources; each preview is freshly checked for this account. */
+    suspend fun home():JSONObject=coroutineScope {
+        val viewer=client.userId
+        val boundary=client.identityKey
+        val sources=listOf("feed" to "api/feed","catalog" to "api/clubs","people" to "api/community-members")+
+            (if(viewer!=null)listOf("personal" to "api/home")else emptyList())
+        val pages=sources.map{(key,path)->async {
+            try { Triple(key,page(path,if(key=="catalog")mapOf("scope" to "open","sort" to "discussion")else emptyMap()),null) }
+            catch(e:CancellationException){throw e}
+            catch(e:Exception){
+                // Access failures invalidate all displayed data instead of looking like empty sections.
+                if(e is ApiException && e.status in listOf(401,403,404))throw e
+                Triple(key,null,e)
+            }
+        }}.awaitAll()
+        if(boundary!=client.identityKey)throw CancellationException("Account changed")
+        if(pages.none{it.second!=null})throw pages.firstNotNullOf{it.third}
+        val personal=pages.firstOrNull{it.first=="personal"}?.second
+        val result=JSONObject(personal?.toString()?:"{}").put("viewerId",viewer?:JSONObject.NULL)
+            .put("personalLoaded",personal!=null)
+        val warnings=JSONObject()
+        pages.forEach{(key,data,error)->
+            if(data!=null && key!="personal")result.put(key,data)
+            if(error!=null)warnings.put(key,when(error){
+                is javax.net.ssl.SSLException->"Не удалось подтвердить защищённое соединение."
+                is IOException->"Нет связи с сервером. Обнови главную позже."
+                is ApiException->error.message?.take(300)?:"Не удалось загрузить раздел."
+                else->"Не удалось загрузить раздел. Обнови главную."
+            })
+        }
+        result.put("homeWarnings",warnings)
+    }
     private fun verified(raw:JSONObject):JSONObject {
         if(raw.has("viewerId") && raw.nullableString("viewerId")!=client.userId)
             throw ApiException(403,"Сеанс изменился. Обнови данные после входа.")

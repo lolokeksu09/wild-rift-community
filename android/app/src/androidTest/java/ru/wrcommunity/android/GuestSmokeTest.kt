@@ -18,7 +18,7 @@ class GuestSmokeTest {
     }
     private fun capture(name:String) {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
-        val directory=File(instrumentation.targetContext.getExternalFilesDir(null),"screenshots").apply{mkdirs()}
+        val directory=File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),"wr-community").apply{mkdirs()}
         instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
             File(directory,"$name.png").outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}
             bitmap.recycle()
@@ -36,29 +36,29 @@ class GuestSmokeTest {
             } ?: error("The real server needs an accessible club and post for guest smoke testing.")
         }
         rule.onNodeWithTag("welcome-explore").performClick()
-        rule.waitUntil(45_000) { rule.onAllNodesWithText("Открытые клубы ·", substring=true).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitUntil(45_000) { rule.onAllNodesWithText("Показано ", substring=true).fetchSemanticsNodes().isNotEmpty() }
         awaitText("Найди свою компанию")
         capture("01-catalog")
-        rule.onNodeWithText("Поиск клубов").performTextInput(selection.first.name)
-        rule.onNodeWithContentDescription("Найти клубы").performClick()
-        rule.waitUntil(45_000) { rule.onAllNodesWithText("Открытые клубы ·", substring=true).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("Поиск клубов").performScrollTo().performTextInput(selection.first.name)
+        rule.onNodeWithContentDescription("Найти клубы").performScrollTo().performClick()
+        rule.waitUntil(45_000) { rule.onAllNodesWithText("Показано ", substring=true).fetchSemanticsNodes().isNotEmpty() }
         val selectedClub = hasText(selection.first.name) and hasClickAction() and !hasSetTextAction()
-        rule.onNodeWithTag("catalog-list").performScrollToNode(selectedClub)
+        rule.onNode(selectedClub).performScrollTo()
         rule.onNode(selectedClub).performClick()
         rule.waitUntil(20_000) { rule.onAllNodesWithTag("club-list").fetchSemanticsNodes().isNotEmpty() }
         awaitText(selection.first.name)
         capture("02-club")
-        rule.onNodeWithTag("club-list").performScrollToNode(hasText(selection.second.title))
+        rule.onNodeWithText(selection.second.title).performScrollTo()
         rule.onNodeWithText(selection.second.title).performClick()
         awaitText(selection.second.title)
         capture("03-post")
-        rule.onNodeWithTag("post-list").performScrollToNode(hasText("Обсуждение"))
+        rule.onNodeWithText("Обсуждение").performScrollTo()
         rule.onNodeWithText("Обсуждение").assertIsDisplayed()
         rule.onNodeWithContentDescription("Назад").performClick()
         rule.waitUntil(20_000) { rule.onAllNodesWithTag("club-list").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithContentDescription("Назад").performClick()
         rule.waitUntil(20_000) { rule.onAllNodesWithTag("catalog-list").fetchSemanticsNodes().isNotEmpty() }
-        rule.onNodeWithTag("catalog-list").performScrollToNode(hasText("Найди свою компанию"))
+        rule.onNodeWithText("Найди свою компанию").performScrollTo()
         awaitText("Найди свою компанию")
         try {
             shell("settings put system font_scale 2.0")
@@ -67,6 +67,8 @@ class GuestSmokeTest {
             rule.waitForIdle()
             rule.onNodeWithText("Найди свою компанию").assertIsDisplayed()
             capture("04-large-text")
+            rule.onNodeWithText("Поиск клубов").performScrollTo().assertIsDisplayed()
+            rule.onNodeWithContentDescription("Найти клубы").performScrollTo().assertIsDisplayed()
         } finally { shell("settings put system font_scale 1.0") }
     }
 }

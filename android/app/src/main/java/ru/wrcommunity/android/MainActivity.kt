@@ -32,9 +32,10 @@ class MainActivity : ComponentActivity() {
     }
     private val featureClient by lazy { FeatureClient(api,account::csrfToken,{account.state.value.user?.id},{account.state.value.boundary},account::expireSession,account::refresh) }
     private val content:ContentViewModel by viewModels{viewModelFactory{initializer{ContentViewModel(featureClient)}}}
-    private val messaging:MessagingViewModel by viewModels{viewModelFactory{initializer{MessagingViewModel(featureClient)}}}
+    private val messaging:MessagingViewModel by viewModels{viewModelFactory{initializer{MessagingViewModel(featureClient,EncryptedMessageStore(applicationContext))}}}
     private val discovery:DiscoveryViewModel by viewModels{viewModelFactory{initializer{DiscoveryViewModel(featureClient)}}}
     private val moderation:ModerationViewModel by viewModels{viewModelFactory{initializer{ModerationViewModel(featureClient)}}}
+    private val notifications:NotificationViewModel by viewModels{viewModelFactory{initializer{NotificationViewModel(featureClient)}}}
     private var incomingRoute by mutableStateOf<String?>(null)
     override fun onNewIntent(intent:Intent){super.onNewIntent(intent);setIntent(intent);incomingRoute=NativeLinks.route(intent.dataString,BuildConfig.API_ORIGIN)}
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,7 +43,7 @@ class MainActivity : ComponentActivity() {
         incomingRoute=NativeLinks.route(intent.dataString,BuildConfig.API_ORIGIN)
         enableEdgeToEdge(statusBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle=SystemBarStyle.dark(android.graphics.Color.rgb(12,14,18)))
-        setContent { CommunityTheme { NativeCommunityApp(model,account,featureClient,content,messaging,discovery,moderation,incomingRoute) } }
+        setContent { CommunityTheme { NativeCommunityApp(model,account,featureClient,content,messaging,discovery,moderation,notifications,incomingRoute) } }
     }
     override fun onStart(){super.onStart();if(account.state.value.ready)account.refresh()}
 }

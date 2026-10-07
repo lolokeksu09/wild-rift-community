@@ -37,7 +37,8 @@ class DiscoveryViewModel(client:FeatureClient):FeatureViewModel(client) {
         if(!quiet)mutable.value=mutable.value.copy(busy=true,error=null)
         viewModelScope.launch {
             try {
-                val result=if(route=="discovery/notifications")repo.notificationPage(category,previous=prior.data)
+                val result=if(route=="discovery/home")repo.home()
+                    else if(route=="discovery/notifications")repo.notificationPage(category,previous=prior.data)
                     else if(route.startsWith("discovery/group/")||route.startsWith("discovery/event/"))repo.detail(route,prior.data?.optJSONObject("chat"))
                     else repo.page(DiscoveryContract.routePath(route),selected)
                 if(ticket==serial){

@@ -17,6 +17,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import ru.wrcommunity.android.BuildConfig
 import ru.wrcommunity.android.data.*
 import ru.wrcommunity.android.features.*
@@ -24,25 +27,38 @@ import ru.wrcommunity.android.features.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun NativeCommunityApp(guest:GuestViewModel,account:AccountViewModel,client:FeatureClient,
     content:ContentViewModel,messaging:MessagingViewModel,discovery:DiscoveryViewModel,moderation:ModerationViewModel,
-    deepLink:String?=null) {
+    notifications:NotificationViewModel,deepLink:String?=null) {
     val identity by account.state.collectAsStateWithLifecycle()
-    val guestState by guest.state.collectAsStateWithLifecycle()
+    val counts by notifications.counts.collectAsStateWithLifecycle()
+    val lifecycleOwner=LocalLifecycleOwner.current
     var appliedBoundary by remember{mutableStateOf<Long?>(null)}
     var welcome by rememberSaveable{mutableStateOf(deepLink==null)}
     var route by rememberSaveable{mutableStateOf(deepLink ?: "catalog")}
     var history by rememberSaveable{mutableStateOf(listOf<String>())}
     var authMode by rememberSaveable{mutableStateOf("login")}
-    var tab by rememberSaveable{mutableStateOf("clubs")}
-    fun navigate(target:String){if(target==route)return;history=history+route;route=target;account.clearCodes()}
+    val tab=when{route=="profile"->"profile";route.startsWith("chat/")&&!route.startsWith("chat/club/")->"chat";route=="catalog"||route.startsWith("content/")||route.startsWith("chat/club/")->"clubs";else->"home"}
+    var completedBoundary by remember{mutableStateOf<Long?>(null)}
+    var completedOwner by remember{mutableStateOf<String?>(null)}
+    fun navigate(target:String){val destination=if(target=="account")"profile" else target;if(destination==route)return;history=history+route;route=destination;account.clearCodes()}
     LaunchedEffect(deepLink){if(deepLink!=null){welcome=false;history=emptyList();route=deepLink}}
     LaunchedEffect(identity.boundary){
-        guest.resetForAccountChange(identity.boundary);content.reset();messaging.reset();discovery.reset();moderation.reset()
-        if(identity.user==null && identity.boundary>0){history=emptyList();route="profile";tab="profile"}
+        guest.resetForAccountChange(identity.boundary);content.reset();messaging.reset();discovery.reset();moderation.reset();notifications.reset()
+        if(identity.user==null && identity.boundary>0){history=emptyList();route="profile"}
         appliedBoundary=identity.boundary
     }
-    BackHandler(!welcome && (route!="catalog"||guestState.screen==0)){
+    LaunchedEffect(identity.boundary,identity.ready,identity.busy,identity.user?.id,identity.error){
+        if(identity.ready&&!identity.busy){
+            if((completedBoundary!=null&&completedBoundary!=identity.boundary&&completedOwner!=null)||
+                (identity.user==null&&(identity.error==null||identity.boundary>0)))messaging.clearStoredMessages()
+            completedBoundary=identity.boundary;completedOwner=identity.user?.id
+        }
+    }
+    LaunchedEffect(identity.boundary,identity.ready,identity.user?.id,lifecycleOwner){
+        if(identity.ready&&identity.user!=null)lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED){notifications.poll()}
+    }
+    BackHandler(!welcome){
         if(history.isNotEmpty()){route=history.last();history=history.dropLast(1)}
-        else if(route!="catalog"){route="catalog";tab="clubs"} else welcome=true
+        else if(route!="catalog"){route="catalog"} else welcome=true
     }
     val activity=LocalActivity.current
     DisposableEffect(route){
@@ -51,8 +67,8 @@ import ru.wrcommunity.android.features.*
     }
     if(appliedBoundary!=identity.boundary){Box(Modifier.fillMaxSize(),contentAlignment=androidx.compose.ui.Alignment.Center){CircularProgressIndicator()};return}
     if(welcome){
-        WelcomeScreen(identity.user?.name,onExplore={welcome=false;route="catalog";tab="clubs"},onAccount={mode->
-            authMode=mode;welcome=false;route="profile";tab="profile";account.refresh()})
+        WelcomeScreen(identity.user?.name,onExplore={welcome=false;route="catalog"},onAccount={mode->
+            authMode=mode;welcome=false;route="profile";account.refresh()})
         return
     }
     val context=LocalContext.current
@@ -62,18 +78,20 @@ import ru.wrcommunity.android.features.*
         route.startsWith("discovery/player/")->"/players/"+route.substringAfterLast('/')
         else->null
     }
-    Scaffold(topBar={if(route!="catalog")TopAppBar(title={Text(if(route=="profile")"Профиль" else "Wild Rift Community")},
-        navigationIcon={IconButton(onClick={if(history.isNotEmpty()){route=history.last();history=history.dropLast(1)}else{route="catalog";tab="clubs"}}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Назад")}},
+    val title=when{route=="catalog"||route=="content/clubs"->"Клубы";route=="profile"->"Профиль";route=="discovery/home"->"Главная";route.startsWith("chat/")->"Сообщения";route=="more"->"Сообщество";route=="discovery/notifications"->"Уведомления";else->"Wild Rift Community"}
+    Scaffold(topBar={TopAppBar(title={Text(title)},
+        navigationIcon={if(history.isNotEmpty()||(route!="catalog"&&route!="discovery/home"&&route!="chat/inbox"&&route!="profile"))IconButton(onClick={if(history.isNotEmpty()){route=history.last();history=history.dropLast(1)}else{route="catalog"}}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Назад")}},
         actions={if(publicPath!=null)IconButton(onClick={val intent=Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,BuildConfig.API_ORIGIN+publicPath);context.startActivity(Intent.createChooser(intent,"Поделиться"))}){Icon(Icons.Default.Share,"Поделиться ссылкой")}
-            IconButton(onClick={navigate("discovery/notifications")}){Icon(Icons.Default.NotificationsNone,"Уведомления")}
+            if(identity.user!=null)IconButton(onClick={navigate("discovery/notifications")}){BadgedBox(badge={if(counts.total>0)Badge{Text(if(counts.total>99)"99+" else counts.total.toString())}}){Icon(Icons.Default.NotificationsNone,"Уведомления")}}
+            else TextButton(onClick={navigate("profile")}){Icon(Icons.Default.PersonOutline,null);Text("Гость")}
             IconButton(onClick={navigate("more")}){Icon(Icons.Default.MoreHoriz,"Все разделы")}})},
         bottomBar={NavigationBar{
             val tabs=listOf("home" to "Главная","clubs" to "Клубы","chat" to "Сообщения","profile" to "Профиль")
             tabs.forEach{(key,label)->NavigationBarItem(selected=tab==key,onClick={
-                tab=key;history=emptyList();account.clearCodes()
+                history=emptyList();account.clearCodes()
                 route=when(key){"home"->"discovery/home";"clubs"->"catalog";"chat"->"chat/inbox";else->"profile"}
                 if(key=="profile")account.refresh()
-            },icon={Icon(when(key){"home"->Icons.Default.Home;"clubs"->Icons.Default.Groups;"chat"->Icons.Default.ChatBubbleOutline;else->Icons.Default.PersonOutline},null)},label={Text(label)})}
+            },icon={BadgedBox(badge={if(key=="chat"&&counts.direct>0)Badge{Text(if(counts.direct>99)"99+" else counts.direct.toString())}}){Icon(when(key){"home"->Icons.Default.Home;"clubs"->Icons.Default.Groups;"chat"->Icons.Default.ChatBubbleOutline;else->Icons.Default.PersonOutline},null)}},label={Text(label)})}
         }}){padding->Column(Modifier.fillMaxSize().padding(padding)){
         if(identity.user==null && route!="profile" && route!="catalog")Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),horizontalArrangement=Arrangement.SpaceBetween){
             Text("Ты смотришь как гость",Modifier.weight(1f).padding(top=12.dp),style=MaterialTheme.typography.bodySmall)
@@ -81,7 +99,7 @@ import ru.wrcommunity.android.features.*
         }
         key(identity.boundary){Box(Modifier.fillMaxSize()){
             when {
-                route=="catalog"->CommunityApp(guest,client.api,identity.user?.handle,onNavigate=::navigate)
+                route=="catalog"->ContentSection(content,"content/clubs",::navigate)
                 route=="profile"->AccountScreen(identity,account,authMode,client)
                 route=="more"->NativeMenu(identity.user?.moderator==true,::navigate)
                 route.startsWith("content/")->ContentSection(content,route,::navigate)

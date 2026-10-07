@@ -11,6 +11,120 @@ import org.junit.Test
 import ru.wrcommunity.android.data.*
 
 class DiscoveryContractTest {
+    @Test fun guestHomeUsesOnlyPublicResourcesAndKeepsRealCounts()=runBlocking {
+        val server=MockWebServer();server.start(java.net.InetAddress.getByName("127.0.0.1"),0)
+        val paths=java.util.Collections.synchronizedList(mutableListOf<String>())
+        var expired=false
+        server.dispatcher=object:okhttp3.mockwebserver.Dispatcher(){
+            override fun dispatch(request:okhttp3.mockwebserver.RecordedRequest):MockResponse {
+                paths.add(request.requestUrl!!.encodedPath)
+                val body=when(request.requestUrl!!.encodedPath){
+                    "/api/feed"->"""{"posts":[{"id":17,"title":"Новое обсуждение","isBot":true}],"next":null}"""
+                    "/api/clubs"->"""{"viewerId":null,"total":6,"clubs":[{"id":"club","name":"Наш клуб","members":9,"bots":8}],"next":null}"""
+                    "/api/community-members"->"""{"viewerId":null,"total":24,"bots":24,"members":[{"id":"bot","name":"Бот","isBot":true}],"next":"bot_next"}"""
+                    else->return MockResponse().setResponseCode(401).setBody("""{"error":"Сначала войди"}""")
+                }
+                return MockResponse().setBody(body)
+            }
+        }
+        try {
+            val client=FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{null},{null},{1L},{expired=true},{})
+            val home=DiscoveryRepository(client).home()
+            assertEquals(setOf("/api/feed","/api/clubs","/api/community-members"),paths.toSet())
+            assertEquals(3,paths.size);assertFalse(expired);assertFalse(home.getBoolean("personalLoaded"))
+            assertFalse(home.has("myClubs"));assertNull(home.nullableString("viewerId"))
+            assertEquals(6,home.getJSONObject("catalog").getInt("total"))
+            assertEquals(24,home.getJSONObject("people").getInt("bots"))
+            assertEquals(17,home.getJSONObject("feed").rows("posts").single().getInt("id"))
+            val requests=List(3){server.takeRequest()}
+            assertTrue(requests.all{it.getHeader("X-CSRF-Token")==null})
+            val catalog=requests.single{it.requestUrl!!.encodedPath=="/api/clubs"}.requestUrl!!
+            assertEquals("open",catalog.queryParameter("scope"));assertEquals("discussion",catalog.queryParameter("sort"))
+        }finally{server.shutdown()}
+    }
+    @Test fun authenticatedHomeIncludesPersonalDataAndPublicPreviews()=runBlocking {
+        val server=MockWebServer();server.start(java.net.InetAddress.getByName("127.0.0.1"),0)
+        val paths=java.util.Collections.synchronizedList(mutableListOf<String>())
+        server.dispatcher=object:okhttp3.mockwebserver.Dispatcher(){
+            override fun dispatch(request:okhttp3.mockwebserver.RecordedRequest):MockResponse {
+                paths.add(request.requestUrl!!.encodedPath)
+                val body=when(request.requestUrl!!.encodedPath){
+                    "/api/home"->"""{"viewerId":"viewer","clubCount":7,"myClubs":[{"id":"mine"}],"events":[{"id":2}],"myGroups":[{"id":4}],"groups":[{"id":5}],"preferences":{"region":"EU"}}"""
+                    "/api/feed"->"""{"posts":[{"id":10}],"next":null}"""
+                    "/api/clubs"->"""{"viewerId":"viewer","total":3,"clubs":[],"next":null}"""
+                    "/api/community-members"->"""{"viewerId":"viewer","total":2,"bots":0,"members":[{"id":"peer"}],"next":null}"""
+                    else->return MockResponse().setResponseCode(404)
+                }
+                return MockResponse().setBody(body)
+            }
+        }
+        try {
+            val client=FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{"token"},{"viewer"},{1L},{},{})
+            val home=DiscoveryRepository(client).home()
+            assertEquals(setOf("/api/home","/api/feed","/api/clubs","/api/community-members"),paths.toSet())
+            assertEquals(4,paths.size);assertTrue(home.getBoolean("personalLoaded"));assertEquals("viewer",home.getString("viewerId"))
+            assertEquals(7,home.getInt("clubCount"));assertEquals("mine",home.rows("myClubs").single().getString("id"))
+            assertEquals(2,home.rows("events").single().getInt("id"));assertEquals(4,home.rows("myGroups").single().getInt("id"))
+            assertEquals("EU",home.getJSONObject("preferences").getString("region"));assertTrue(home.has("feed"));assertTrue(home.has("people"))
+        }finally{server.shutdown()}
+    }
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun homeViewModelShowsAvailablePublicSectionsWhenFeedFails()=runBlocking {
+        kotlinx.coroutines.Dispatchers.setMain(kotlinx.coroutines.test.UnconfinedTestDispatcher())
+        val server=MockWebServer();server.start(java.net.InetAddress.getByName("127.0.0.1"),0)
+        var forbiddenHome=false
+        val feedUnavailable=java.util.concurrent.atomic.AtomicBoolean(true)
+        server.dispatcher=object:okhttp3.mockwebserver.Dispatcher(){
+            override fun dispatch(request:okhttp3.mockwebserver.RecordedRequest):MockResponse=when(request.requestUrl!!.encodedPath){
+                "/api/feed"->if(feedUnavailable.get())MockResponse().setResponseCode(503).setBody("""{"error":"Лента временно недоступна"}""")
+                    else MockResponse().setBody("""{"posts":[{"id":18}],"next":null}""")
+                "/api/clubs"->MockResponse().setBody("""{"viewerId":null,"total":1,"clubs":[{"id":"club"}]}""")
+                "/api/community-members"->MockResponse().setBody("""{"viewerId":null,"total":1,"bots":0,"members":[{"id":"peer"}]}""")
+                else->{forbiddenHome=true;MockResponse().setResponseCode(401)}
+            }
+        }
+        val client=FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{null},{null},{1L},{},{})
+        val model=ru.wrcommunity.android.features.DiscoveryViewModel(client)
+        try {
+            model.open("discovery/home")
+            kotlinx.coroutines.withTimeout(5000){while(model.state.value.busy)kotlinx.coroutines.delay(10)}
+            val state=model.state.value
+            assertNull(state.error);assertFalse(forbiddenHome);assertEquals(1L,state.revision)
+            val home=state.data!!
+            assertFalse(home.has("feed"));assertEquals(1,home.getJSONObject("catalog").getInt("total"))
+            assertEquals("peer",home.getJSONObject("people").rows("members").single().getString("id"))
+            assertEquals("Лента временно недоступна",home.getJSONObject("homeWarnings").getString("feed"))
+            feedUnavailable.set(false);model.refresh()
+            kotlinx.coroutines.withTimeout(5000){while(model.state.value.revision<=state.revision)kotlinx.coroutines.delay(10)}
+            assertEquals(18,model.state.value.data!!.getJSONObject("feed").rows("posts").single().getInt("id"))
+            assertFalse(model.state.value.data!!.getJSONObject("homeWarnings").has("feed"))
+        }finally{model.reset();server.shutdown();kotlinx.coroutines.Dispatchers.resetMain()}
+    }
+    @Test fun homeWithNoAvailableSourcesRemainsAnError()=runBlocking {
+        val server=MockWebServer();server.start(java.net.InetAddress.getByName("127.0.0.1"),0)
+        server.dispatcher=object:okhttp3.mockwebserver.Dispatcher(){
+            override fun dispatch(request:okhttp3.mockwebserver.RecordedRequest)=MockResponse().setResponseCode(503).setBody("""{"error":"Сервер временно недоступен"}""")
+        }
+        try {
+            val client=FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{null},{null},{1L},{},{})
+            try{DiscoveryRepository(client).home();fail("Unavailable Home shown as empty success")}
+            catch(e:ApiException){assertEquals(503,e.status)}
+        }finally{server.shutdown()}
+    }
+    @Test fun homeAccessFailureInvalidatesAllPreviews()=runBlocking {
+        val server=MockWebServer();server.start(java.net.InetAddress.getByName("127.0.0.1"),0)
+        server.dispatcher=object:okhttp3.mockwebserver.Dispatcher(){
+            override fun dispatch(request:okhttp3.mockwebserver.RecordedRequest):MockResponse {
+                if(request.requestUrl!!.encodedPath=="/api/community-members")return MockResponse().setBody("""{"viewerId":"another-account","members":[]}""")
+                return MockResponse().setBody("""{"viewerId":"viewer","posts":[],"clubs":[]}""")
+            }
+        }
+        try {
+            val client=FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{"token"},{"viewer"},{1L},{},{})
+            try{DiscoveryRepository(client).home();fail("Foreign preview accepted as partial success")}
+            catch(e:ApiException){assertEquals(403,e.status)}
+        }finally{server.shutdown()}
+    }
     @Test fun dateConversionRejectsBothDSTEdges() {
         assertEquals(1791378000000L,DiscoveryContract.instant("2026-10-07T13:00","UTC"))
         for(local in listOf("2026-03-29T02:30","2026-10-25T02:30")) {

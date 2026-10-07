@@ -1,12 +1,21 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package ru.wrcommunity.android.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.json.JSONArray
@@ -34,17 +43,19 @@ fun ContentSection(model:ContentViewModel,route:String,onNavigate:(String)->Unit
     }
     val kind=route.removePrefix("content/").substringBefore('/')
     val id=route.substringAfter("content/").substringAfter('/',"")
-    Column(Modifier.fillMaxSize().verticalScroll(scrollState).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        Text(contentTitles[kind]?:"Сообщество",style=MaterialTheme.typography.headlineMedium)
+    Column(Modifier.fillMaxSize().testTag(when(kind){"clubs"->"catalog-list";"club"->"club-list";"post"->"post-list";else->"content-list"}).verticalScroll(scrollState).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        if(kind=="clubs") RiftHero("КЛУБЫ · НАЙДИ СВОЙ КРУГ","Найди свою компанию","Для тех, с кем совпадает настроение на игру.",if(user==null)"Войти и найти своих" else "Создать клуб",{onNavigate(if(user==null)"account" else "content/create-club")})
+        else if(kind !in listOf("club","members","post")) SectionHeading(contentTitles[kind]?:"Сообщество",contentSubtitles[kind])
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         state.error?.let{Text(it,color=MaterialTheme.colorScheme.error);TextButton(onClick={model.refresh()},enabled=!state.busy){Text("Обновить")}}
         state.notice?.let{Text(it,color=MaterialTheme.colorScheme.primary)}
         if(kind in listOf("feed","clubs","saved","guides","drafts","search","notifications")) {
-            NavLinks(listOf("Лента" to "content/feed","Клубы" to "content/clubs","Руководства" to "content/guides","Поиск" to "content/search","Сохранённое" to "content/saved","Черновики" to "content/drafts","Обсуждения" to "content/notifications"),onNavigate)
+            ContentDestinations(kind,user!=null,onNavigate)
         }
         val data=state.data.takeIf{model.loadedRoute==route}
         when(kind) {
-            "clubs" -> {CatalogFilters(model,state.busy,onNavigate);if(user!=null)Link("Создать клуб","content/create-club",onNavigate)
+            "clubs" -> {CatalogFilters(model,data,state.busy,onNavigate)
+                data?.let{SectionHeading("Твоя компания начинается здесь","Показано ${it.rows("clubs").size} из ${it.optInt("total",it.rows("clubs").size)} клубов")}
                 data?.rows("clubs")?.let{clubs->if(clubs.isEmpty())Empty("Клубы не найдены.");clubs.forEach{club->ClubCard(club,model,onNavigate)}}
                 More(data,state.busy){model.more("api/clubs","clubs",cursorKey="after")}}
             "feed","saved","guides","search" -> {
@@ -71,15 +82,19 @@ fun ContentSection(model:ContentViewModel,route:String,onNavigate:(String)->Unit
 }
 
 private val contentTitles=mapOf("clubs" to "Клубы","feed" to "Лента сообщества","post" to "Публикация","club" to "Клуб","saved" to "Сохранённое","guides" to "Руководства","drafts" to "Черновики","draft" to "Личный черновик","create" to "Новая публикация","create-poll" to "Новый опрос","create-guide" to "Новое руководство","edit" to "Редактирование","members" to "Участники и заявки","settings" to "Настройки клуба","invites" to "Приглашения","invite" to "Вступить по приглашению","audit" to "Журнал клуба","search" to "Поиск публикаций","notifications" to "Ответы и упоминания","create-club" to "Создать клуб")
+private val contentSubtitles=mapOf("feed" to "Истории, вопросы и опыт твоего сообщества.","saved" to "Публикации, к которым хочется вернуться.","guides" to "Играй увереннее: опыт и советы участников.","drafts" to "Твои идеи перед публикацией.","search" to "Найди обсуждение по теме или названию.")
+@Composable private fun ContentDestinations(kind:String,signedIn:Boolean,navigate:(String)->Unit){
+    val links=listOf("feed" to "Лента","clubs" to "Клубы","guides" to "Руководства","search" to "Поиск")+if(signedIn)listOf("saved" to "Сохранённое","drafts" to "Черновики","notifications" to "Ответы") else emptyList()
+    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){links.forEach{(key,label)->FilterChip(selected=kind==key,onClick={navigate("content/$key")},label={Text(label)})}}
+}
 private fun stamp(value:Long)=if(value==0L)"" else DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(Date(value))
 private fun roleLabel(role:String)=when(role){"owner"->"Владелец";"moderator"->"Модератор";else->"Участник"}
-@Composable private fun Panel(content:@Composable ColumnScope.()->Unit){Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp),content=content)}}
+@Composable private fun Panel(content:@Composable ColumnScope.()->Unit){RiftCard(content)}
 @Composable private fun Empty(text:String){Text(text,color=MaterialTheme.colorScheme.onSurfaceVariant)}
 @Composable private fun Link(label:String,route:String,navigate:(String)->Unit){TextButton(onClick={navigate(route)}){Text(label)}}
-@Composable private fun NavLinks(links:List<Pair<String,String>>,navigate:(String)->Unit){links.chunked(2).forEach{row->Row(Modifier.fillMaxWidth()){row.forEach{(label,route)->Link(label,route,navigate)}}}}
 @Composable private fun More(page:JSONObject?,busy:Boolean,action:()->Unit){if(page!=null&&ContentRepository.next(page)!=null)OutlinedButton(onClick=action,enabled=!busy){Text("Показать ещё")}}
 @Composable private fun Field(value:String,label:String,onChange:(String)->Unit,multiline:Boolean=false,enabled:Boolean=true){OutlinedTextField(value,onChange,label={Text(label)},modifier=Modifier.fillMaxWidth(),singleLine=!multiline,minLines=if(multiline)3 else 1,enabled=enabled)}
-@Composable private fun Choice(value:String,label:String,options:List<Pair<String,String>>,change:(String)->Unit){Text(label,style=MaterialTheme.typography.labelLarge);options.chunked(2).forEach{row->Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){row.forEach{(key,text)->FilterChip(selected=value==key,onClick={change(key)},label={Text(text)})}}}}
+@Composable private fun Choice(value:String,label:String,options:List<Pair<String,String>>,enabled:Boolean=true,change:(String)->Unit){Text(label,style=MaterialTheme.typography.labelLarge);FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){options.forEach{(key,text)->FilterChip(selected=value==key,onClick={change(key)},enabled=enabled,label={Text(text)})}}}
 @Composable private fun Destructive(label:String,description:String,busy:Boolean,action:()->Unit) {
     var confirm by remember{mutableStateOf(false)}
     TextButton(onClick={confirm=true},enabled=!busy){Text(label,color=MaterialTheme.colorScheme.error)}
@@ -90,48 +105,151 @@ private fun roleLabel(role:String)=when(role){"owner"->"Владелец";"moder
     )
 }
 
-@Composable private fun CatalogFilters(model:ContentViewModel,busy:Boolean,navigate:(String)->Unit){
-    var q by rememberSaveable{mutableStateOf(model.filter("content/clubs","q"))};var tag by rememberSaveable{mutableStateOf(model.filter("content/clubs","tag"))};var scope by rememberSaveable{mutableStateOf(model.filter("content/clubs","scope").ifBlank{"all"})};var sort by rememberSaveable{mutableStateOf(model.filter("content/clubs","sort").ifBlank{"new"})}
-    Panel{Field(q,"Название или тема",{q=it});Field(tag,"Метка",{tag=it});Choice(scope,"Доступ",listOf("all" to "Все","open" to "Открытые","mine" to "Мои")){scope=it};Choice(sort,"Сортировка",listOf("new" to "Новые","name" to "По имени","discussion" to "Обсуждения")){sort=it};Button(onClick={model.open("content/clubs",mapOf("q" to q,"tag" to tag,"scope" to scope,"sort" to sort))},enabled=!busy){Text("Найти клубы")};Link("У меня есть приглашение","content/invite",navigate)}
+@Composable private fun CatalogFilters(model:ContentViewModel,data:JSONObject?,busy:Boolean,navigate:(String)->Unit){
+    var q by rememberSaveable(model.userId){mutableStateOf(model.filter("content/clubs","q"))}
+    var tag by rememberSaveable(model.userId){mutableStateOf(model.filter("content/clubs","tag"))}
+    var scope by rememberSaveable(model.userId){mutableStateOf(model.filter("content/clubs","scope").ifBlank{"all"})}
+    var sort by rememberSaveable(model.userId){mutableStateOf(model.filter("content/clubs","sort").ifBlank{"new"})}
+    var expanded by rememberSaveable{mutableStateOf(false)}
+    fun apply()=model.open("content/clubs",mapOf("q" to q,"tag" to tag,"scope" to scope,"sort" to sort))
+    val availableTags=data?.optJSONArray("tags")?.let{a->List(a.length()){a.optString(it)}.filter{it.isNotBlank()}}.orEmpty()
+    Panel{
+        Field(q,"Поиск клубов",{q=it},enabled=!busy)
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            (listOf("all" to "Все клубы","open" to "Открытые")+if(model.userId!=null)listOf("mine" to "Мои клубы") else emptyList()).forEach{(key,label)->FilterChip(scope==key,{scope=key;apply()},enabled=!busy,label={Text(label)})}
+        }
+        Text("Темы",style=MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            (listOf("")+availableTags+listOf(tag).filter{it.isNotBlank()&&it !in availableTags}).forEach{topic->FilterChip(tag==topic,{tag=topic;apply()},enabled=!busy,label={Text(topic.ifBlank{"Все темы"})})}
+        }
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+            Button(onClick={apply()},enabled=!busy,modifier=Modifier.semantics{contentDescription="Найти клубы"}){Text("Найти клубы")}
+            TextButton(onClick={expanded=!expanded}){Text(if(expanded)"Скрыть фильтры" else "Порядок и ещё")}
+        }
+        if(expanded){
+            Choice(sort,"Сортировка",listOf("new" to "Новые","name" to "По имени","discussion" to "Обсуждения"),enabled=!busy){sort=it;apply()}
+            TextButton(onClick={q="";tag="";scope="all";sort="new";apply()},enabled=!busy){Text("Сбросить фильтры")}
+            Link("У меня есть приглашение","content/invite",navigate)
+        }
+    }
 }
 @Composable private fun PostFilters(model:ContentViewModel,kind:String,route:String,busy:Boolean){var q by rememberSaveable(kind){mutableStateOf(model.filter(route,"q").ifBlank{if(kind=="search")"Wild Rift" else ""})};var champion by rememberSaveable(kind){mutableStateOf(model.filter(route,"champion"))};var version by rememberSaveable(kind){mutableStateOf(model.filter(route,"gameVersion"))};var topic by rememberSaveable(kind){mutableStateOf(model.filter(route,"topic"))};Panel{Field(q,"Поиск по тексту",{q=it});if(kind=="guides"){Field(champion,"Чемпион",{champion=it});Field(version,"Версия игры",{version=it});Choice(topic,"Тема",listOf("" to "Все")+topics){topic=it}};Button(onClick={model.open(route,mapOf("q" to q,"champion" to champion,"gameVersion" to version,"topic" to topic))},enabled=!busy&& (kind!="search"||q.isNotBlank())){Text("Искать")}}}
-@Composable private fun ClubCard(club:JSONObject,model:ContentViewModel,navigate:(String)->Unit){Panel{NativeMedia(club.nullableString("cover_id"),model.mediaClient.api,"Обложка клуба",Modifier.fillMaxWidth().height(150.dp));Text(club.optString("name"),style=MaterialTheme.typography.titleLarge);Text(club.optString("description"));Text(if(club.optString("access")=="open")"Открытый клуб" else "Вступление по заявке");Text("${club.optInt("members")} участников");if(club.optBoolean("isDemoClub"))Text("Демонстрационный клуб");Text(tags(club));Link("Открыть клуб","content/club/${club.optString("id")}",navigate)}}
-private fun tags(club:JSONObject)=club.optJSONArray("tags")?.let{a->List(a.length()){a.optString(it)}.joinToString(" · ")}.orEmpty()
-@Composable private fun PostCard(post:JSONObject,model:ContentViewModel,navigate:(String)->Unit){Panel{NativeMedia(post.nullableString("image_id"),model.mediaClient.api,"Изображение публикации",Modifier.fillMaxWidth().height(180.dp));Text(post.optString("title"),style=MaterialTheme.typography.titleLarge);Text(post.optString("author_name")+if(post.optBoolean("isBot"))" · Бот" else "");post.nullableString("club_name")?.let{Text(it)};Text(post.optString("body").take(260));post.optJSONObject("guide")?.let{Text("Руководство · ${it.optString("game_version")}")};if(post.optJSONObject("poll")!=null)Text("Опрос");Link("Читать и обсуждать","content/post/${post.optLong("id")}",navigate)}}
-
-@Composable private fun ClubDetail(data:JSONObject,model:ContentViewModel,navigate:(String)->Unit,busy:Boolean){
-    val club=data.getJSONObject("club");val id=club.optString("id");val membership=club.nullableString("membership");val role=club.optString("myRole");val member=membership=="member";val staff=role in listOf("owner","moderator")
-    Panel{NativeMedia(club.nullableString("cover_id"),model.mediaClient.api,"Обложка клуба",Modifier.fillMaxWidth().height(180.dp));Text(club.optString("name"),style=MaterialTheme.typography.headlineSmall);Text(club.optString("description"));Text(tags(club));Text("${club.optInt("members")} участников");if(club.optBoolean("isDemoClub"))Text("Демонстрационный клуб");Text("Правила",style=MaterialTheme.typography.titleMedium);Text(club.optString("rules").ifBlank{"Правила пока не добавлены."});if(member)Text(roleLabel(role));if(model.userId!=null&&club.optString("owner_id")!=model.userId)Link("Пожаловаться на клуб","moderation/report/club_page/$id",navigate)
-        when(membership){"pending"->Text("Заявка ожидает решения");"banned"->Text("Вступление ограничено");"member"->if(role!="owner")Destructive("Выйти из клуба","Доступ к закрытым материалам и чату будет потерян.",busy){model.mutate("api/clubs/$id/leave")};else->if(model.userId!=null)Button(onClick={model.mutate("api/clubs/$id/join")},enabled=!busy){Text(if(club.optString("access")=="open")"Вступить" else "Подать заявку")}}
-        if(membership=="pending")Destructive("Отозвать заявку","Заявка будет удалена.",busy){model.mutate("api/clubs/$id/leave")}
+@Composable private fun ClubCover(club:JSONObject,model:ContentViewModel,height:Int){
+    Box(Modifier.fillMaxWidth().height(height.dp).clip(RoundedCornerShape(16.dp))){
+        RiftCover(club.optString("name"),club.optString("accent","gold"),Modifier.fillMaxSize())
+        club.nullableString("cover_id")?.let{NativeMedia(it,model.mediaClient.api,"Обложка клуба",Modifier.fillMaxSize())}
     }
+}
+private fun tagList(club:JSONObject)=club.optJSONArray("tags")?.let{a->List(a.length()){a.optString(it)}.filter{it.isNotBlank()}}.orEmpty()
+private fun tags(club:JSONObject)=tagList(club).joinToString(" · ")
+@Composable private fun Badges(labels:List<String>){FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){labels.filter{it.isNotBlank()}.forEach{label->Surface(color=MaterialTheme.colorScheme.surfaceVariant,shape=RoundedCornerShape(8.dp)){Text(label,Modifier.padding(horizontal=10.dp,vertical=6.dp),style=MaterialTheme.typography.labelMedium)}}}}
+@Composable private fun ClubCard(club:JSONObject,model:ContentViewModel,navigate:(String)->Unit){Panel{
+    ClubCover(club,model,150)
+    Text(if(club.optString("access")=="open")"ОТКРЫТЫЙ КЛУБ" else "ПО ЗАЯВКАМ",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)
+    Text(club.optString("name"),modifier=Modifier.fillMaxWidth().clickable{navigate("content/club/${club.optString("id")}")}.heightIn(min=48.dp).padding(vertical=8.dp),style=MaterialTheme.typography.titleLarge)
+    Text(club.optString("description").ifBlank{"Место для общения и совместных игр."},color=MaterialTheme.colorScheme.onSurfaceVariant)
+    Badges(tagList(club)+if(club.optBoolean("isDemoClub"))listOf("Демо-клуб") else emptyList())
+    HorizontalDivider()
+    club.optJSONObject("lastPost")?.let{last->
+        Text("Последнее обсуждение",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Link(last.optString("title"),"content/post/${last.optLong("id")}",navigate)
+        Text(stamp(last.optLong("created_at")),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    }?:Text(if(club.optString("access")=="open")"Первые обсуждения ещё впереди" else "Обсуждения доступны участникам",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("${club.optInt("members")} участников"+when(club.optString("membership")){"member"->" · Ты в клубе";"pending"->" · Заявка отправлена";"banned"->" · Доступ ограничен";else->""},style=MaterialTheme.typography.labelLarge)
+    OutlinedButton(onClick={navigate("content/club/${club.optString("id")}")},modifier=Modifier.fillMaxWidth()){Text("Открыть клуб →")}
+}}
+@Composable private fun PostByline(post:JSONObject,model:ContentViewModel,navigate:(String)->Unit){
+    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)){
+        RiftAvatar(post.optString("author_name"),post.nullableString("author_avatar_id"),model.mediaClient.api)
+        Column(Modifier.weight(1f)){
+            TextButton(onClick={navigate("discovery/player/${post.optString("author_id")}")},contentPadding=PaddingValues(0.dp)){Text(post.optString("author_name")+if(post.optBoolean("isBot"))" · Бот" else "",style=MaterialTheme.typography.labelLarge)}
+            Text(stamp(post.optLong("created_at"))+if(post.optLong("edited_at")>0)" · Изменено" else "",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+@Composable private fun PostCard(post:JSONObject,model:ContentViewModel,navigate:(String)->Unit){Panel{
+    PostByline(post,model,navigate)
+    post.nullableString("club_name")?.let{Text(it,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)}
+    post.optJSONObject("guide")?.let{Badges(listOf("Руководство",it.optString("game_version")))}
+    if(post.optJSONObject("poll")!=null)Badges(listOf("Опрос"))
+    Text(post.optString("title"),modifier=Modifier.fillMaxWidth().clickable{navigate("content/post/${post.optLong("id")}")}.heightIn(min=48.dp).padding(vertical=8.dp),style=MaterialTheme.typography.titleLarge)
+    Text(post.optString("body").let{if(it.length>300)it.take(300).trimEnd()+"…" else it},style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    post.nullableString("image_id")?.let{NativeMedia(it,model.mediaClient.api,"Изображение публикации",Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)))}
+    if(post.optBoolean("isBot"))Text("Демонстрационная публикация бота",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    val reactions=post.rows("reactions").sumOf{it.optInt("count")}
+    FlowRow(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){Text("Реакций: $reactions"+if(post.optBoolean("saved"))" · Сохранено" else "",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant);Link("Обсудить →","content/post/${post.optLong("id")}",navigate)}
+}}
+@Composable private fun ClubTabs(club:JSONObject,selected:String,navigate:(String)->Unit){
+    val id=club.optString("id");val member=club.optString("membership")=="member"
+    TabRow(selectedTabIndex=if(selected=="members")2 else 0){
+        Tab(selected=selected=="posts",onClick={navigate("content/club/$id")},text={Text("Публикации")})
+        Tab(selected=false,onClick={navigate("chat/club/$id")},enabled=member,text={Text("Чат")})
+        Tab(selected=selected=="members",onClick={navigate("content/members/$id")},enabled=member,text={Text("Участники")})
+    }
+}
+@Composable private fun ClubHeader(club:JSONObject,model:ContentViewModel,navigate:(String)->Unit,busy:Boolean,selected:String="posts"){
+    val id=club.optString("id");val membership=club.nullableString("membership");val role=club.optString("myRole");val member=membership=="member";val staff=role in listOf("owner","moderator")
+    var menu by remember(id,model.userId){mutableStateOf(false)}
+    var rules by rememberSaveable(id){mutableStateOf(false)}
+    Panel{
+        ClubCover(club,model,190)
+        Text("ТВОЁ МЕСТО В СООБЩЕСТВЕ",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)
+        Text(club.optString("name"),style=MaterialTheme.typography.headlineMedium)
+        Text(club.optString("description"),color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Badges(listOf(if(club.optString("access")=="open")"Открытый клуб" else "По заявкам","${club.optInt("members")} участников")+tagList(club)+(if(club.optBoolean("isDemoClub"))listOf("Демо-клуб") else emptyList())+(if(member)listOf(roleLabel(role)) else emptyList()))
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+            when(membership){
+                "pending"->Destructive("Отозвать заявку","Заявка будет удалена.",busy){model.mutate("api/clubs/$id/leave")}
+                "banned"->Text("Вступление ограничено",color=MaterialTheme.colorScheme.error)
+                "member"->if(role!="owner")Destructive("Выйти из клуба","Доступ к закрытым материалам и чату будет потерян.",busy){model.mutate("api/clubs/$id/leave")}
+                else->Button(onClick={if(model.userId==null)navigate("account") else model.mutate("api/clubs/$id/join")},enabled=!busy){Text(if(model.userId==null)"Войти и присоединиться" else if(club.optString("access")=="open")"Вступить в клуб" else "Подать заявку")}
+            }
+            if(member)Button(onClick={navigate("content/create/$id")},enabled=!busy){Text("Написать пост")}
+            Box{
+                OutlinedButton(onClick={menu=true}){Text("Действия")}
+                DropdownMenu(menu,{menu=false}){
+                    val links=listOf("Руководства клуба" to "content/guides/$id","Поиск в клубе" to "content/search/$id")+(if(member)listOf("Создать опрос" to "content/create-poll/$id","Написать руководство" to "content/create-guide/$id","Мой черновик" to "content/draft/$id") else emptyList())+(if(staff)listOf("Журнал действий" to "content/audit/$id") else emptyList())+(if(role=="owner")listOf("Настройки клуба" to "content/settings/$id","Приглашения" to "content/invites/$id") else emptyList())+(if(model.userId!=null&&club.optString("owner_id")!=model.userId)listOf("Пожаловаться на клуб" to "moderation/report/club_page/$id") else emptyList())
+                    links.forEach{(label,route)->DropdownMenuItem(text={Text(label)},onClick={menu=false;navigate(route)})}
+                }
+            }
+        }
+        if(membership=="pending")Text("Заявка ожидает решения",style=MaterialTheme.typography.bodySmall)
+        TextButton(onClick={rules=!rules}){Text(if(rules)"Скрыть правила" else "Правила клуба")}
+        if(rules)Text(club.optString("rules").ifBlank{"Правила пока не добавлены."})
+    }
+    ClubTabs(club,selected,navigate)
+}
+@Composable private fun ClubDetail(data:JSONObject,model:ContentViewModel,navigate:(String)->Unit,busy:Boolean){
+    val club=data.getJSONObject("club");val id=club.optString("id");val member=club.optString("membership")=="member"
+    ClubHeader(club,model,navigate,busy)
     data.optJSONObject("transfer")?.let{offer->Panel{Text("Передача владения",style=MaterialTheme.typography.titleMedium);Text("Действует до ${stamp(offer.optLong("expires_at"))}. Прежние приглашения будут отозваны.");if(offer.optString("target_id")==model.userId)Destructive("Принять владение","Ты станешь владельцем и получишь управление клубом. Прежние приглашения будут отозваны.",busy){model.mutate("api/clubs/$id/transfer/accept",body=JSONObject().put("offerId",offer.optString("id")))};Destructive("Отменить передачу","Предложение будет отменено.",busy){model.mutate("api/clubs/$id/transfer/cancel",body=JSONObject().put("offerId",offer.optString("id")))}}}
-    NavLinks(listOf("Руководства клуба" to "content/guides/$id","Поиск в клубе" to "content/search/$id"),navigate)
-    if(member)NavLinks(listOf("Чат" to "chat/club/$id","Участники" to "content/members/$id","Написать пост" to "content/create/$id","Опрос" to "content/create-poll/$id","Руководство" to "content/create-guide/$id","Черновик" to "content/draft/$id"),navigate)
-    if(staff)Link("Журнал действий","content/audit/$id",navigate)
-    if(role=="owner")NavLinks(listOf("Настройки" to "content/settings/$id","Приглашения" to "content/invites/$id"),navigate)
-    val pins=data.optJSONObject("pinsPage")?.rows("posts").orEmpty();if(pins.isNotEmpty()){Text("Закреплено",style=MaterialTheme.typography.titleLarge);pins.forEach{Link(it.optString("title"),"content/post/${it.optLong("id")}",navigate)}}
-    data.optJSONObject("postsPage")?.let{page->Text("Публикации",style=MaterialTheme.typography.titleLarge);if(page.rows("posts").isEmpty())Empty("Публикаций пока нет.");page.rows("posts").forEach{PostCard(it,model,navigate)};More(page,busy){model.more("api/clubs/$id/posts","posts","postsPage")}}
+    val pins=data.optJSONObject("pinsPage")?.rows("posts").orEmpty()
+    if(pins.isNotEmpty())Panel{Text("Закреплено",style=MaterialTheme.typography.titleMedium);pins.forEach{Link(it.optString("title"),"content/post/${it.optLong("id")}",navigate)}}
+    data.optJSONObject("postsPage")?.let{page->SectionHeading("Разговоры клуба","Делись опытом, задавай вопросы и находи своих.");if(page.rows("posts").isEmpty())Empty("Публикаций пока нет.");page.rows("posts").forEach{PostCard(it,model,navigate)};More(page,busy){model.more("api/clubs/$id/posts","posts","postsPage")}}
     if(!member&&club.optString("access")!="open")Empty("Материалы доступны после принятия в клуб.")
 }
 
 @Composable private fun PostDetail(data:JSONObject,model:ContentViewModel,navigate:(String)->Unit,busy:Boolean){
     val p=data.getJSONObject("post");val id=p.optLong("id");val club=data.getJSONObject("club");val clubId=p.optString("club_id");val member=club.optString("membership")=="member";val staff=club.optString("myRole") in listOf("owner","moderator");val own=p.optString("author_id")==model.userId
-    Panel{Text(p.optString("title"),style=MaterialTheme.typography.headlineSmall);Text(p.optString("author_name")+if(p.optBoolean("isBot"))" · Бот" else "");Link("Профиль автора","discovery/player/${p.optString("author_id")}",navigate);Text(stamp(p.optLong("created_at")));p.optJSONObject("guide")?.let{g->Text("${topics.find{it.first==g.optString("topic")}?.second.orEmpty()} · ${g.optString("champion")} · версия ${g.optString("game_version")}");Text(g.optString("summary"))};Text(p.optString("body"));p.nullableString("image_id")?.let{NativeMedia(it,model.mediaClient.api,"Изображение публикации",Modifier.fillMaxWidth())};Link("Открыть клуб","content/club/$clubId",navigate)
-        listOf("like" to "Нравится","useful" to "Полезно","fire" to "Огонь").forEach{(kind,label)->val selected=p.optString("myReaction")==kind;TextButton(onClick={model.mutate("api/posts/$id/reaction",if(selected)"DELETE" else "PUT",JSONObject().put("kind",kind))},enabled=member&&!busy){Text("${if(selected)"✓ " else ""}$label · ${p.rows("reactions").find{it.optString("kind")==kind}?.optInt("count")?:0}")}}
+    var tools by remember(id,model.userId){mutableStateOf(false)}
+    Panel{PostByline(p,model,navigate);Text(p.optString("title"),style=MaterialTheme.typography.headlineSmall);p.optJSONObject("guide")?.let{g->Text("${topics.find{it.first==g.optString("topic")}?.second.orEmpty()} · ${g.optString("champion")} · версия ${g.optString("game_version")}");Text(g.optString("summary"))};Text(p.optString("body"));p.nullableString("image_id")?.let{NativeMedia(it,model.mediaClient.api,"Изображение публикации",Modifier.fillMaxWidth())};Link("Открыть клуб","content/club/$clubId",navigate)
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("like" to "Нравится","useful" to "Полезно","fire" to "Огонь").forEach{(kind,label)->val selected=p.optString("myReaction")==kind;TextButton(onClick={model.mutate("api/posts/$id/reaction",if(selected)"DELETE" else "PUT",JSONObject().put("kind",kind))},enabled=member&&!busy){Text("${if(selected)"✓ " else ""}$label · ${p.rows("reactions").find{it.optString("kind")==kind}?.optInt("count")?:0}")}}}
         if(model.userId!=null)TextButton(onClick={model.mutate("api/posts/$id/saved",if(p.optBoolean("saved"))"DELETE" else "PUT")},enabled=!busy){Text(if(p.optBoolean("saved"))"Убрать из сохранённого" else "Сохранить")}
+        if(model.userId!=null){TextButton(onClick={tools=!tools}){Text(if(tools)"Скрыть действия" else "Действия публикации")}}
+        if(tools){
         if(own){if(member&&p.optJSONObject("poll")==null)Link("Редактировать","content/edit/$id",navigate);Destructive("Удалить публикацию","Публикация, комментарии и вложение будут удалены без возможности восстановления.",busy){model.mutate("api/posts/$id","DELETE",onSuccess={navigate("content/club/$clubId")})}}
         else if(model.userId!=null)Link("Пожаловаться","moderation/report/post/$id",navigate)
         if(staff){val pinned=data.optJSONObject("pinsPage")?.rows("posts")?.any{it.optLong("id")==id}==true;TextButton(onClick={model.mutate("api/clubs/$clubId/pins/$id",if(pinned)"DELETE" else "PUT")},enabled=!busy){Text(if(pinned)"Снять закрепление" else "Закрепить")};if(!own)Destructive("Удалить как модератор","Публикация и обсуждение будут удалены. Действие попадёт в журнал клуба.",busy){model.mutate("api/clubs/$clubId/posts/$id","DELETE",onSuccess={navigate("content/club/$clubId")})}}
+        }
     }
     p.optJSONObject("poll")?.let{poll->Panel{Text(if(poll.optBoolean("closed"))"Опрос завершён" else "До ${stamp(poll.optLong("endsAt"))}");Text("Всего голосов: ${poll.optInt("total")}");poll.rows("options").forEach{o->val chosen=!poll.isNull("myOption")&&poll.optInt("myOption")==o.optInt("option_id");OutlinedButton(onClick={model.mutate("api/posts/$id/poll/vote","PUT",JSONObject().put("optionId",o.optInt("option_id")))},enabled=member&&!busy&&!poll.optBoolean("closed")&&poll.isNull("myOption")){Text("${if(chosen)"✓ " else ""}${o.optString("label")} · ${o.optInt("votes")}")}}}}
     var reply by rememberSaveable(id){mutableStateOf<Long?>(null)};var comment by rememberSaveable(id,model.userId){mutableStateOf("")}
     val comments=data.optJSONObject("commentsPage")
-    Text("Обсуждение",style=MaterialTheme.typography.titleLarge)
+    SectionHeading("Обсуждение","Вопросы, ответы и опыт участников.")
     if(comments?.rows("comments")?.isEmpty()==true)Empty("Первый комментарий может быть твоим.")
-    comments?.rows("comments")?.forEach{c->Panel{Text(c.optString("author_name")+if(c.optInt("isBot")==1)" · Бот" else "");if(!c.isNull("parent_id"))Text("Ответ ${c.optString("parent_author_name")}: ${c.optString("parent_body")}",style=MaterialTheme.typography.bodySmall);Text(c.optString("body"));if(member)TextButton(onClick={reply=if(c.isNull("parent_id"))c.optLong("id") else c.optLong("parent_id")}){Text("Ответить")};if(model.userId!=null&&c.optString("author_id")!=model.userId)Link("Пожаловаться","moderation/report/comment/${c.optLong("id")}",navigate);if(comments.optBoolean("canModerate"))Destructive("Удалить комментарий","Текст будет удалён; ответы останутся без цитаты.",busy){model.mutate("api/clubs/$clubId/comments/${c.optLong("id")}","DELETE")}}}
+    comments?.rows("comments")?.forEach{c->Panel{Row(horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically){RiftAvatar(c.optString("author_name"),null,model.mediaClient.api,32.dp);Column{Text(c.optString("author_name")+if(c.optInt("isBot")==1)" · Бот" else "",style=MaterialTheme.typography.labelLarge);Text(stamp(c.optLong("created_at")),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}};if(!c.isNull("parent_id"))Text("Ответ ${c.optString("parent_author_name")}: ${c.optString("parent_body")}",style=MaterialTheme.typography.bodySmall);Text(c.optString("body"));if(member)TextButton(onClick={reply=if(c.isNull("parent_id"))c.optLong("id") else c.optLong("parent_id")}){Text("Ответить")};if(model.userId!=null&&c.optString("author_id")!=model.userId)Link("Пожаловаться","moderation/report/comment/${c.optLong("id")}",navigate);if(comments.optBoolean("canModerate"))Destructive("Удалить комментарий","Текст будет удалён; ответы останутся без цитаты.",busy){model.mutate("api/clubs/$clubId/comments/${c.optLong("id")}","DELETE")}}}
     More(comments,busy){model.more("api/posts/$id/comments","comments","commentsPage")}
-    if(member)Panel{reply?.let{Text("Ответ на комментарий №$it");TextButton(onClick={reply=null}){Text("Отменить ответ")}};Field(comment,"Комментарий · @логин для упоминания",{comment=it},true,!busy);Button(onClick={val body=JSONObject().put("body",comment).put("parentId",reply?:JSONObject.NULL);body.put("clientId",model.attempt("comment:$id",body.toString()));model.mutate("api/posts/$id/comments",body=body,onSuccess={comment="";reply=null})},enabled=!busy&&comment.isNotBlank()&&comment.length<=1000){Text("Отправить")}}
+    if(member)Panel{reply?.let{Text("Ответ на комментарий");TextButton(onClick={reply=null}){Text("Отменить ответ")}};Field(comment,"Комментарий · @логин для упоминания",{comment=it},true,!busy);Button(onClick={val body=JSONObject().put("body",comment).put("parentId",reply?:JSONObject.NULL);body.put("clientId",model.attempt("comment:$id",body.toString()));model.mutate("api/posts/$id/comments",body=body,onSuccess={comment="";reply=null})},enabled=!busy&&comment.isNotBlank()&&comment.length<=1000){Text("Отправить")}}
     else Empty("Для комментариев и реакций вступи в клуб.")
 }
 
@@ -145,6 +263,8 @@ private fun tags(club:JSONObject)=club.optJSONArray("tags")?.let{a->List(a.lengt
 }
 
 @Composable private fun Members(data:JSONObject,model:ContentViewModel,navigate:(String)->Unit,busy:Boolean){val club=data.getJSONObject("club");val id=club.optString("id");val role=club.optString("myRole");val owner=role=="owner";val staff=owner||role=="moderator";val page=data.optJSONObject("membersPage")?:return
+    ClubHeader(club,model,navigate,busy,"members")
+    SectionHeading("Люди клуба",if(staff)"Участники, заявки и управление ролями." else "Познакомься с теми, кто играет рядом.")
     if(page.rows("members").isEmpty())Empty("Участников и заявок нет.")
     page.rows("members").forEach{m->val userId=m.optString("id");val status=m.optString("status");val targetRole=m.optString("role");val body=JSONObject().put("userId",userId)
         Panel{Text(m.optString("name")+if(m.optInt("isBot")==1)" · Бот" else "",style=MaterialTheme.typography.titleMedium);Text("@${m.optString("handle")} · ${when(status){"pending"->"Заявка";"banned"->"Доступ ограничен";else->roleLabel(targetRole)}}");Link("Профиль","discovery/player/$userId",navigate)
