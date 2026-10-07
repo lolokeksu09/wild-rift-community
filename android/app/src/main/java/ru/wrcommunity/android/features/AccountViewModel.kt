@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -19,6 +20,7 @@ class AccountViewModel(private val repo:Accounts):ViewModel() {
     val state=mutable.asStateFlow()
     private var csrf:String?=null
     private var job:Job?=null
+    private var generation=0L
     init{refresh()}
     private fun identity(value:Identity) {
         val previous=mutable.value.user?.id
@@ -29,9 +31,11 @@ class AccountViewModel(private val repo:Accounts):ViewModel() {
     }
     private fun operation(action:suspend ()->Unit) {
         if(mutable.value.busy)return
+        val key=++generation
         mutable.value=mutable.value.copy(busy=true,error=null,notice=null)
         job=viewModelScope.launch {
             try{action()}catch(e:CancellationException){throw e}catch(e:Exception){
+                if(key!=generation)return@launch
                 if(e is ApiException && e.status in listOf(401,403) && mutable.value.user!=null) {
                     if(e.status==401){
                         identity(Identity(null,null))
@@ -47,13 +51,19 @@ class AccountViewModel(private val repo:Accounts):ViewModel() {
                     is IOException -> "Нет связи с сервером. Действие могло выполниться — обнови профиль перед повтором."
                     else -> "Не удалось выполнить действие. Попробуй позже."
                 })
-            }finally{mutable.value=mutable.value.copy(busy=false,ready=true)}
+            }finally{if(key==generation)mutable.value=mutable.value.copy(busy=false,ready=true)}
         }
     }
     fun csrfToken():String?=csrf
     fun expireSession(){
-        job?.cancel();identity(Identity(null,null));mutable.value=mutable.value.copy(busy=true,error="Сеанс завершён. Войди снова.")
-        viewModelScope.launch{try{repo.forget()}catch(e:CancellationException){throw e}catch(_:Exception){}finally{mutable.value=mutable.value.copy(busy=false)}}
+        val previous=job;val key=++generation
+        previous?.cancel();identity(Identity(null,null))
+        mutable.value=mutable.value.copy(busy=true,error="Сеанс завершён. Войди снова.")
+        job=viewModelScope.launch{
+            try{previous?.cancelAndJoin();repo.forget()}
+            catch(e:CancellationException){throw e}catch(_:Exception){}
+            finally{if(key==generation)mutable.value=mutable.value.copy(busy=false)}
+        }
     }
     fun refresh()=operation{identity(repo.restore())}
     fun signIn(handle:String,password:String,name:String?=null)=operation {

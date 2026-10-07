@@ -36,19 +36,44 @@ class MessagingViewModel(client:FeatureClient):FeatureViewModel(client) {
         flow.value=MessagingState(route=route,draft=drafts[route].orEmpty(),handle=handles[route].orEmpty(),pending=pending)
     }
     override fun reset(){super.reset();stop();action?.cancel();generation++;drafts.clear();handles.clear();queues.clear();request=null;signature="";cursor=0;blockVersion=null;flow.value=MessagingState();identity=identityKey}
-    fun start(){if(active)return;active=true;refresh();polling=viewModelScope.launch{while(isActive){delay(if(isRoom())2000 else pollDelay);if(loading?.isActive!=true&&!flow.value.denied){if(isRoom())fetchMessages(cursor==0L) else if(flow.value.route=="chat/inbox")summary()}}}}
+    fun start(){if(active)return;active=true;refresh();schedulePolling()}
+    private fun schedulePolling(){
+        polling?.cancel()
+        if(!active)return
+        polling=viewModelScope.launch {
+            while(isActive){
+                delay(if(isRoom())2000 else pollDelay)
+                if(loading?.isActive!=true&&!flow.value.denied){
+                    if(isRoom())fetchMessages(cursor==0L) else if(flow.value.route=="chat/inbox")summary()
+                }
+            }
+        }
+    }
     fun stop(){active=false;polling?.cancel();loading?.cancel();polling=null;loading=null}
     private fun isRoom()=flow.value.route.startsWith("chat/direct/")||flow.value.route.startsWith("chat/club/")
     fun draft(value:String){val v=value.take(2000);drafts[flow.value.route]=v;update{it.copy(draft=v)}}
     fun handle(value:String){val handle=value.take(24);handles[flow.value.route]=handle;update{it.copy(handle=handle)}}
     private suspend fun guard(block:suspend()->Unit){val key=generation;try{block()}catch(e:CancellationException){throw e}catch(e:Exception){if(key==generation){val denied=e is ApiException&&e.status in listOf(401,403,404);if(denied&&(isRoom()||(e is ApiException&&e.status==401))){cursor=0;queues.remove(flow.value.route);drafts.remove(flow.value.route);update{it.copy(messages=emptyList(),conversations=emptyList(),blocks=emptyList(),pending=emptyList(),draft="",denied=true)}};update{it.copy(error=message(e,false),busy=false)};if(e is ApiException&&e.status==429)runCatching{MessagingContract.budget(client.get("api/direct/contact-budget"))}.getOrNull()?.let{b->if(key==generation)update{it.copy(budget=b)}}}}}
-    fun refresh(){if(loading?.isActive==true)return;val key=generation;loading=viewModelScope.launch{update{it.copy(busy=true,error=null)};guard{when{
-        isRoom()->fetchMessages(cursor==0L)
+    fun refresh(){if(loading?.isActive==true)return;if(isRoom())polling?.cancel();val key=generation;loading=viewModelScope.launch{update{it.copy(busy=true,error=null)};guard{when{
+        isRoom()->reloadHistory()
         flow.value.route=="chat/blocks"->{val raw=client.get("api/blocks");if(key==generation)update{it.copy(blocks=raw.rows("blocks").map{b->b.getString("id") to "${b.optString("name")} · @${b.optString("handle")}"})}}
         flow.value.route=="chat/privacy"->{val raw=client.get("api/me");if(key==generation)update{it.copy(dmRequests=raw.optJSONObject("user")?.optBoolean("dmRequests",true)?:true)}}
         flow.value.route.startsWith("chat/new/")->{val raw=client.get("api/profiles/${flow.value.route.substringAfterLast('/')}");val p=raw.optJSONObject("profile");val budget=MessagingContract.budget(client.get("api/direct/contact-budget"));if(key==generation)update{it.copy(handle=p?.optString("handle")?:it.handle,budget=budget)}}
         else->{val page=repository.inbox();if(key==generation)update{it.copy(conversations=page.conversations,next=page.next,unread=page.unread,requests=page.requests,budget=page.budget)}}
-    }};if(key==generation)update{it.copy(busy=false)}}}
+    }};if(key==generation){update{it.copy(busy=false)};schedulePolling()}}}
+    private suspend fun reloadHistory(){
+        val route=flow.value.route
+        val key=generation
+        val page=repository.history(route,flow.value.messages.minOfOrNull{it.id})
+        if(key!=generation)return
+        val previous=blockVersion
+        if(page.blockVersion!=null&&previous!=null&&page.blockVersion<previous)return
+        blockVersion=page.blockVersion
+        cursor=page.messages.maxOfOrNull{it.id}?:0L
+        val pending=MessagingContract.reconcile(flow.value.pending,page.messages,userId.orEmpty())
+        queues[route]=pending
+        update{it.copy(messages=page.messages,pending=pending,older=page.more,denied=false,error=null)}
+    }
     private suspend fun summary(){val key=generation;try{val r=client.get("api/direct/summary");if(r.optString("viewerId")!=userId)throw ApiException(403,"Сеанс изменился.");if(key==generation){pollDelay=5000;update{it.copy(unread=r.optInt("unread"),requests=r.optInt("requests"))}}}catch(e:CancellationException){throw e}catch(e:Exception){pollDelay=(pollDelay*2).coerceAtMost(60000);guard{throw e}}}
     private suspend fun fetchMessages(initial:Boolean){val route=flow.value.route;val key=generation;guard{var first=initial;do{val page=repository.messages(route,if(first)emptyMap() else mapOf("after" to cursor.toString()));if(key!=generation)return@guard
         val old=blockVersion;val next=page.blockVersion
@@ -65,7 +90,7 @@ class MessagingViewModel(client:FeatureClient):FeatureViewModel(client) {
     fun retry(id:String){val p=flow.value.pending.find{it.clientId==id}?:return;if(p.busy||flow.value.denied)return;val route=flow.value.route;val key=generation;update{it.copy(pending=it.pending.map{p->if(p.clientId==id)p.copy(busy=true,error=null)else p})};viewModelScope.launch{guard{try{val m=repository.send(route,p);if(key==generation)merge(listOf(m))}catch(e:Exception){if(key==generation){update{it.copy(pending=it.pending.map{p->if(p.clientId==id)p.copy(busy=false,error="Отправка не подтверждена. Повтори с тем же идентификатором.")else p})};queues[route]=flow.value.pending};throw e}}}}
     fun discard(id:String){update{it.copy(pending=it.pending.filterNot{p->p.clientId==id})};queues[flow.value.route]=flow.value.pending}
     fun decide(id:String,accept:Boolean){mutate{client.post("api/direct/$id/decision",JSONObject().put("decision",if(accept)"accept" else "reject"));val p=repository.inbox();update{it.copy(conversations=p.conversations,next=p.next,requests=p.requests,unread=p.unread)}}}
-    fun request(){val s=flow.value;if(s.draft.isBlank()||s.handle.isBlank())return;val sig=s.handle.trim()+"\u0000"+s.draft.trim();if(sig!=signature){signature=sig;request=MessagingContract.pending(s.draft)};val p=request?:return;mutate{client.post("api/direct",MessagingContract.payload(p).put("handle",s.handle.trim()));draft("");request=null;signature="";val page=repository.inbox();update{it.copy(conversations=page.conversations,next=page.next,unread=page.unread,requests=page.requests,budget=page.budget,notice="Запрос отправлен. Дополнительные сообщения доступны после принятия.")}}}
+    fun request(){val s=flow.value;if(s.busy||s.draft.isBlank()||s.handle.isBlank())return;val sig=s.handle.trim()+"\u0000"+s.draft.trim();if(sig!=signature){signature=sig;request=MessagingContract.pending(s.draft)};val p=request?:return;mutate{client.post("api/direct",MessagingContract.payload(p).put("handle",s.handle.trim()));if(flow.value.draft==s.draft&&flow.value.handle==s.handle)draft("");request=null;signature="";val page=repository.inbox();update{it.copy(conversations=page.conversations,next=page.next,unread=page.unread,requests=page.requests,budget=page.budget,notice="Запрос отправлен. Дополнительные сообщения доступны после принятия.")}}}
     fun privacy(enabled:Boolean){mutate{client.patch("api/me/privacy",JSONObject().put("dmRequests",enabled));update{it.copy(dmRequests=enabled)}}}
     fun block(id:String,remove:Boolean=false){mutate{client.call("api/blocks",if(remove)"DELETE" else "POST",JSONObject().put("userId",id));if(isRoom()){cursor=0;update{it.copy(messages=emptyList())};fetchMessages(true)}else if(flow.value.route=="chat/blocks"){val r=client.get("api/blocks");update{it.copy(blocks=r.rows("blocks").map{b->b.getString("id") to b.optString("name")})}}else{val p=repository.inbox();update{it.copy(conversations=p.conversations,next=p.next)}}}}
     fun markRead(){if(!flow.value.route.startsWith("chat/direct/"))return;val last=flow.value.messages.maxOfOrNull{it.id}?:return;mutate{client.post("api/direct/${flow.value.route.substringAfterLast('/')}/read",JSONObject().put("lastId",last));update{it.copy(notice="Загруженные сообщения отмечены прочитанными.")}}}

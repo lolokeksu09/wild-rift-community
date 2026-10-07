@@ -17,6 +17,10 @@ object MessagingContract {
     fun pending(body:String)=PendingMessage(UUID.randomUUID().toString(),body.trim())
     fun payload(p:PendingMessage)=JSONObject().put("clientId",p.clientId).put("body",p.body)
     fun endpoint(route:String):String { val parts=route.split('/');require(parts.size==3&&parts[1] in listOf("club","direct"));return if(parts[1]=="club")"api/clubs/${parts[2]}/messages" else "api/direct/${parts[2]}/messages" }
+    fun reportRoute(route:String,id:Long):String {
+        endpoint(route)
+        return "moderation/report/${if(route.startsWith("chat/direct/"))"direct" else "club"}/$id"
+    }
     fun reconcile(pending:List<PendingMessage>,messages:List<ChatMessage>,viewer:String)=pending.filter{p->messages.none{it.senderId==viewer&&it.clientId==p.clientId}}
 }
 class MessagingRepository(private val client:FeatureClient) {
@@ -30,6 +34,22 @@ class MessagingRepository(private val client:FeatureClient) {
         val raw=client.get(MessagingContract.endpoint(route),query)
         verifyViewer(raw)
         return MessagingContract.page(raw)
+    }
+    /** Replaces the entire previously loaded range, so deleted entries cannot survive a refresh. */
+    suspend fun history(route:String,oldestLoaded:Long?):MessagePage {
+        repeat(3) {
+            var page=messages(route)
+            val version=page.blockVersion
+            val loaded=page.messages.toMutableList()
+            var changed=false
+            while(oldestLoaded!=null && page.more && page.messages.isNotEmpty() && page.messages.first().id>oldestLoaded) {
+                page=messages(route,mapOf("before" to page.messages.first().id.toString()))
+                if(page.blockVersion!=version){changed=true;break}
+                loaded.addAll(page.messages)
+            }
+            if(!changed)return MessagePage(loaded.distinctBy{m->m.id}.sortedBy{m->m.id},page.more,page.next,version)
+        }
+        throw java.io.IOException("Настройки доступа изменились во время загрузки.")
     }
     suspend fun send(route:String,pending:PendingMessage):ChatMessage {
         val message=MessagingContract.message(client.post(MessagingContract.endpoint(route),MessagingContract.payload(pending)).getJSONObject("message"))

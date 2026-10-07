@@ -20,9 +20,18 @@ import java.util.Date
 fun ContentSection(model:ContentViewModel,route:String,onNavigate:(String)->Unit) {
     val state by model.state.collectAsStateWithLifecycle()
     val user=model.userId
-    val scrollState=rememberScrollState()
-    DisposableEffect(route,user){onDispose{model.rememberPosition(route,scrollState.value)}}
-    LaunchedEffect(route,user){scrollState.scrollTo(model.position(route));model.open(route)}
+    val scrollState=key(route,user){rememberScrollState()}
+    var restorePending by remember(route,user){mutableStateOf(true)}
+    DisposableEffect(route,user){onDispose{if(!restorePending)model.rememberPosition(route,scrollState.value)}}
+    LaunchedEffect(route,user){model.open(route)}
+    LaunchedEffect(route,state.busy,state.revision){
+        if(restorePending&&!state.busy&&state.data!=null&&model.loadedRoute==route){
+            // Wait for freshly restored rows to be measured before clamping the saved offset.
+            withFrameNanos{};withFrameNanos{}
+            scrollState.scrollTo(model.position(route).coerceAtMost(scrollState.maxValue))
+            restorePending=false
+        }
+    }
     val kind=route.removePrefix("content/").substringBefore('/')
     val id=route.substringAfter("content/").substringAfter('/',"")
     Column(Modifier.fillMaxSize().verticalScroll(scrollState).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -33,7 +42,7 @@ fun ContentSection(model:ContentViewModel,route:String,onNavigate:(String)->Unit
         if(kind in listOf("feed","clubs","saved","guides","drafts","search","notifications")) {
             NavLinks(listOf("Лента" to "content/feed","Клубы" to "content/clubs","Руководства" to "content/guides","Поиск" to "content/search","Сохранённое" to "content/saved","Черновики" to "content/drafts","Обсуждения" to "content/notifications"),onNavigate)
         }
-        val data=state.data
+        val data=state.data.takeIf{model.loadedRoute==route}
         when(kind) {
             "clubs" -> {CatalogFilters(model,state.busy,onNavigate);if(user!=null)Link("Создать клуб","content/create-club",onNavigate)
                 data?.rows("clubs")?.let{clubs->if(clubs.isEmpty())Empty("Клубы не найдены.");clubs.forEach{club->ClubCard(club,model,onNavigate)}}
@@ -71,7 +80,15 @@ private fun roleLabel(role:String)=when(role){"owner"->"Владелец";"moder
 @Composable private fun More(page:JSONObject?,busy:Boolean,action:()->Unit){if(page!=null&&ContentRepository.next(page)!=null)OutlinedButton(onClick=action,enabled=!busy){Text("Показать ещё")}}
 @Composable private fun Field(value:String,label:String,onChange:(String)->Unit,multiline:Boolean=false,enabled:Boolean=true){OutlinedTextField(value,onChange,label={Text(label)},modifier=Modifier.fillMaxWidth(),singleLine=!multiline,minLines=if(multiline)3 else 1,enabled=enabled)}
 @Composable private fun Choice(value:String,label:String,options:List<Pair<String,String>>,change:(String)->Unit){Text(label,style=MaterialTheme.typography.labelLarge);options.chunked(2).forEach{row->Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){row.forEach{(key,text)->FilterChip(selected=value==key,onClick={change(key)},label={Text(text)})}}}}
-@Composable private fun Destructive(label:String,description:String,busy:Boolean,action:()->Unit){var confirm by remember{mutableStateOf(false)};TextButton(onClick={confirm=true},enabled=!busy){Text(label,color=MaterialTheme.colorScheme.error)};if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text(label)},text={Text(description)},confirmButton={TextButton(onClick={confirm=false;action()}){Text("Подтвердить")}},dismissButton={TextButton(onClick={confirm=false}){Text("Отмена")}}}
+@Composable private fun Destructive(label:String,description:String,busy:Boolean,action:()->Unit) {
+    var confirm by remember{mutableStateOf(false)}
+    TextButton(onClick={confirm=true},enabled=!busy){Text(label,color=MaterialTheme.colorScheme.error)}
+    if(confirm)AlertDialog(
+        onDismissRequest={confirm=false},title={Text(label)},text={Text(description)},
+        confirmButton={TextButton(onClick={confirm=false;action()}){Text("Подтвердить")}},
+        dismissButton={TextButton(onClick={confirm=false}){Text("Отмена")}}
+    )
+}
 
 @Composable private fun CatalogFilters(model:ContentViewModel,busy:Boolean,navigate:(String)->Unit){
     var q by rememberSaveable{mutableStateOf(model.filter("content/clubs","q"))};var tag by rememberSaveable{mutableStateOf(model.filter("content/clubs","tag"))};var scope by rememberSaveable{mutableStateOf(model.filter("content/clubs","scope").ifBlank{"all"})};var sort by rememberSaveable{mutableStateOf(model.filter("content/clubs","sort").ifBlank{"new"})}

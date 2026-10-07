@@ -12,6 +12,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.wrcommunity.android.features.MessagingViewModel
+import ru.wrcommunity.android.data.MessagingContract
 import java.text.DateFormat
 import java.util.Date
 
@@ -21,7 +22,19 @@ fun MessagingSection(model:MessagingViewModel,route:String,onNavigate:(String)->
     val owner=LocalLifecycleOwner.current
     var confirmation by remember(route){mutableStateOf<Pair<String,()->Unit>?>(null)}
     DisposableEffect(route,model.identityKey,owner){model.open(route);val observer=LifecycleEventObserver{_,event->if(event==Lifecycle.Event.ON_START)model.start() else if(event==Lifecycle.Event.ON_STOP)model.stop()};owner.lifecycle.addObserver(observer);if(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))model.start();onDispose{owner.lifecycle.removeObserver(observer);model.stop()}}
-    confirmation?.let{(text,action)->AlertDialog(onDismissRequest={confirmation=null},title={Text("Подтверди действие")},text={Text(text)},confirmButton={TextButton(onClick={confirmation=null;action()}){Text("Подтвердить")}},dismissButton={TextButton(onClick={confirmation=null}){Text("Отмена")}}}
+    confirmation?.let { (text, action) ->
+        AlertDialog(
+            onDismissRequest = { confirmation = null },
+            title = { Text("Подтверди действие") },
+            text = { Text(text) },
+            confirmButton = {
+                TextButton(onClick = { confirmation = null; action() }) { Text("Подтвердить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmation = null }) { Text("Отмена") }
+            }
+        )
+    }
     LazyColumn(modifier=Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item { Text(when{route=="chat/privacy"->"Приватность сообщений";route=="chat/blocks"->"Блокировки";route.startsWith("chat/club/")->"Чат клуба";route.startsWith("chat/direct/")->"Личная беседа";route.startsWith("chat/new/")->"Новое знакомство";else->"Сообщения"},style=MaterialTheme.typography.headlineSmall)
             TextButton(onClick=model::refresh,enabled=!s.busy){Text("Обновить")}
@@ -48,7 +61,7 @@ fun MessagingSection(model:MessagingViewModel,route:String,onNavigate:(String)->
                     TextButton(onClick={onNavigate("discovery/player/${m.senderId}")}){Text(m.sender.ifBlank{"Игрок"})}
                     Text(DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(Date(m.time)),style=MaterialTheme.typography.labelSmall)
                     Text(m.body)
-                    if(m.senderId!=model.userId){TextButton(onClick={onNavigate("moderation/report/${if(route.startsWith("chat/direct/"))"direct" else "chat"}/${m.id}")}){Text("Пожаловаться")};TextButton(onClick={confirmation="Блокировать игрока? Личная переписка станет недоступна с обеих сторон; его сообщения скроются в общих чатах. Членство не изменится." to {model.block(m.senderId)}}){Text("Блокировать игрока")}}
+                    if(m.senderId!=model.userId){TextButton(onClick={onNavigate(MessagingContract.reportRoute(route,m.id))}){Text("Пожаловаться")};TextButton(onClick={confirmation="Блокировать игрока? Личная переписка станет недоступна с обеих сторон; его сообщения скроются в общих чатах. Членство не изменится." to {model.block(m.senderId)}}){Text("Блокировать игрока")}}
                 }}}
                 if(route.startsWith("chat/direct/")&&s.messages.isNotEmpty())item{OutlinedButton(onClick=model::markRead,enabled=!s.busy&&!s.denied){Text("Отметить загруженное прочитанным")};Text("Отметка включает более ранние сообщения, даже если они не показаны.",style=MaterialTheme.typography.bodySmall)}
                 items(s.pending,key={it.clientId}){p->OutlinedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp)){Text(p.body);Text(if(p.busy)"Отправляется…" else p.error?:"Отправка не подтверждена.");TextButton(onClick={model.retry(p.clientId)},enabled=!p.busy&&!s.denied){Text("Повторить")};TextButton(onClick={confirmation="Убрать из очереди? Сообщение могло уже сохраниться на сервере: это действие не удаляет доставленное сообщение." to {model.discard(p.clientId)}},enabled=!p.busy){Text("Убрать из очереди")}}}}

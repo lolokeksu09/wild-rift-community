@@ -94,7 +94,7 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
         DraftChoice("Микрофон","filter.microphone",model,"",mapOf("" to "Любой","yes" to "Есть","no" to "Нет"))
         Text("Ранг, регион и язык сравниваются точно без учёта регистра.")}
     Button(onClick={val keys=if(members)listOf("q","role")else listOf("q","role","rank","region","language","microphone");model.open(model.currentRoute,keys.associateWith{drafts["filter.$it"]?.trim().orEmpty()}.filterValues{it.isNotBlank()})},enabled=!model.state.value.busy){Text("Найти")}
-    TextButton(onClick={listOf("q","role","rank","region","language","microphone").forEach{model.setDraft("filter.$it","")};model.open(model.currentRoute)}){Text("Сбросить фильтры")}
+    TextButton(onClick={listOf("q","role","rank","region","language","microphone").forEach{model.setDraft("filter.$it","")};model.open(model.currentRoute,emptyMap())}){Text("Сбросить фильтры")}
 }
 @Composable private fun PlayerCard(p:JSONObject,model:DiscoveryViewModel,navigate:(String)->Unit,detail:Boolean) {
     Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
@@ -148,8 +148,17 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
         Text(g.optString("title"),style=MaterialTheme.typography.titleLarge)
         Text("${modes[g.optString("mode")]?:""} · ${states[g.optString("state")]?:states[g.optString("membership")]?:""}")
         Text("${time(g.optLong("starts_at"))} · твоё время")
-        Text("${g.optString("region")} · ${g.optString("language")}")
-        if(event){g.rows("slots").forEach{Text("${roleLabels[it.optString("role")]} · ${if(it.optBoolean("taken"))"занято" else "свободно"}")}}
+        val region=g.optString("region");val language=g.optString("language")
+        if(region.isNotBlank()||language.isNotBlank())Text(listOf(region,language).filter{it.isNotBlank()}.joinToString(" · "))
+        if(event){
+            val slots=g.rows("slots")
+            val capacity=if(slots.isNotEmpty())slots.size else g.optInt("capacity")
+            val members=if(slots.isNotEmpty())slots.count{it.optBoolean("taken")} else g.optInt("members")
+            Text("Мест занято: $members / $capacity")
+            g.nullableString("myRole")?.let{Text("Твоя роль: ${roleLabels[it]?:it}")}
+            g.nullableString("timezone")?.let{Text("У организатора: ${time(g.optLong("starts_at"),it)} · $it")}
+            slots.forEach{Text("${roleLabels[it.optString("role")]} · ${if(it.optBoolean("taken"))"занято" else "свободно"}")}
+        }
         else Text("${g.optInt("members")} / ${g.optInt("capacity")} · ${roleLabels[g.optString("role")]?:"Любая роль"} · ${g.optString("rank")} (не проверен)")
         TextButton(onClick={navigate("discovery/"+(if(event)"event/" else "group/")+g.opt("id"))}){Text("Подробности и состав")}
     }}

@@ -51,17 +51,65 @@ class DiscoverySubmission {
 }
 
 class DiscoveryRepository(private val client:FeatureClient) {
-    suspend fun page(path:String,query:Map<String,String> = emptyMap())=client.get(path,query)
-    suspend fun detail(route:String):JSONObject {
-        val d=client.get(DiscoveryContract.routePath(route))
+    suspend fun page(path:String,query:Map<String,String> = emptyMap())=verified(client.get(path,query))
+    private fun verified(raw:JSONObject):JSONObject {
+        if(raw.has("viewerId") && raw.nullableString("viewerId")!=client.userId)
+            throw ApiException(403,"Сеанс изменился. Обнови данные после входа.")
+        return raw
+    }
+    suspend fun detail(route:String,previousChat:JSONObject?=null,historyFloor:Long?=null):JSONObject {
+        val d=verified(client.get(DiscoveryContract.routePath(route)))
         val entity=d.optJSONObject("group")?:d.optJSONObject("event")
         val member=entity!=null && (entity.optString("membership")=="accepted" || entity.nullableString("myRole")!=null)
-        if(member){d.put("chat",client.get(DiscoveryContract.routePath(route)+"/messages"))}
+        if(member)d.put("chat",chatHistory(DiscoveryContract.routePath(route)+"/messages",previousChat,historyFloor))
         return d
     }
-    suspend fun notificationPage(category:String,query:Map<String,String> = emptyMap()):JSONObject {
-        val path=notificationPath(category)
-        return client.get(path,query).put("summary",client.get("api/notifications/summary"))
+    /** Drain every newer page, then re-read the displayed interval with current access checks.
+     * A peer's block need not increment our blockVersion, so cached rows are never unioned in. */
+    suspend fun chatHistory(path:String,previous:JSONObject?=null,historyFloor:Long?=null):JSONObject {
+        val prior=previous?.rows("messages").orEmpty()
+        var newer=prior.maxOfOrNull{it.optLong("id")}
+        if(newer!=null) {
+            do {
+                val page=verified(client.get(path,mapOf("after" to newer.toString())))
+                val next=page.nullableString("next")?.toLongOrNull()
+                if(!page.optBoolean("hasMore"))break
+                require(next!=null && next>newer!!){"Не удалось продолжить загрузку сообщений."}
+                newer=next
+            }while(true)
+        }
+        val floor=historyFloor?:prior.minOfOrNull{it.optLong("id")}
+        var fresh=verified(client.get(path))
+        while(floor!=null && fresh.rows("messages").minOfOrNull{it.optLong("id")}?.let{it>floor}==true) {
+            val next=fresh.nullableString("next")?:break
+            val page=verified(client.get(path,mapOf("before" to next)))
+            if(page.optLong("blockVersion")!=fresh.optLong("blockVersion")) {
+                // A local block changed mid-read; discard all pages and retry on the next refresh.
+                return verified(client.get(path))
+            }
+            fresh=DiscoveryContract.merge(fresh,page,"messages")
+            if(page.nullableString("next")==next)throw ApiException(422,"Не удалось продолжить загрузку истории.")
+        }
+        return fresh
+    }
+    suspend fun notificationPage(category:String,query:Map<String,String> = emptyMap(),previous:JSONObject?=null):JSONObject {
+        val path=notificationPath(category);val key=notificationKey(category)
+        val target=previous?.rows(key)?.lastOrNull()
+        var fresh=verified(client.get(path,query))
+        // Reload the entire displayed prefix; removed or blocked rows cannot survive a poll.
+        while(target!=null && !frontierReached(category,fresh.rows(key),target)) {
+            val next=fresh.nullableString("next")?:break
+            val page=verified(client.get(path,mapOf((if(category=="direct")"after" else "before") to next)))
+            fresh=DiscoveryContract.merge(fresh,page,key)
+            if(page.nullableString("next")==next)throw ApiException(422,"Не удалось продолжить загрузку уведомлений.")
+        }
+        return fresh.put("summary",verified(client.get("api/notifications/summary")))
+    }
+    private fun frontierReached(category:String,rows:List<JSONObject>,target:JSONObject):Boolean {
+        val last=rows.lastOrNull()?:return true
+        return if(category=="direct")last.optLong("created_at")<target.optLong("created_at") ||
+            (last.optLong("created_at")==target.optLong("created_at") && last.optString("id")>=target.optString("id"))
+        else last.optLong("id")<=target.optLong("id")
     }
     companion object {
         fun notificationPath(category:String)=when(category){

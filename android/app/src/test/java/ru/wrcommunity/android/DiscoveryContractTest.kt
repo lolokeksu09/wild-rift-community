@@ -1,6 +1,8 @@
 package ru.wrcommunity.android
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.resetMain
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONObject
@@ -81,4 +83,81 @@ class DiscoveryContractTest {
             assertTrue(denied)
         }finally{server.shutdown()}
     }
+    @Test fun refreshedChatDrainsEveryAfterPageAndRevalidatesWholeDisplayedHistory()=runBlocking {
+        val server=MockWebServer();server.start(java.net.InetAddress.getByName("127.0.0.1"),0)
+        val requests=java.util.Collections.synchronizedList(mutableListOf<String>())
+        server.dispatcher=object:okhttp3.mockwebserver.Dispatcher(){
+            override fun dispatch(request:okhttp3.mockwebserver.RecordedRequest):MockResponse {
+                requests.add(request.path.orEmpty())
+                val url=request.requestUrl!!
+                val after=url.queryParameter("after")?.toLongOrNull()
+                val before=url.queryParameter("before")?.toLongOrNull()?:Long.MAX_VALUE
+                val accessible=(1L..155L).filter{it!=1L && it!=70L}
+                val eligible=accessible.filter{if(after!=null)it>after else it<before}
+                val more=eligible.size>50
+                val selected=if(after!=null)eligible.take(50)else eligible.takeLast(50)
+                val rows=org.json.JSONArray(selected.map{JSONObject().put("id",it).put("body","Свежий текст $it")})
+                val data=JSONObject().put("viewerId","viewer").put("messages",rows).put("blockVersion",7)
+                    .put("canSend",true).put("hasMore",more)
+                    .put("next",if(more)(if(after!=null)selected.last()else selected.first())else JSONObject.NULL)
+                return MockResponse().setBody(data.toString())
+            }
+        }
+        try {
+            val client=FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{"token"},{"viewer"},{1L},{},{})
+            val previous=JSONObject().put("blockVersion",7).put("messages",org.json.JSONArray((1L..55L).map{JSONObject().put("id",it).put("body","Старый текст")}))
+            val result=DiscoveryRepository(client).chatHistory("api/events/4/messages",previous)
+            val ids=result.rows("messages").map{it.getLong("id")}
+            assertEquals((2L..155L).filter{it!=70L},ids)
+            assertTrue(requests.contains("/api/events/4/messages?after=55"))
+            assertTrue(requests.contains("/api/events/4/messages?after=106"))
+            assertTrue(result.rows("messages").all{it.getString("body").startsWith("Свежий")})
+            assertNull(result.nullableString("next"))
+        }finally{server.shutdown()}
+    }
+    @Test fun notificationRefreshRetainsOlderPagesByFreshAccessChecks()=runBlocking {
+        val server=MockWebServer();server.start(java.net.InetAddress.getByName("127.0.0.1"),0)
+        server.dispatcher=object:okhttp3.mockwebserver.Dispatcher(){
+            override fun dispatch(request:okhttp3.mockwebserver.RecordedRequest):MockResponse {
+                if(request.requestUrl!!.encodedPath=="/api/notifications/summary")return MockResponse().setBody("""{"viewerId":"viewer","lfg":{"unread":4}}""")
+                val before=request.requestUrl!!.queryParameter("before")?.toLongOrNull()?:Long.MAX_VALUE
+                val available=(1L..135L).reversed().filter{it<before && it!=1L && it!=15L && it!=90L}
+                val selected=available.take(50)
+                return MockResponse().setBody(JSONObject().put("viewerId","viewer").put("notifications",org.json.JSONArray(selected.map{JSONObject().put("id",it).put("seen",1)}))
+                    .put("next",if(available.size>50)selected.last()else JSONObject.NULL).toString())
+            }
+        }
+        try {
+            val client=FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{"token"},{"viewer"},{1L},{},{})
+            val old=JSONObject().put("notifications",org.json.JSONArray((1L..90L).reversed().map{JSONObject().put("id",it).put("seen",0)}))
+            val result=DiscoveryRepository(client).notificationPage("lfg",previous=old)
+            assertEquals((1L..135L).reversed().filter{it!=1L&&it!=15L&&it!=90L},result.rows("notifications").map{it.getLong("id")})
+            assertTrue(result.rows("notifications").all{it.getInt("seen")==1})
+            assertEquals(4,result.getJSONObject("summary").getJSONObject("lfg").getInt("unread"))
+        }finally{server.shutdown()}
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun explicitFilterResetClearsQueryAndQuietRefreshKeepsMutationWarning()=runBlocking {
+        val dispatcher=kotlinx.coroutines.test.UnconfinedTestDispatcher()
+        kotlinx.coroutines.Dispatchers.setMain(dispatcher)
+        val server=MockWebServer();server.start(java.net.InetAddress.getByName("127.0.0.1"),0)
+        val client=FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{"token"},{"viewer"},{1L},{},{})
+        val model=ru.wrcommunity.android.features.DiscoveryViewModel(client)
+        suspend fun revisionAfter(previous:Long){kotlinx.coroutines.withTimeout(5000){while(model.state.value.revision<=previous)kotlinx.coroutines.delay(10)}}
+        fun response()=MockResponse().setBody("""{"viewerId":"viewer","players":[],"next":null}""")
+        try {
+            server.enqueue(response());model.open("discovery/players",mapOf("q" to "лес"));revisionAfter(0)
+            assertEquals("лес",server.takeRequest().requestUrl!!.queryParameter("q"))
+            model.formError("Отправка не подтверждена. Проверь историю перед повтором.")
+            val revision=model.state.value.revision
+            server.enqueue(response());model.refresh(quiet=true);revisionAfter(revision)
+            assertEquals("Отправка не подтверждена. Проверь историю перед повтором.",model.state.value.error)
+            server.takeRequest()
+            server.enqueue(response());model.open("discovery/players",emptyMap());revisionAfter(0)
+            assertNull(server.takeRequest().requestUrl!!.queryParameter("q"))
+            assertTrue(model.filters.isEmpty())
+        }finally{model.reset();server.shutdown();kotlinx.coroutines.Dispatchers.resetMain()}
+    }
+
 }

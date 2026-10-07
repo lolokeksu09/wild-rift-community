@@ -14,11 +14,11 @@ import ru.wrcommunity.android.data.*
     save:(JSONObject,String?,String?)->Unit) {
     var avatar by rememberSaveable(user.id,user.avatarId){mutableStateOf(user.avatarId)}
     var cover by rememberSaveable(user.id,user.coverId){mutableStateOf(user.coverId)}
-    var roles by rememberSaveable(user.id){mutableStateOf(user.roles)}
-    var champions by rememberSaveable(user.id){mutableStateOf(user.champions.joinToString(", "))}
-    var time by rememberSaveable(user.id){mutableStateOf(user.game["playTime"] ?: "")}
-    var mic by rememberSaveable(user.id){mutableStateOf(user.microphone)}
-    var riotVisible by rememberSaveable(user.id){mutableStateOf(user.riotVisible)}
+    var roles by rememberSaveable(user.id,user.roles){mutableStateOf(user.roles)}
+    var champions by rememberSaveable(user.id,user.champions){mutableStateOf(user.champions.joinToString(", "))}
+    var time by rememberSaveable(user.id,user.game["playTime"]){mutableStateOf(user.game["playTime"] ?: "")}
+    var mic by rememberSaveable(user.id,user.microphone){mutableStateOf(user.microphone)}
+    var riotVisible by rememberSaveable(user.id,user.riotVisible){mutableStateOf(user.riotVisible)}
     Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         HorizontalDivider();Text("Игра и фотографии",style=MaterialTheme.typography.titleLarge)
         NativeImagePicker(client,avatar,{avatar=it},"Аватар")

@@ -27,6 +27,7 @@ import ru.wrcommunity.android.features.*
     deepLink:String?=null) {
     val identity by account.state.collectAsStateWithLifecycle()
     val guestState by guest.state.collectAsStateWithLifecycle()
+    var appliedBoundary by remember{mutableStateOf<Long?>(null)}
     var welcome by rememberSaveable{mutableStateOf(deepLink==null)}
     var route by rememberSaveable{mutableStateOf(deepLink ?: "catalog")}
     var history by rememberSaveable{mutableStateOf(listOf<String>())}
@@ -37,6 +38,7 @@ import ru.wrcommunity.android.features.*
     LaunchedEffect(identity.boundary){
         guest.resetForAccountChange(identity.boundary);content.reset();messaging.reset();discovery.reset();moderation.reset()
         if(identity.user==null && identity.boundary>0){history=emptyList();route="profile";tab="profile"}
+        appliedBoundary=identity.boundary
     }
     BackHandler(!welcome && (route!="catalog"||guestState.screen==0)){
         if(history.isNotEmpty()){route=history.last();history=history.dropLast(1)}
@@ -47,6 +49,7 @@ import ru.wrcommunity.android.features.*
         if(route=="profile"||route.startsWith("chat/")||route.startsWith("moderation/"))activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         onDispose{activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)}
     }
+    if(appliedBoundary!=identity.boundary){Box(Modifier.fillMaxSize(),contentAlignment=androidx.compose.ui.Alignment.Center){CircularProgressIndicator()};return}
     if(welcome){
         WelcomeScreen(identity.user?.name,onExplore={welcome=false;route="catalog";tab="clubs"},onAccount={mode->
             authMode=mode;welcome=false;route="profile";tab="profile";account.refresh()})

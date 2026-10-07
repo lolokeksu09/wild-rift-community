@@ -3,12 +3,14 @@ package ru.wrcommunity.android.data
 import org.json.JSONArray
 import org.json.JSONObject
 
+data class ContentPagePlan(val path:String,val key:String,val container:String?=null,val cursorKey:String="before",val pages:Int=1)
+
 /** Wire contracts from clubs, discussions, polls, guides and drafts; never caches private data. */
 class ContentRepository(private val client: FeatureClient) {
-    suspend fun screen(route: String, filters: Map<String,String> = emptyMap()): JSONObject {
+    suspend fun screen(route: String, filters: Map<String,String> = emptyMap(),plans:List<ContentPagePlan> = emptyList()): JSONObject {
         val parts=route.removePrefix("content/").split('/')
         val id=parts.getOrNull(1).orEmpty()
-        return when(parts[0]) {
+        val result=when(parts[0]) {
             "club" -> {
                 val data=client.get("api/clubs/$id/detail")
                 val club=data.getJSONObject("club")
@@ -41,6 +43,22 @@ class ContentRepository(private val client: FeatureClient) {
             "notifications" -> client.get("api/discussions/notifications",filters)
             else -> JSONObject()
         }
+        return restorePages(result,plans,filters)
+    }
+    /** Rebuild from freshly authorized responses; only page counts survive navigation. */
+    suspend fun restorePages(fresh:JSONObject,plans:List<ContentPagePlan>,filters:Map<String,String> = emptyMap()):JSONObject {
+        val result=JSONObject(fresh.toString())
+        for(plan in plans){
+            var page=if(plan.container==null)result else result.optJSONObject(plan.container)?:continue
+            repeat((plan.pages-1).coerceAtLeast(0)) {
+                val cursor=next(page) ?: return@repeat
+                val fetched=client.get(plan.path,filters+mapOf(plan.cursorKey to cursor))
+                page=mergePage(page,fetched,plan.key,plan.key=="comments")
+            }
+            if(plan.container==null){result.put(plan.key,page.optJSONArray(plan.key)?:JSONArray());result.put("next",page.opt("next")?:JSONObject.NULL)}
+            else result.put(plan.container,page)
+        }
+        return result
     }
     companion object {
         fun next(page:JSONObject):String?=page.nullableString("next")
