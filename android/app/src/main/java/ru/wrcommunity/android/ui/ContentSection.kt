@@ -146,8 +146,8 @@ private fun tagList(club:JSONObject)=club.optJSONArray("tags")?.let{a->List(a.le
 private fun tags(club:JSONObject)=tagList(club).joinToString(" · ")
 @Composable private fun Badges(labels:List<String>){FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){labels.filter{it.isNotBlank()}.forEach{label->Surface(color=MaterialTheme.colorScheme.surfaceVariant,shape=RoundedCornerShape(8.dp)){Text(label,Modifier.padding(horizontal=10.dp,vertical=6.dp),style=MaterialTheme.typography.labelMedium)}}}}
 @Composable private fun ClubCard(club:JSONObject,model:ContentViewModel,navigate:(String)->Unit){Panel{
-    ClubCover(club,model,150)
-    Text(if(club.optString("access")=="open")"ОТКРЫТЫЙ КЛУБ" else "ПО ЗАЯВКАМ",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)
+    ClubCover(club,model,112)
+    Text(if(club.optString("access")=="open")"Открытый клуб" else "Вступление по заявке",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
     Text(club.optString("name"),modifier=Modifier.fillMaxWidth().clickable{navigate("content/club/${club.optString("id")}")}.heightIn(min=48.dp).padding(vertical=8.dp),style=MaterialTheme.typography.titleLarge)
     Text(club.optString("description").ifBlank{"Место для общения и совместных игр."},color=MaterialTheme.colorScheme.onSurfaceVariant)
     Badges(tagList(club)+if(club.optBoolean("isDemoClub"))listOf("Демо-клуб") else emptyList())
@@ -158,7 +158,7 @@ private fun tags(club:JSONObject)=tagList(club).joinToString(" · ")
         Text(stamp(last.optLong("created_at")),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
     }?:Text(if(club.optString("access")=="open")"Первые обсуждения ещё впереди" else "Обсуждения доступны участникам",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
     Text("${club.optInt("members")} участников"+when(club.optString("membership")){"member"->" · Ты в клубе";"pending"->" · Заявка отправлена";"banned"->" · Доступ ограничен";else->""},style=MaterialTheme.typography.labelLarge)
-    OutlinedButton(onClick={navigate("content/club/${club.optString("id")}")},modifier=Modifier.fillMaxWidth()){Text("Открыть клуб →")}
+    OutlinedButton(onClick={navigate("content/club/${club.optString("id")}")},modifier=Modifier.fillMaxWidth()){Text("Открыть клуб")}
 }}
 @Composable private fun PostByline(post:JSONObject,model:ContentViewModel,navigate:(String)->Unit){
     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)){

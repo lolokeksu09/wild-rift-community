@@ -1,5 +1,6 @@
 package ru.wrcommunity.android.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -7,13 +8,13 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -50,7 +51,7 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         state.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
         state.notice?.let{Text(it,color=MaterialTheme.colorScheme.primary)}
-        TextButton(onClick={model.refresh()},enabled=!state.busy){Text("Обновить")}
+        if(route!="discovery/home")TextButton(onClick={model.refresh()},enabled=!state.busy){Text("Обновить")}
         when {
             route=="discovery/home" -> Home(model,state.data,onNavigate)
             route=="discovery/players"||route=="discovery/members" -> {
@@ -131,31 +132,70 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
 @Composable private fun Home(model:DiscoveryViewModel,d:JSONObject?,navigate:(String)->Unit) {
     val signed=model.userId!=null
     RiftHero(
-        eyebrow="СООБЩЕСТВО WILD RIFT",
+        eyebrow="Сообщество Wild Rift",
         title="Своя компания.\nТвоя игра.",
-        subtitle="Обсуждай любимых чемпионов, делись опытом и находи тех, с кем хочется играть снова.",
+        subtitle="Люди, разговоры и вечера в Рифте.",
         actionLabel="Найти свой клуб",
         onAction={navigate("content/clubs")}
     )
-    SectionHeading("Начни с того, что близко")
-    HomeShortcut(Icons.Default.Groups,"Своя атмосфера","Клубы по интересам, обсуждения и новые знакомства.","Выбрать клуб"){navigate("content/clubs")}
-    HomeShortcut(Icons.Default.PersonSearch,"Найди напарника","Открытые профили с ролями и предпочтениями игроков.","Найти игроков"){navigate("discovery/players")}
-    HomeShortcut(Icons.Default.EventAvailable,"Играй вместе","Собери компанию на вечер или найди команду.","Игровые вечера"){navigate("discovery/events")}
+    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+        OutlinedButton(onClick={navigate("discovery/players")}){Icon(Icons.Default.PersonSearch,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Найти игроков")}
+        OutlinedButton(onClick={navigate("discovery/lfg")}){Icon(Icons.Default.Groups,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Команды")}
+        OutlinedButton(onClick={navigate("discovery/events")}){Icon(Icons.Default.EventAvailable,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Игровые вечера")}
+    }
+    TextButton(onClick={model.refresh()}){Text("Обновить подборку")}
     if(d==null)return
     val warnings=d.optJSONObject("homeWarnings")
     val catalog=d.optJSONObject("catalog")
-    SectionHeading("С чего начнётся твоя история?",subtitle=catalog?.let{"Открытые клубы · ${it.optInt("total")}"},action="Все клубы",onAction={navigate("content/clubs")})
+    SectionHeading("Обсуждают в клубах",subtitle="Свежие публикации из доступных тебе клубов",action="Вся лента",onAction={navigate("content/feed")})
+    HomeWarning(warnings,"feed")
+    d.optJSONObject("feed")?.let{feed->
+        if(feed.rows("posts").isEmpty())Text("Публикаций пока нет. Загляни в клубы по интересам.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+        feed.rows("posts").take(3).forEach{post->RiftCard {
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                RiftAvatar(post.optString("author_name"),post.nullableString("author_avatar_id"),model.mediaClient.api)
+                Column(Modifier.weight(1f)) {
+                    Text(post.optString("author_name"),style=MaterialTheme.typography.titleSmall)
+                    Text(post.optString("club_name"),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if(post.optBoolean("isBot"))Text("Демо",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
+            }
+            Text(post.optString("title"),style=MaterialTheme.typography.titleLarge)
+            post.nullableString("image_id")?.let{NativeMedia(it,model.mediaClient.api,"Изображение публикации",Modifier.fillMaxWidth().height(160.dp))}
+            Text(homeExcerpt(post.optString("body"),240),color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(post.optJSONObject("guide")!=null)Text("Руководство",style=MaterialTheme.typography.labelMedium)
+            if(post.optJSONObject("poll")!=null)Text("Опрос",style=MaterialTheme.typography.labelMedium)
+            TextButton(onClick={navigate("content/post/${post.optLong("id")}")}){Text("Читать и обсуждать")}
+        }}
+    }
+    SectionHeading("Люди сообщества",action="Все люди",onAction={navigate("discovery/members")})
+    HomeWarning(warnings,"people")
+    d.optJSONObject("people")?.let{people->Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        val members=people.rows("members").take(6)
+        if(members.isEmpty())Text("Открытых профилей пока нет.")
+        else Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+            members.forEach{person->Column(Modifier.width(88.dp).clickable{navigate("discovery/player/${person.optString("id")}")}.padding(vertical=8.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                RiftAvatar(person.optString("name"),person.nullableString("avatarId"),model.mediaClient.api,52.dp)
+                Text(person.optString("name"),style=MaterialTheme.typography.labelLarge,maxLines=2,overflow=TextOverflow.Ellipsis)
+                if(person.optBoolean("isBot"))Text("Бот · демо",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
+            }}
+        }
+        Text("Открытых профилей: ${people.optInt("total")}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        if(people.optInt("bots")>0)Text("Демонстрационных ботов: ${people.optInt("bots")}. Они не участвуют в матчах и не отвечают на сообщения.",style=MaterialTheme.typography.bodySmall)
+    }}
+    Spacer(Modifier.height(4.dp))
+    SectionHeading("Клубы по интересам",subtitle=catalog?.let{"Открытые клубы · ${it.optInt("total")}"},action="Все клубы",onAction={navigate("content/clubs")})
     HomeWarning(warnings,"catalog")
     catalog?.let{page->
         val clubs=page.rows("clubs").take(4)
         if(clubs.isEmpty())Text("Открытых клубов пока нет.",color=MaterialTheme.colorScheme.onSurfaceVariant)
         else Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-            clubs.forEach{club->Column(Modifier.width(264.dp)) {
+            clubs.forEach{club->Column(Modifier.width(240.dp)) {
                 RiftCard {
                     val name=club.optString("name")
                     val cover=club.nullableString("cover_id")
-                    if(cover!=null)NativeMedia(cover,model.mediaClient.api,"Обложка клуба $name",Modifier.fillMaxWidth().height(128.dp))
-                    else RiftCover(name,club.optString("accent","gold"),Modifier.fillMaxWidth().height(128.dp))
+                    if(cover!=null)NativeMedia(cover,model.mediaClient.api,"Обложка клуба $name",Modifier.fillMaxWidth().height(96.dp))
+                    else RiftCover(name,club.optString("accent","gold"),Modifier.fillMaxWidth().height(96.dp))
                     Text(club.words("tags").firstOrNull()?:"Общение",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
                     Text(name,style=MaterialTheme.typography.titleLarge)
                     if(club.optBoolean("isDemoClub"))Text("Демонстрационный клуб",style=MaterialTheme.typography.labelMedium)
@@ -167,43 +207,6 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
             }}
         }
     }
-    SectionHeading("Сейчас в сообществе",subtitle="Свежие публикации из доступных тебе клубов",action="Вся лента",onAction={navigate("content/feed")})
-    HomeWarning(warnings,"feed")
-    d.optJSONObject("feed")?.let{feed->
-        if(feed.rows("posts").isEmpty())Text("Публикаций пока нет. Загляни в клубы по интересам.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-        feed.rows("posts").take(3).forEach{post->RiftCard {
-            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                RiftAvatar(post.optString("author_name"),post.nullableString("author_avatar_id"),model.mediaClient.api)
-                Column(Modifier.weight(1f)) {
-                    Text(post.optString("author_name"),style=MaterialTheme.typography.titleSmall)
-                    Text(post.optString("club_name"),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            if(post.optBoolean("isBot"))Text("Бот · демонстрационная публикация",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
-            Text(post.optString("title"),style=MaterialTheme.typography.titleLarge)
-            post.nullableString("image_id")?.let{NativeMedia(it,model.mediaClient.api,"Изображение публикации",Modifier.fillMaxWidth().height(160.dp))}
-            Text(homeExcerpt(post.optString("body"),240),color=MaterialTheme.colorScheme.onSurfaceVariant)
-            if(post.optJSONObject("guide")!=null)Text("Руководство",style=MaterialTheme.typography.labelMedium)
-            if(post.optJSONObject("poll")!=null)Text("Опрос",style=MaterialTheme.typography.labelMedium)
-            TextButton(onClick={navigate("content/post/${post.optLong("id")}")}){Text("Читать и обсуждать")}
-        }}
-    }
-    SectionHeading("Люди сообщества",action="Все люди",onAction={navigate("discovery/members")})
-    HomeWarning(warnings,"people")
-    d.optJSONObject("people")?.let{people->RiftCard {
-        val members=people.rows("members").take(6)
-        if(members.isEmpty())Text("Открытых профилей пока нет.")
-        else Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-            members.forEach{person->Column(Modifier.width(104.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                RiftAvatar(person.optString("name"),person.nullableString("avatarId"),model.mediaClient.api,56.dp)
-                Text(person.optString("name"),style=MaterialTheme.typography.titleSmall)
-                if(person.optBoolean("isBot"))Text("Бот · демо",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
-                TextButton(onClick={navigate("discovery/player/${person.optString("id")}")}){Text("Профиль")}
-            }}
-        }
-        Text("Открытых профилей: ${people.optInt("total")}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        if(people.optInt("bots")>0)Text("Демонстрационных ботов: ${people.optInt("bots")}. Они не участвуют в матчах и не отвечают на сообщения.",style=MaterialTheme.typography.bodySmall)
-    }}
     if(!signed){RiftCard{Text("Твоё место в сообществе",style=MaterialTheme.typography.titleLarge);Text("Войди в профиль, чтобы вступать в клубы, писать публикации и сохранять обсуждения.");Button(onClick={navigate("profile")}){Text("Войти в аккаунт")}};return}
     SectionHeading("Твой круг",action="Уведомления",onAction={navigate("discovery/notifications")})
     HomeWarning(warnings,"personal")
@@ -228,16 +231,6 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
     Text("Подбор по заполненным игровым полям. Совместимость очереди и ранг не проверены.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
     if(d.rows("groups").isEmpty())Text("Подходящих групп сейчас нет.")
     d.rows("groups").forEach{GroupCard(it,false,navigate)}
-}
-@Composable private fun HomeShortcut(icon:ImageVector,title:String,description:String,action:String,onClick:()->Unit) {
-    RiftCard {
-        Row(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically) {
-            Icon(icon,null,Modifier.size(28.dp),tint=MaterialTheme.colorScheme.primary)
-            Text(title,style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
-        }
-        Text(description,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onClick=onClick){Text(action)}
-    }
 }
 @Composable private fun HomeWarning(warnings:JSONObject?,section:String) {
     warnings?.nullableString(section)?.let{Text(it,color=MaterialTheme.colorScheme.error)}

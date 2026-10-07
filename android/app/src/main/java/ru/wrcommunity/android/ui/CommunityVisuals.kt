@@ -21,13 +21,17 @@ import androidx.compose.ui.unit.dp
 import ru.wrcommunity.android.data.CommunityApi
 
 @Composable fun RiftHero(eyebrow:String,title:String,subtitle:String,actionLabel:String,onAction:()->Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
-        .background(Brush.linearGradient(listOf(Color(0xff292820),Color(0xff171c24))))
-        .padding(24.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
-        Text(eyebrow.uppercase(),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
-        Text(title,style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.ExtraBold)
+    Column(Modifier.fillMaxWidth().padding(vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+            Canvas(Modifier.size(24.dp)) {
+                val path=Path().apply{moveTo(size.width*.5f,0f);lineTo(size.width,size.height*.5f);lineTo(size.width*.5f,size.height);lineTo(0f,size.height*.5f);close()}
+                drawPath(path,Color(0xffdfc18b),style=Stroke(2.dp.toPx()))
+            }
+            Text(eyebrow,style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
+        }
+        Text(title,style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.ExtraBold)
         Text(subtitle,style=MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        Button(onClick=onAction){Text(actionLabel)}
+        Button(onClick=onAction,contentPadding=PaddingValues(horizontal=20.dp,vertical=14.dp)){Text(actionLabel)}
     }
 }
 
