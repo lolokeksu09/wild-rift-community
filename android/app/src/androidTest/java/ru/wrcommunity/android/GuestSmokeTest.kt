@@ -41,7 +41,7 @@ class GuestSmokeTest {
         rule.onNodeWithText("Поиск клубов").performTextInput(selection.first.name)
         rule.onNodeWithContentDescription("Найти клубы").performClick()
         rule.waitUntil(45_000) { rule.onAllNodesWithText("Открытые клубы ·", substring=true).fetchSemanticsNodes().isNotEmpty() }
-        val selectedClub = hasText(selection.first.name) and hasClickAction()
+        val selectedClub = hasText(selection.first.name) and hasClickAction() and !hasSetTextAction()
         rule.onNodeWithTag("catalog-list").performScrollToNode(selectedClub)
         rule.onNode(selectedClub).performClick()
         rule.waitUntil(20_000) { rule.onAllNodesWithTag("club-list").fetchSemanticsNodes().isNotEmpty() }
