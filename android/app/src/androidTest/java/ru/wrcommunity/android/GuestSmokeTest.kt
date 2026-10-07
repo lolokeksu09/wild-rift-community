@@ -48,8 +48,8 @@ class GuestSmokeTest {
         rule.waitUntil(20_000) { rule.onAllNodesWithTag("club-list").fetchSemanticsNodes().isNotEmpty() }
         awaitText(selection.first.name)
         capture("02-club")
-        rule.onNodeWithText(selection.second.title).performScrollTo()
-        rule.onNodeWithText(selection.second.title).performClick()
+        rule.waitUntil(20_000) { rule.onAllNodesWithTag("post-card-${selection.second.id}").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("post-card-${selection.second.id}").performScrollTo().performClick()
         awaitText(selection.second.title)
         capture("03-post")
         rule.onNodeWithText("Обсуждение").performScrollTo()

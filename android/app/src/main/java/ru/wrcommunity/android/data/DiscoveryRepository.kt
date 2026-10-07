@@ -82,8 +82,8 @@ class DiscoveryRepository(private val client:FeatureClient) {
             if(data!=null && key!="personal")result.put(key,data)
             if(error!=null)warnings.put(key,when(error){
                 is javax.net.ssl.SSLException->"Не удалось подтвердить защищённое соединение."
-                is IOException->"Нет связи с сервером. Обнови главную позже."
                 is ApiException->error.message?.take(300)?:"Не удалось загрузить раздел."
+                is IOException->"Нет связи с сервером. Обнови главную позже."
                 else->"Не удалось загрузить раздел. Обнови главную."
             })
         }

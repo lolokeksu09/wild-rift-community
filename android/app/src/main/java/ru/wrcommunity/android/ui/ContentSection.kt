@@ -172,7 +172,7 @@ private fun tags(club:JSONObject)=tagList(club).joinToString(" · ")
     post.nullableString("club_name")?.let{Text(it,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)}
     post.optJSONObject("guide")?.let{Badges(listOf("Руководство",it.optString("game_version")))}
     if(post.optJSONObject("poll")!=null)Badges(listOf("Опрос"))
-    Text(post.optString("title"),modifier=Modifier.fillMaxWidth().clickable{navigate("content/post/${post.optLong("id")}")}.heightIn(min=48.dp).padding(vertical=8.dp),style=MaterialTheme.typography.titleLarge)
+    Text(post.optString("title"),modifier=Modifier.testTag("post-card-${post.optLong("id")}").fillMaxWidth().clickable{navigate("content/post/${post.optLong("id")}")}.heightIn(min=48.dp).padding(vertical=8.dp),style=MaterialTheme.typography.titleLarge)
     Text(post.optString("body").let{if(it.length>300)it.take(300).trimEnd()+"…" else it},style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
     post.nullableString("image_id")?.let{NativeMedia(it,model.mediaClient.api,"Изображение публикации",Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)))}
     if(post.optBoolean("isBot"))Text("Демонстрационная публикация бота",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)

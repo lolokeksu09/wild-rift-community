@@ -39,7 +39,11 @@ class MessagingViewModel(client:FeatureClient,private val store:MessageStore=Mem
         val route=flow.value.route;val account=owner?:return
         if(route !in restored)return
         val snapshot=roomSnapshot(route);val key=generation
-        viewModelScope.launch(start=CoroutineStart.UNDISPATCHED){try{persistRoom(route,account,snapshot)}catch(e:Exception){if(key==generation)update{it.copy(error="Не удалось сохранить черновик на устройстве. Не закрывай приложение до восстановления хранения.")}}}
+        viewModelScope.launch(start=CoroutineStart.UNDISPATCHED){
+            try{persistRoom(route,account,snapshot)}
+            catch(e:CancellationException){throw e}
+            catch(_:Exception){if(key==generation)update{it.copy(error="Не удалось сохранить черновик на устройстве. Не закрывай приложение до восстановления хранения.")}}
+        }
     }
     private suspend fun restoreRoom(route:String,key:Long){
         val account=owner?:return
@@ -97,7 +101,30 @@ class MessagingViewModel(client:FeatureClient,private val store:MessageStore=Mem
     private fun isRoom()=flow.value.route.startsWith("chat/direct/")||flow.value.route.startsWith("chat/club/")
     fun draft(value:String){if(!flow.value.accessValidated)return;val v=value.take(2000);drafts[flow.value.route]=v;update{it.copy(draft=v)};saveRoom()}
     fun handle(value:String){if(!flow.value.accessValidated)return;val handle=value.take(24);handles[flow.value.route]=handle;update{it.copy(handle=handle)};saveRoom()}
-    private suspend fun guard(block:suspend()->Unit){val key=generation;try{block()}catch(e:CancellationException){throw e}catch(e:Exception){if(key==generation){val denied=e is ApiException&&e.status in listOf(401,403,404);if(denied&&(isRoom()||(e is ApiException&&e.status==401))){cursor=0;val route=flow.value.route;queues.remove(route);drafts.remove(route);handles.remove(route);requests.remove(route);restored.add(route);saveRoom();update{it.copy(messages=emptyList(),conversations=emptyList(),blocks=emptyList(),pending=emptyList(),draft="",denied=true,accessValidated=false)}};update{it.copy(error=message(e,false),busy=false)};if(e is ApiException&&e.status==429)runCatching{MessagingContract.budget(client.get("api/direct/contact-budget"))}.getOrNull()?.let{b->if(key==generation)update{it.copy(budget=b)}}}}}
+    private suspend fun guard(block:suspend()->Unit){
+        val key=generation
+        try{block()}
+        catch(e:CancellationException){throw e}
+        catch(e:Exception){
+            if(key!=generation)return
+            val denied=e is ApiException&&e.status in listOf(401,403,404)
+            var storageError:String?=null
+            if(denied&&(isRoom()||(e is ApiException&&e.status==401))){
+                cursor=0
+                val route=flow.value.route
+                val account=owner
+                queues.remove(route);drafts.remove(route);handles.remove(route);requests.remove(route);restored.add(route)
+                // Hide revoked content immediately; complete its disk removal before finishing the request.
+                update{it.copy(messages=emptyList(),conversations=emptyList(),blocks=emptyList(),pending=emptyList(),draft="",handle="",denied=true,accessValidated=false)}
+                if(account!=null)try{persistRoom(route,account,StoredMessageRoom())}
+                catch(clear:CancellationException){throw clear}
+                catch(_:Exception){storageError="Не удалось очистить сохранённые сообщения на устройстве."}
+            }
+            if(key!=generation)return
+            update{it.copy(error=storageError?:message(e,false),busy=false)}
+            if(e is ApiException&&e.status==429)runCatching{MessagingContract.budget(client.get("api/direct/contact-budget"))}.getOrNull()?.let{b->if(key==generation)update{it.copy(budget=b)}}
+        }
+    }
     fun refresh(){if(loading?.isActive==true)return;if(isRoom())polling?.cancel();val key=generation;loading=viewModelScope.launch{update{it.copy(busy=true,error=null)};guard{when{
         isRoom()->reloadHistory()
         flow.value.route=="chat/blocks"->{val raw=client.get("api/blocks");if(key==generation)update{it.copy(blocks=raw.rows("blocks").map{b->b.getString("id") to "${b.optString("name")} · @${b.optString("handle")}"})}}

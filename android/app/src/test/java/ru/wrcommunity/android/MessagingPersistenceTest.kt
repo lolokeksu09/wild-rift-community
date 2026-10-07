@@ -1,7 +1,9 @@
 package ru.wrcommunity.android
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
@@ -16,6 +18,7 @@ import org.junit.Before
 import org.junit.Test
 import ru.wrcommunity.android.data.*
 import ru.wrcommunity.android.features.MessagingViewModel
+import kotlin.coroutines.CoroutineContext
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MessagingPersistenceTest {
@@ -26,7 +29,7 @@ class MessagingPersistenceTest {
     private val pending=PendingMessage("persisted-client-id-123","Исходный текст",busy=true)
     @Before fun setup(){Dispatchers.setMain(Dispatchers.Unconfined);server=MockWebServer().apply{start()}}
     @After fun cleanup(){server.shutdown();Dispatchers.resetMain()}
-    private fun model(store:MessageStore)=MessagingViewModel(FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{"csrf"},{account},{boundary},{},{}),store,Dispatchers.Unconfined)
+    private fun model(store:MessageStore,storageDispatcher:CoroutineDispatcher=Dispatchers.Unconfined)=MessagingViewModel(FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{"csrf"},{account},{boundary},{},{}),store,storageDispatcher)
     private fun stored()=MemoryMessageStore().apply{write("self",room,StoredMessageRoom("Продолжение",pending=listOf(pending)));write("self","chat/club/two",StoredMessageRoom("Другой клуб"))}
     private fun page(messages:String="[]")=MockResponse().setBody("""{"viewerId":"self","messages":$messages,"hasMore":false,"next":null}""")
     private suspend fun loaded(model:MessagingViewModel){withTimeout(5000){model.chatState.first{!it.busy&&it.accessValidated}}}
@@ -51,6 +54,20 @@ class MessagingPersistenceTest {
         assertTrue(model.chatState.value.denied);assertFalse(model.chatState.value.accessValidated)
         assertTrue(model.chatState.value.pending.isEmpty());assertEquals("",model.chatState.value.draft)
         assertNull(store.read("self")[room]);assertEquals("Другой клуб",store.read("self")["chat/club/two"]!!.draft)
+    }
+    @Test fun deniedRoomStaysBusyUntilItsQueuedDiskRemovalCompletes()=runBlocking {
+        val tasks=Channel<Runnable>(Channel.UNLIMITED)
+        val dispatcher=object:CoroutineDispatcher(){override fun dispatch(context:CoroutineContext,block:Runnable){check(tasks.trySend(block).isSuccess)}}
+        val store=stored();val model=model(store,dispatcher);model.open(room)
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":"Доступ закрыт"}"""))
+        model.refresh()
+        val remove=withTimeout(5000){tasks.receive()}
+        assertTrue(model.chatState.value.denied);assertTrue(model.chatState.value.busy)
+        assertTrue(model.chatState.value.pending.isEmpty());assertEquals("",model.chatState.value.draft)
+        assertNotNull(store.read("self")[room])
+        remove.run();failed(model)
+        assertNull(store.read("self")[room]);assertEquals("Другой клуб",store.read("self")["chat/club/two"]!!.draft)
+        tasks.close()
     }
     @Test fun temporaryServerFailureKeepsDiskHiddenUntilRoomIsValidated()=runBlocking {
         val store=stored();val model=model(store);model.open(room)
