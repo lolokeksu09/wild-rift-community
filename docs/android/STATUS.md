@@ -119,3 +119,10 @@
 ## Выпуск 0.7.0-preview · 07.10.2026
 
 PR #59–#62 сведены; Android и веб-карточки включены в main. Android versionCode 7, versionName 0.7.0-preview. Поддерживаются sanction и очистка сеанса/401, ошибки ограничения/403 и лимита/429. Контракт проверен на изолированной схеме 22. Verify, Chromium, сборка APK, lint и JVM прошли при сведении. Найденные отказы инструментальных тестов: нехватка диска runner и совпадение названия клуба с поисковым полем; очистка runner и селектор без editable-узлов исправлены. Полный Android набор повторяется перед публикацией; релиз создаётся только после успешного job. Фактический результат — Actions и Releases. Deploy на VDS не запускается.
+
+
+### Публикация 0.7 подтверждена · 07.10.2026
+
+[APK 0.7.0-preview](https://github.com/lolokeksu09/wild-rift-community/releases/tag/android-v0.7.0-preview) опубликован: draft=false, prerelease=true. Файл wr-community-0.7.0-preview.apk, 18 549 054 байта, SHA256 `4346c167e758ddfaf279c438ef2ebdb0c8bf585d30001b204f649fe6fab5ba51`. Исходный commit APK `e8a3e0b34ff750f8068dd328439d7e24a897020f`.
+
+[Android Actions](https://github.com/lolokeksu09/wild-rift-community/actions/runs/37576146025): assembleDebug, assembleDebugAndroidTest, lintDebug, JVM и 7/7 инструментальных тестов на Android 15/API 35 прошли, без ошибок и пропусков. Публикация использовала тот же APK из проверенного job; подпись проверена apksigner, серверный digest совпал с SHA256. [Итоговый Verify](https://github.com/lolokeksu09/wild-rift-community/actions/runs/37576517394) прошёл серверные, DOM, Docker и Chromium сценарии после включения launch.css из PR #62. Все четыре PR слиты, код #60 попал в main вместе с #61. VDS Deploy не запускался; ручная установка на телефоне, TalkBack и API 26 не подтверждены.
