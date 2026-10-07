@@ -2,6 +2,7 @@ package ru.wrcommunity.android
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.lifecycle.SavedStateHandle
 import org.junit.Assert.*
 import org.junit.Rule
@@ -27,7 +28,8 @@ class NavigationRoleWalkTest {
         try {
             WalkthroughSupport.await(account.state){it.ready&&!it.busy}
             assertNull(account.state.value.user)
-            rule.setContent {CommunityTheme {NativeCommunityApp(guest,account,client,content,messaging,discovery,moderation,notifications,"discovery/lfg")}}
+            val restoration=StateRestorationTester(rule)
+            restoration.setContent {CommunityTheme {NativeCommunityApp(guest,account,client,content,messaging,discovery,moderation,notifications,"discovery/lfg")}}
             WalkthroughSupport.await(discovery.state){!it.busy&&it.data?.rows("groups")?.any{g->g.optString("title")=="Walkthrough group"}==true}
             rule.onNodeWithText("Войти и участвовать").performScrollTo().performClick()
             rule.onNodeWithText("Логин").performScrollTo().performTextInput(user.details.getString("handle"))
@@ -49,6 +51,11 @@ class NavigationRoleWalkTest {
             rule.onNode(hasText("Клубы") and hasClickAction()).performClick()
             WalkthroughSupport.await(content.state){!it.busy&&it.data?.optJSONObject("club")?.optString("id")==club}
             rule.onNodeWithTag("club-list").assertExists()
+            restoration.emulateSavedInstanceStateRestore()
+            WalkthroughSupport.await(content.state){!it.busy&&it.data?.optJSONObject("club")?.optString("id")==club}
+            rule.onNode(hasText("Главная") and hasClickAction()).performClick()
+            WalkthroughSupport.await(discovery.state){!it.busy&&it.data?.optJSONObject("group")?.optLong("id")==group}
+            assertEquals("discovery/group/$group",discovery.currentRoute)
         }finally{rule.runOnIdle {content.reset();messaging.reset();discovery.reset();moderation.reset();notifications.reset()}}
     }
 }

@@ -16,6 +16,8 @@ class NavigationWalkthroughTest {
         assertNull(NativeRoutes.auth("auth/create/content/post/1"))
         assertTrue(NativeRoutes.requiresAccount("discovery/event/42"))
         assertTrue(NativeRoutes.requiresAccount("chat/inbox"))
+        assertTrue(NativeRoutes.requiresAccount("discovery/players"))
+        assertTrue(NativeRoutes.requiresAccount("content/invite"))
         assertFalse(NativeRoutes.requiresAccount("discovery/events"))
         assertFalse(NativeRoutes.requiresAccount("content/post/42/comment/8"))
         assertEquals("clubs",NativeRoutes.tab("content/post/42/comment/8"))

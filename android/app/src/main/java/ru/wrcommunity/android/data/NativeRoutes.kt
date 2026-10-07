@@ -16,8 +16,8 @@ object NativeRoutes {
         return value.takeIf{it.matches(Regex("(content|discovery|chat|moderation)/[A-Za-z0-9_/-]+"))}?.let{AuthDestination(it)}
     }
     fun requiresAccount(route:String)=route.startsWith("chat/")||route.startsWith("moderation/")||
-        route in listOf("content/saved","content/drafts","content/notifications","content/create-club","discovery/saved","discovery/notifications")||
-        listOf("content/create/","content/create-poll/","content/create-guide/","content/edit/","content/draft/","content/settings/","content/members/","content/invites/","content/audit/","discovery/group/","discovery/event/").any{route.startsWith(it)}
+        route in listOf("content/saved","content/drafts","content/notifications","content/create-club","content/invite","discovery/saved","discovery/notifications","discovery/players")||
+        listOf("content/create/","content/create-poll/","content/create-guide/","content/edit/","content/draft/","content/settings/","content/members/","content/invites/","content/invite/","content/audit/","discovery/group/","discovery/event/").any{route.startsWith(it)}
     fun tab(route:String)=when {
         route=="profile"->"profile"
         route.startsWith("chat/")&&!route.startsWith("chat/club/")->"chat"

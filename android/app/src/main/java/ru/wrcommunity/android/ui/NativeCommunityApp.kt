@@ -41,6 +41,8 @@ import ru.wrcommunity.android.features.*
     var creatorReturn by rememberSaveable{mutableStateOf(false)}
     var tabRoutes by rememberSaveable{mutableStateOf(mapOf<String,String>())}
     var tabHistory by rememberSaveable{mutableStateOf(mapOf<String,List<String>>())}
+    var tabOwner by rememberSaveable{mutableStateOf<String?>(null)}
+    var tabOwnerKnown by rememberSaveable{mutableStateOf(false)}
     var completedBoundary by remember{mutableStateOf<Long?>(null)}
     var completedOwner by remember{mutableStateOf<String?>(null)}
     fun navigate(target:String){
@@ -56,9 +58,12 @@ import ru.wrcommunity.android.features.*
     }
     LaunchedEffect(deepLink){if(deepLink!=null){welcome=false;history=emptyList();route=deepLink}}
     LaunchedEffect(identity.ready,identity.user?.id,route){if(identity.ready&&identity.user==null&&NativeRoutes.requiresAccount(route))navigate("auth/$route")}
+    LaunchedEffect(identity.ready,identity.user?.id){if(identity.ready){
+        if(tabOwnerKnown&&tabOwner!=identity.user?.id){tabRoutes=emptyMap();tabHistory=emptyMap()}
+        tabOwner=identity.user?.id;tabOwnerKnown=true
+    }}
     LaunchedEffect(identity.boundary){
         guest.resetForAccountChange(identity.boundary);content.reset();messaging.reset();discovery.reset();moderation.reset();notifications.reset()
-        tabRoutes=emptyMap();tabHistory=emptyMap()
         if(identity.user==null && identity.boundary>0){history=emptyList();route="profile";authReturn=null;creatorReturn=false}
         else if(identity.user!=null&&authReturn!=null&&route=="profile"){
             val target=authReturn!!

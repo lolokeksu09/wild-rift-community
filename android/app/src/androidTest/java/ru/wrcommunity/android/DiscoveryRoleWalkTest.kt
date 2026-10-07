@@ -39,6 +39,8 @@ class DiscoveryRoleWalkTest {
     @Test fun writerAppliesInUiOwnerAcceptsAndLeavingRevokesGroupChat():Unit=runBlocking {
         val writer=WalkthroughSupport.user("writer")
         val owner=WalkthroughSupport.user("owner")
+        owner.client.delete("api/blocks",JSONObject().put("userId",writer.details.getString("id")))
+        writer.client.delete("api/blocks",JSONObject().put("userId",owner.details.getString("id")))
         val outsider=WalkthroughSupport.user("outsider")
         val id=WalkthroughSupport.fixture.getString("groupId")
         val path="api/lfg/$id"
@@ -85,6 +87,8 @@ class DiscoveryRoleWalkTest {
     @Test fun writerJoinsEventInUiOwnerRemovesAndCancelledChatIsReadOnly():Unit=runBlocking {
         val writer=WalkthroughSupport.user("writer")
         val owner=WalkthroughSupport.user("owner")
+        owner.client.delete("api/blocks",JSONObject().put("userId",writer.details.getString("id")))
+        writer.client.delete("api/blocks",JSONObject().put("userId",owner.details.getString("id")))
         val outsider=WalkthroughSupport.user("outsider")
         val id=WalkthroughSupport.fixture.getString("eventId")
         val path="api/events/$id"
