@@ -2,8 +2,14 @@ import {isDemo} from './demo.mjs';
 import {pollResults} from './polls.mjs';
 import { fail, text } from './security.mjs';
 import { transaction } from './database.mjs';
-export function unblocked(alias='p') {
+// Club staff still see their club's content from authors who blocked them; their own blocks keep hiding it.
+export function unblocked(alias='p',staff=false) {
+  if(staff)return `NOT EXISTS(SELECT 1 FROM blocks b WHERE b.blocker_id=:viewer AND b.target_id=${alias}.author_id)`;
   return `NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=:viewer AND b.target_id=${alias}.author_id) OR (b.target_id=:viewer AND b.blocker_id=${alias}.author_id))`;
+}
+export function staffOf(db,clubId,userId) {
+  return Boolean(userId&&db.prepare(`SELECT 1 FROM clubs c JOIN memberships m ON m.club_id=c.id AND m.user_id=:user AND m.status='member'
+    WHERE c.id=:club AND (c.owner_id=:user OR EXISTS(SELECT 1 FROM club_moderators x WHERE x.club_id=c.id AND x.user_id=:user))`).get({club:clubId,user:userId}));
 }
 export function postExtras(db,posts,user,now=Date.now) {
   const viewer=user?.id||'';
@@ -65,8 +71,9 @@ export function discussionRoutes({db,user,path,method,body,url,send,now,postFor}
     send(200,{saved:method==='PUT'});return true;
   }
   if(method==='GET'){
-    const comments=db.prepare(`SELECT cm.id,cm.author_id,cm.body,cm.created_at,cm.parent_id,u.name AS author_name,json_extract(u.game_profile,'$.demoBot')='community-v1' AS isBot,parent.body AS parent_body,pu.name AS parent_author_name FROM comments cm JOIN users u ON u.id=cm.author_id LEFT JOIN comments parent ON parent.id=cm.parent_id LEFT JOIN users pu ON pu.id=parent.author_id WHERE cm.post_id=:post AND cm.id<:before AND ${unblocked('cm')} AND (parent.id IS NULL OR ${unblocked('parent')}) ORDER BY cm.id DESC LIMIT 51`).all({post:id,viewer,before:cursor(url,'before',Number.MAX_SAFE_INTEGER)});
-    send(200,{viewerId:user?.id||null,comments:comments.slice(0,50).reverse(),next:comments.length>50?comments[49].id:null});return true;
+    const staff=staffOf(db,post.club_id,viewer);
+    const comments=db.prepare(`SELECT cm.id,cm.author_id,cm.body,cm.created_at,cm.parent_id,u.name AS author_name,json_extract(u.game_profile,'$.demoBot')='community-v1' AS isBot,parent.body AS parent_body,pu.name AS parent_author_name FROM comments cm JOIN users u ON u.id=cm.author_id LEFT JOIN comments parent ON parent.id=cm.parent_id LEFT JOIN users pu ON pu.id=parent.author_id WHERE cm.post_id=:post AND cm.id<:before AND ${unblocked('cm',staff)} AND (parent.id IS NULL OR ${unblocked('parent',staff)}) ORDER BY cm.id DESC LIMIT 51`).all({post:id,viewer,before:cursor(url,'before',Number.MAX_SAFE_INTEGER)});
+    send(200,{viewerId:user?.id||null,clubId:post.club_id,canModerate:staff,comments:comments.slice(0,50).reverse(),next:comments.length>50?comments[49].id:null});return true;
   }
   if(method!=='POST')fail(405,'Метод не поддерживается.');
   const commentBody=text(body.body,'Комментарий',1,1000),clientId=attemptId(body),parentId=body.parentId??null;

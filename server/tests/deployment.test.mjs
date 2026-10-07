@@ -40,3 +40,19 @@ test('external listener requires an exact HTTPS origin', async () => {
   await assert.rejects(createApp({listenHost:'0.0.0.0'}));
   for(const publicOrigin of ['http://example.com','https://example.com/path','https://example.com/','https://user:pass@example.com']) await assert.rejects(createApp({publicOrigin}));
 });
+
+test('deploy verifies demo ownership only in the release that assigns it', async () => {
+  // A later consensual transfer by the real owner must not block future releases.
+  const { readFileSync } = await import('node:fs');
+  const install = readFileSync(new URL('../../deploy/install.sh', import.meta.url), 'utf8').split('\n');
+  const start = install.findIndex(line => line.startsWith('if test -n "${DEMO_OWNER_HANDLE:-}" && ! test -f "$root/demo-owner-assigned-v1"; then'));
+  const end = install.findIndex((line, i) => i > start && line === 'fi');
+  assert(start >= 0 && end > start);
+  const ownership = /demo-ownership(-cli)?\.mjs|demoOwnershipPlan|transferDemoOwnership/;
+  const calls = install.map((line, i) => [line, i]).filter(([line]) => ownership.test(line));
+  assert.deepEqual(calls.filter(([line]) => line.includes('demo-ownership-cli.mjs')).map(([line]) => /--(apply|check)\b/.exec(line)?.[1]), ['apply', 'check']);
+  for (const [line, i] of calls) { assert(i > start && i < end, line); assert(!line.includes('||'), line); }
+  assert(end < install.findIndex(line => line.startsWith('published=true')));
+  const workflow = readFileSync(new URL('../../.github/workflows/vds-deploy.yml', import.meta.url), 'utf8');
+  assert(!ownership.test(workflow));
+});
