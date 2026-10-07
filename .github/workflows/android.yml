@@ -80,9 +80,7 @@ jobs:
           disable-animations: false
           script: |
             adb reverse tcp:5032 tcp:5032
-            cd android && ./gradlew --no-daemon connectedDebugAndroidTest
-            adb pull /sdcard/Download/wr-onboarding android/app/build/device-screenshots
-            adb pull /sdcard/Download/wr-community android/app/build/community-screenshots
+            bash -c 'cd android && ./gradlew --no-daemon connectedDebugAndroidTest; result=$?; cd "$GITHUB_WORKSPACE"; adb logcat -d -s AndroidRuntime:V TestRunner:V > android/app/build/scenario-device.log; adb pull /sdcard/Download/wr-onboarding android/app/build/device-screenshots || true; adb pull /sdcard/Download/wr-community android/app/build/community-screenshots || true; exit "$result"'
       - name: Save APK and validation reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -91,6 +89,9 @@ jobs:
           path: |
             android/app/build/outputs/apk/debug/*.apk
             android/app/build/reports/
+            android/app/build/outputs/androidTest-results/
+            android/app/build/test-results/
+            android/app/build/scenario-device.log
           if-no-files-found: warn
           retention-days: 14
       - name: Save device screenshots

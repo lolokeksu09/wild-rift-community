@@ -21,6 +21,7 @@ class MessagingRoleWalkTest {
     @Test fun recipientAcceptsWriterSendsAndRecipientBlockRevokesRoom():Unit=runBlocking {
         val writer=WalkthroughSupport.user("writer")
         val owner=WalkthroughSupport.user("owner")
+        try {
         val first="Первое знакомство ${UUID.randomUUID()}"
         val conversation=writer.client.post("api/direct",JSONObject().put("handle",owner.details.getString("handle")).put("body",first).put("clientId",UUID.randomUUID().toString())).getString("id")
         val writerModel=MessagingViewModel(writer.client)
@@ -32,6 +33,7 @@ class MessagingRoleWalkTest {
         rule.onNodeWithText("Принять").performScrollTo().performClick()
         WalkthroughSupport.await(ownerModel.chatState){!it.busy&&it.conversations.any{c->c.id==conversation&&c.status=="accepted"}}
         rule.runOnIdle { active=writerModel;route="chat/direct/$conversation" }
+        rule.waitForIdle()
         WalkthroughSupport.await(writerModel.chatState){!it.busy&&it.accessValidated&&it.messages.any{m->m.body==first}}
         val sent="Сообщение после согласия ${UUID.randomUUID()}"
         rule.onNodeWithText("Сообщение").performTextInput(sent)
@@ -39,6 +41,7 @@ class MessagingRoleWalkTest {
         WalkthroughSupport.await(writerModel.chatState){!it.busy&&it.pending.isEmpty()&&it.messages.any{m->m.body==sent}}
         screenshot("messaging-writer-delivered")
         rule.runOnIdle { active=ownerModel }
+        rule.waitForIdle()
         WalkthroughSupport.await(ownerModel.chatState){!it.busy&&it.accessValidated&&it.messages.any{m->m.body==sent}}
         rule.onNodeWithText(sent).assertIsDisplayed()
         screenshot("messaging-recipient-history")
@@ -55,6 +58,7 @@ class MessagingRoleWalkTest {
         assertFalse(writer.client.get("api/direct").rows("conversations").any{it.getString("id")==conversation})
         screenshot("messaging-block-revoked")
         rule.runOnIdle { writerModel.stop();ownerModel.stop() }
+        } finally {owner.client.delete("api/blocks",JSONObject().put("userId",writer.details.getString("id")))}
     }
     private fun screenshot(name:String) {
         rule.waitForIdle()

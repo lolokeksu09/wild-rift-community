@@ -62,6 +62,7 @@ class ContentRoleWalkTest {
 
             // This button invokes ContentSection's actual navigation callback to the full post.
             rule.onNodeWithText("Показать последние комментарии").performScrollTo().performClick()
+            rule.waitForIdle()
             WalkthroughSupport.await(ownerModel.state){
                 !it.busy&&ownerModel.loadedRoute==NativeRoutes.post(postId)&&
                     it.data?.optJSONObject("commentsPage")?.rows("comments")?.size==50
@@ -70,6 +71,7 @@ class ContentRoleWalkTest {
             rule.onNodeWithText("Walkthrough target comment").assertDoesNotExist()
 
             rule.runOnIdle {active=writerModel}
+            rule.waitForIdle()
             val own=WalkthroughSupport.await(writerModel.state){
                 !it.busy&&it.data?.optJSONObject("post")?.optLong("id")==postId
             }

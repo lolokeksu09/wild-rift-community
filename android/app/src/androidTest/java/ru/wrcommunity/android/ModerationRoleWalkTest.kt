@@ -42,6 +42,7 @@ class ModerationRoleWalkTest {
         WalkthroughSupport.await(firstModel.state){!it.busy&&it.data?.rows("reports")?.any{r->r.optString("id")==id&&r.optString("status")=="upheld"}==true}
         screenshot("moderation-first-decision")
         rule.runOnIdle { active=ownerModel }
+        rule.waitForIdle()
         WalkthroughSupport.await(ownerModel.state){!it.busy&&it.data?.rows("reports")?.any{r->r.optString("id")==id&&r.optString("status")=="upheld"}==true}
         rule.onNodeWithText("Обоснование пересмотра").performScrollTo().performTextInput("Прошу пересмотреть контекст сообщения")
         rule.onNodeWithText("Подать апелляцию").performScrollTo().performClick()
@@ -52,6 +53,7 @@ class ModerationRoleWalkTest {
         catch(e:ApiException){assertEquals(403,e.status)}
         assertFalse(outsider.client.get("api/reports").rows("reports").any{it.optString("id")==id})
         rule.runOnIdle { active=secondModel }
+        rule.waitForIdle()
         WalkthroughSupport.await(secondModel.state){!it.busy&&it.data?.rows("reports")?.any{r->r.optString("id")==id&&r.optString("appeal_status")=="pending"}==true}
         rule.onNodeWithText("Нарушение не подтверждено").performScrollTo().performClick()
         rule.onNodeWithText("Объяснение для заявителя").performScrollTo().performTextInput("Независимый пересмотр отменил нарушение")
@@ -59,6 +61,7 @@ class ModerationRoleWalkTest {
         rule.onNodeWithText("Подтвердить").performClick()
         WalkthroughSupport.await(secondModel.state){!it.busy&&it.data?.rows("reports")?.any{r->r.optString("id")==id&&r.optString("appeal_status")=="dismissed"}==true}
         rule.runOnIdle { active=ownerModel }
+        rule.waitForIdle()
         WalkthroughSupport.await(ownerModel.state){!it.busy&&it.data?.rows("reports")?.any{r->r.optString("id")==id&&r.optString("appeal_status")=="dismissed"}==true}
         rule.onNodeWithText("Независимый пересмотр отменил нарушение").performScrollTo().assertIsDisplayed()
         screenshot("moderation-independent-appeal")

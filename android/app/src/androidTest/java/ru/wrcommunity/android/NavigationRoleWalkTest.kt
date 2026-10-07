@@ -36,24 +36,31 @@ class NavigationRoleWalkTest {
             rule.onNodeWithText("Пароль").performScrollTo().performTextInput(WalkthroughSupport.fixture.getString("password"))
             rule.onNodeWithText("Войти").performScrollTo().performClick()
             WalkthroughSupport.await(account.state){it.user!=null&&!it.busy}
+            rule.waitForIdle()
             val group=WalkthroughSupport.fixture.getLong("groupId")
             WalkthroughSupport.await(discovery.state){!it.busy&&it.data?.optJSONObject("group")?.optLong("id")==group}
             assertEquals("discovery/group/$group",discovery.currentRoute)
             rule.onNodeWithText("Walkthrough group").performScrollTo().assertIsDisplayed()
             rule.onNode(hasText("Клубы") and hasClickAction()).performClick()
+            rule.waitForIdle()
             WalkthroughSupport.await(content.state){!it.busy&&it.data?.rows("clubs")?.any{c->c.optString("name")=="Walkthrough club"}==true}
             rule.onNodeWithTag("catalog-list").performScrollToNode(hasText("Walkthrough club"))
             rule.onNodeWithText("Walkthrough club").performClick()
+            rule.waitForIdle()
             val club=WalkthroughSupport.fixture.getString("clubId")
             WalkthroughSupport.await(content.state){!it.busy&&it.data?.optJSONObject("club")?.optString("id")==club}
             rule.onNode(hasText("Главная") and hasClickAction()).performClick()
+            rule.waitForIdle()
             WalkthroughSupport.await(discovery.state){!it.busy&&it.data?.optJSONObject("group")?.optLong("id")==group}
             rule.onNode(hasText("Клубы") and hasClickAction()).performClick()
+            rule.waitForIdle()
             WalkthroughSupport.await(content.state){!it.busy&&it.data?.optJSONObject("club")?.optString("id")==club}
             rule.onNodeWithTag("club-list").assertExists()
             restoration.emulateSavedInstanceStateRestore()
+            rule.waitForIdle()
             WalkthroughSupport.await(content.state){!it.busy&&it.data?.optJSONObject("club")?.optString("id")==club}
             rule.onNode(hasText("Главная") and hasClickAction()).performClick()
+            rule.waitForIdle()
             WalkthroughSupport.await(discovery.state){!it.busy&&it.data?.optJSONObject("group")?.optLong("id")==group}
             assertEquals("discovery/group/$group",discovery.currentRoute)
         }finally{rule.runOnIdle {content.reset();messaging.reset();discovery.reset();moderation.reset();notifications.reset()}}

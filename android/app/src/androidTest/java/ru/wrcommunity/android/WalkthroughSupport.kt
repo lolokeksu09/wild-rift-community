@@ -1,6 +1,7 @@
 package ru.wrcommunity.android
 
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -47,5 +48,11 @@ object WalkthroughSupport {
         suspend fun signIn(){identity=accounts.signIn(details.getString("handle"),fixture.getString("password"),null)}
     }
     fun user(role:String)=User(role).also{runBlocking{it.signIn()}}
-    fun <T> await(state:StateFlow<T>,predicate:(T)->Boolean):T=runBlocking{withTimeout(15000){state.first(predicate)}}
+    fun <T> await(state:StateFlow<T>,predicate:(T)->Boolean):T {
+        val caller=Throwable().stackTrace.firstOrNull{it.className.contains("RoleWalkTest")}
+        return try {runBlocking{withTimeout(15000){state.first(predicate)}}}
+        catch(error:TimeoutCancellationException){
+            throw AssertionError("Expected state not reached at $caller; actual=${state.value}").also{it.initCause(error)}
+        }
+    }
 }
