@@ -55,7 +55,7 @@ class MessagingPersistenceTest {
         assertTrue(model.chatState.value.pending.isEmpty());assertEquals("",model.chatState.value.draft)
         assertNull(store.read("self")[room]);assertEquals("Другой клуб",store.read("self")["chat/club/two"]!!.draft)
     }
-    @Test fun deniedRoomStaysBusyUntilItsQueuedDiskRemovalCompletes()=runBlocking {
+    @Test fun deniedRoomStaysBusyUntilItsQueuedDiskRemovalCompletes():Unit=runBlocking {
         val tasks=Channel<Runnable>(Channel.UNLIMITED)
         val dispatcher=object:CoroutineDispatcher(){override fun dispatch(context:CoroutineContext,block:Runnable){check(tasks.trySend(block).isSuccess)}}
         val store=stored();val model=model(store,dispatcher);model.open(room)
