@@ -1,8 +1,10 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package ru.wrcommunity.android.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
@@ -37,7 +39,7 @@ fun ContentSection(model:ContentViewModel,route:String,onNavigate:(String)->Unit
         if(restorePending&&!state.busy&&state.data!=null&&model.loadedRoute==route){
             // Wait for freshly restored rows to be measured before clamping the saved offset.
             withFrameNanos{};withFrameNanos{}
-            scrollState.scrollTo(model.position(route).coerceAtMost(scrollState.maxValue))
+            if(NativeRoutes.comment(route)==null)scrollState.scrollTo(model.position(route).coerceAtMost(scrollState.maxValue))
             restorePending=false
         }
     }
@@ -60,11 +62,11 @@ fun ContentSection(model:ContentViewModel,route:String,onNavigate:(String)->Unit
                 More(data,state.busy){model.more("api/clubs","clubs",cursorKey="after")}}
             "feed","saved","guides","search" -> {
                 if(kind in listOf("guides","search"))PostFilters(model,kind,route,state.busy)
-                data?.rows("posts")?.let{posts->if(posts.isEmpty())Empty("Публикаций пока нет.");posts.forEach{PostCard(it,model,onNavigate)}}
+                data?.rows("posts")?.let{posts->if(posts.isEmpty())Empty(if(data?.optBoolean("searchPending")==true)"Введи фразу для поиска." else "Публикаций пока нет.");posts.forEach{PostCard(it,model,onNavigate)}}
                 More(data,state.busy){model.more(if(kind=="search")"api/posts/search" else "api/$kind","posts")}
             }
             "club" -> data?.let{ClubDetail(it,model,onNavigate,state.busy)}
-            "post" -> data?.let{PostDetail(it,model,onNavigate,state.busy)}
+            "post" -> data?.let{PostDetail(it,model,onNavigate,state.busy,NativeRoutes.comment(route))}
             "create-club" -> ClubCreate(model,onNavigate,state.busy)
             "settings" -> data?.optJSONObject("club")?.let{ClubSettings(it,model,state.busy)}
             "members" -> data?.let{Members(it,model,onNavigate,state.busy)}
@@ -74,7 +76,7 @@ fun ContentSection(model:ContentViewModel,route:String,onNavigate:(String)->Unit
                 if(kind.startsWith("create")||data!=null)ContentEditor(kind,id,data,model,onNavigate,state.busy)
             }
             "drafts" -> data?.let{page->val drafts=page.rows("drafts");if(drafts.isEmpty())Empty("Сохранённых черновиков нет.");drafts.forEach{draft->Panel{Text(draft.optString("title").ifBlank{"Без заголовка"},style=MaterialTheme.typography.titleMedium);Text(draft.optString("club_name"));Text(stamp(draft.optLong("updated_at")));Link("Продолжить","content/draft/${draft.optString("club_id")}",onNavigate)}}}
-            "notifications" -> data?.let{page->if(page.rows("notifications").isEmpty())Empty("Ответов и упоминаний пока нет.");page.rows("notifications").forEach{n->Panel{Text(n.optString("title"),style=MaterialTheme.typography.titleMedium);Text(n.optString("actor_name")+if(n.optString("kind")=="reply")" ответил тебе" else " упомянул тебя");Link("Открыть обсуждение","content/post/${n.optLong("post_id")}",onNavigate);if(n.optInt("seen")==0)TextButton(onClick={model.mutate("api/discussions/notifications/${n.optLong("id")}/read")},enabled=!state.busy){Text("Отметить прочитанным")}}};More(page,state.busy){model.more("api/discussions/notifications","notifications")}}
+            "notifications" -> data?.let{page->if(page.rows("notifications").isEmpty())Empty("Ответов и упоминаний пока нет.");page.rows("notifications").forEach{n->Panel{Text(n.optString("title"),style=MaterialTheme.typography.titleMedium);Text(n.optString("actor_name")+if(n.optString("kind")=="reply")" ответил тебе" else " упомянул тебя");Link("Открыть обсуждение",NativeRoutes.post(n.optLong("post_id"),n.optLong("comment_id").takeIf{it>0}),onNavigate);if(n.optInt("seen")==0)TextButton(onClick={model.mutate("api/discussions/notifications/${n.optLong("id")}/read")},enabled=!state.busy){Text("Отметить прочитанным")}}};More(page,state.busy){model.more("api/discussions/notifications","notifications")}}
             "invite" -> InviteAccept(model,onNavigate,state.busy)
         }
         Spacer(Modifier.height(36.dp))
@@ -89,7 +91,7 @@ private val contentSubtitles=mapOf("feed" to "Истории, вопросы и 
 }
 private fun stamp(value:Long)=if(value==0L)"" else DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(Date(value))
 private fun roleLabel(role:String)=when(role){"owner"->"Владелец";"moderator"->"Модератор";else->"Участник"}
-@Composable private fun Panel(content:@Composable ColumnScope.()->Unit){RiftCard(content)}
+@Composable private fun Panel(modifier:Modifier=Modifier,content:@Composable ColumnScope.()->Unit){RiftCard(modifier,content)}
 @Composable private fun Empty(text:String){Text(text,color=MaterialTheme.colorScheme.onSurfaceVariant)}
 @Composable private fun Link(label:String,route:String,navigate:(String)->Unit){TextButton(onClick={navigate(route)}){Text(label)}}
 @Composable private fun More(page:JSONObject?,busy:Boolean,action:()->Unit){if(page!=null&&ContentRepository.next(page)!=null)OutlinedButton(onClick=action,enabled=!busy){Text("Показать ещё")}}
@@ -133,7 +135,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Владелец";"moder
         }
     }
 }
-@Composable private fun PostFilters(model:ContentViewModel,kind:String,route:String,busy:Boolean){var q by rememberSaveable(kind){mutableStateOf(model.filter(route,"q").ifBlank{if(kind=="search")"Wild Rift" else ""})};var champion by rememberSaveable(kind){mutableStateOf(model.filter(route,"champion"))};var version by rememberSaveable(kind){mutableStateOf(model.filter(route,"gameVersion"))};var topic by rememberSaveable(kind){mutableStateOf(model.filter(route,"topic"))};Panel{Field(q,"Поиск по тексту",{q=it});if(kind=="guides"){Field(champion,"Чемпион",{champion=it});Field(version,"Версия игры",{version=it});Choice(topic,"Тема",listOf("" to "Все")+topics){topic=it}};Button(onClick={model.open(route,mapOf("q" to q,"champion" to champion,"gameVersion" to version,"topic" to topic))},enabled=!busy&& (kind!="search"||q.isNotBlank())){Text("Искать")}}}
+@Composable private fun PostFilters(model:ContentViewModel,kind:String,route:String,busy:Boolean){var q by rememberSaveable(route,model.userId){mutableStateOf(model.filter(route,"q"))};var champion by rememberSaveable(route,model.userId){mutableStateOf(model.filter(route,"champion"))};var version by rememberSaveable(route,model.userId){mutableStateOf(model.filter(route,"gameVersion"))};var topic by rememberSaveable(route,model.userId){mutableStateOf(model.filter(route,"topic"))};Panel{Field(q,"Поиск по тексту",{q=it});if(kind=="guides"){Field(champion,"Чемпион",{champion=it});Field(version,"Версия игры",{version=it});Choice(topic,"Тема",listOf("" to "Все")+topics){topic=it}};Button(onClick={model.open(route,mapOf("q" to q,"champion" to champion,"gameVersion" to version,"topic" to topic))},enabled=!busy&& (kind!="search"||q.isNotBlank())){Text("Искать")}}}
 @Composable private fun ClubCover(club:JSONObject,model:ContentViewModel,height:Int){
     Box(Modifier.fillMaxWidth().height(height.dp).clip(RoundedCornerShape(16.dp))){
         RiftCover(club.optString("name"),club.optString("accent","gold"),Modifier.fillMaxSize())
@@ -229,7 +231,7 @@ private fun tags(club:JSONObject)=tagList(club).joinToString(" · ")
     if(!member&&club.optString("access")!="open")Empty("Материалы доступны после принятия в клуб.")
 }
 
-@Composable private fun PostDetail(data:JSONObject,model:ContentViewModel,navigate:(String)->Unit,busy:Boolean){
+@Composable private fun PostDetail(data:JSONObject,model:ContentViewModel,navigate:(String)->Unit,busy:Boolean,focus:Long?=null){
     val p=data.getJSONObject("post");val id=p.optLong("id");val club=data.getJSONObject("club");val clubId=p.optString("club_id");val member=club.optString("membership")=="member";val staff=club.optString("myRole") in listOf("owner","moderator");val own=p.optString("author_id")==model.userId
     var tools by remember(id,model.userId){mutableStateOf(false)}
     Panel{PostByline(p,model,navigate);Text(p.optString("title"),style=MaterialTheme.typography.headlineSmall);p.optJSONObject("guide")?.let{g->Text("${topics.find{it.first==g.optString("topic")}?.second.orEmpty()} · ${g.optString("champion")} · версия ${g.optString("game_version")}");Text(g.optString("summary"))};Text(p.optString("body"));p.nullableString("image_id")?.let{NativeMedia(it,model.mediaClient.api,"Изображение публикации",Modifier.fillMaxWidth())};Link("Открыть клуб","content/club/$clubId",navigate)
@@ -243,11 +245,14 @@ private fun tags(club:JSONObject)=tagList(club).joinToString(" · ")
         }
     }
     p.optJSONObject("poll")?.let{poll->Panel{Text(if(poll.optBoolean("closed"))"Опрос завершён" else "До ${stamp(poll.optLong("endsAt"))}");Text("Всего голосов: ${poll.optInt("total")}");poll.rows("options").forEach{o->val chosen=!poll.isNull("myOption")&&poll.optInt("myOption")==o.optInt("option_id");OutlinedButton(onClick={model.mutate("api/posts/$id/poll/vote","PUT",JSONObject().put("optionId",o.optInt("option_id")))},enabled=member&&!busy&&!poll.optBoolean("closed")&&poll.isNull("myOption")){Text("${if(chosen)"✓ " else ""}${o.optString("label")} · ${o.optInt("votes")}")}}}}
-    var reply by rememberSaveable(id){mutableStateOf<Long?>(null)};var comment by rememberSaveable(id,model.userId){mutableStateOf("")}
+    var reply by rememberSaveable(id,model.userId){mutableStateOf<Long?>(null)};var comment by rememberSaveable(id,model.userId){mutableStateOf("")}
     val comments=data.optJSONObject("commentsPage")
     SectionHeading("Обсуждение","Вопросы, ответы и опыт участников.")
     if(comments?.rows("comments")?.isEmpty()==true)Empty("Первый комментарий может быть твоим.")
-    comments?.rows("comments")?.forEach{c->Panel{Row(horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically){RiftAvatar(c.optString("author_name"),null,model.mediaClient.api,32.dp);Column{Text(c.optString("author_name")+if(c.optInt("isBot")==1)" · Бот" else "",style=MaterialTheme.typography.labelLarge);Text(stamp(c.optLong("created_at")),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}};if(!c.isNull("parent_id"))Text("Ответ ${c.optString("parent_author_name")}: ${c.optString("parent_body")}",style=MaterialTheme.typography.bodySmall);Text(c.optString("body"));if(member)TextButton(onClick={reply=if(c.isNull("parent_id"))c.optLong("id") else c.optLong("parent_id")}){Text("Ответить")};if(model.userId!=null&&c.optString("author_id")!=model.userId)Link("Пожаловаться","moderation/report/comment/${c.optLong("id")}",navigate);if(comments.optBoolean("canModerate"))Destructive("Удалить комментарий","Текст будет удалён; ответы останутся без цитаты.",busy){model.mutate("api/clubs/$clubId/comments/${c.optLong("id")}","DELETE")}}}
+    val focusRequester=remember(focus){BringIntoViewRequester()}
+    LaunchedEffect(focus,comments,busy){if(focus!=null&&!busy&&comments?.rows("comments")?.any{it.optLong("id")==focus}==true){withFrameNanos{};withFrameNanos{};focusRequester.bringIntoView()}}
+    if(focus!=null){Text(if(comments?.rows("comments")?.any{it.optLong("id")==focus}==true)"Выбранный ответ"else "Выбранный ответ недоступен.",color=MaterialTheme.colorScheme.primary);TextButton(onClick={navigate(NativeRoutes.post(id))}){Text("Показать последние комментарии")}}
+    comments?.rows("comments")?.forEach{c->val selected=c.optLong("id")==focus;Panel(Modifier.testTag("comment-${c.optLong("id")}").then(if(selected)Modifier.bringIntoViewRequester(focusRequester)else Modifier)){if(selected)Text("Ответ из уведомления",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelLarge);Row(horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically){RiftAvatar(c.optString("author_name"),null,model.mediaClient.api,32.dp);Column{Text(c.optString("author_name")+if(c.optInt("isBot")==1)" · Бот" else "",style=MaterialTheme.typography.labelLarge);Text(stamp(c.optLong("created_at")),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}};if(!c.isNull("parent_id"))Text("Ответ ${c.optString("parent_author_name")}: ${c.optString("parent_body")}",style=MaterialTheme.typography.bodySmall);Text(c.optString("body"));if(member)TextButton(onClick={reply=if(c.isNull("parent_id"))c.optLong("id") else c.optLong("parent_id")}){Text("Ответить")};if(model.userId!=null&&c.optString("author_id")!=model.userId)Link("Пожаловаться","moderation/report/comment/${c.optLong("id")}",navigate);if(comments.optBoolean("canModerate"))Destructive("Удалить комментарий","Текст будет удалён; ответы останутся без цитаты.",busy){model.mutate("api/clubs/$clubId/comments/${c.optLong("id")}","DELETE")}}}
     More(comments,busy){model.more("api/posts/$id/comments","comments","commentsPage")}
     if(member)Panel{reply?.let{Text("Ответ на комментарий");TextButton(onClick={reply=null}){Text("Отменить ответ")}};Field(comment,"Комментарий · @логин для упоминания",{comment=it},true,!busy);Button(onClick={val body=JSONObject().put("body",comment).put("parentId",reply?:JSONObject.NULL);body.put("clientId",model.attempt("comment:$id",body.toString()));model.mutate("api/posts/$id/comments",body=body,onSuccess={comment="";reply=null})},enabled=!busy&&comment.isNotBlank()&&comment.length<=1000){Text("Отправить")}}
     else Empty("Для комментариев и реакций вступи в клуб.")
@@ -281,7 +286,7 @@ private fun tags(club:JSONObject)=tagList(club).joinToString(" · ")
     val page=data.optJSONObject("invitesPage")?:return;if(page.rows("invites").isEmpty())Empty("Приглашений пока нет.");page.rows("invites").forEach{i->Panel{Text("Использовано ${i.optInt("uses")} из ${i.optInt("max_uses")}");Text(if(i.optInt("revoked")==1)"Отозвано" else "До ${stamp(i.optLong("expires_at"))}");if(i.optInt("revoked")==0&&i.optLong("expires_at")>System.currentTimeMillis())Destructive("Отозвать приглашение","Код приглашения больше не будет действовать.",busy){model.mutate("api/clubs/$id/invites/${i.optString("id")}","DELETE")}}}
 }
 
-@Composable private fun InviteAccept(model:ContentViewModel,navigate:(String)->Unit,busy:Boolean){var token by rememberSaveable(model.userId){mutableStateOf("")};var preview by remember{mutableStateOf<JSONObject?>(null)};Panel{Field(token,"Код приглашения",{token=it;preview=null},true,!busy);Button(onClick={model.mutate("api/club-invites/preview",body=JSONObject().put("token",token.trim()),onSuccess={preview=it})},enabled=!busy&&token.trim().length==64){Text("Проверить приглашение")};preview?.let{p->Text(p.optJSONObject("club")?.optString("name").orEmpty(),style=MaterialTheme.typography.titleLarge);Text("До ${stamp(p.optLong("expiresAt"))}");Button(onClick={model.mutate("api/club-invites/accept",body=JSONObject().put("token",token.trim()),onSuccess={navigate("content/club/${it.optString("clubId")}")})},enabled=!busy){Text("Вступить или подать заявку")}}}}
+@Composable private fun InviteAccept(model:ContentViewModel,navigate:(String)->Unit,busy:Boolean){var token by rememberSaveable(model.userId){mutableStateOf("")};var preview by remember(model.userId){mutableStateOf<JSONObject?>(null)};Panel{Field(token,"Код приглашения",{token=it;preview=null},true,!busy);Button(onClick={model.mutate("api/club-invites/preview",body=JSONObject().put("token",token.trim()),onSuccess={preview=it})},enabled=!busy&&token.trim().length==64){Text("Проверить приглашение")};preview?.let{p->Text(p.optJSONObject("club")?.optString("name").orEmpty(),style=MaterialTheme.typography.titleLarge);Text("До ${stamp(p.optLong("expiresAt"))}");Button(onClick={model.mutate("api/club-invites/accept",body=JSONObject().put("token",token.trim()),onSuccess={navigate("content/club/${it.optString("clubId")}")})},enabled=!busy){Text("Вступить или подать заявку")}}}}
 
 private val auditLabels=mapOf("cover" to "Обложка обновлена","settings" to "Настройки обновлены","moderator-grant" to "Назначен модератор","moderator-revoke" to "Сняты полномочия","approve" to "Заявка принята","reject" to "Заявка отклонена","ban" to "Доступ ограничен","kick" to "Участник исключён","unban" to "Бан снят","leave" to "Выход из клуба","pin" to "Публикация закреплена","unpin" to "Закрепление снято","post-remove" to "Публикация удалена","comment-remove" to "Комментарий удалён","invite-create" to "Приглашение создано","invite-revoke" to "Приглашение отозвано","invite-member" to "Вступление по приглашению","invite-pending" to "Заявка по приглашению","transfer-offer" to "Предложена передача владения","transfer-cancel" to "Передача отменена","transfer-accept" to "Владение передано","owner-operator-transfer" to "Оператор передал владение")
 @Composable private fun Audit(data:JSONObject,id:String,model:ContentViewModel,busy:Boolean){val page=data.optJSONObject("auditPage")?:return;if(page.rows("entries").isEmpty())Empty("Журнал пока пуст.");page.rows("entries").forEach{e->Panel{Text(auditLabels[e.optString("action")]?:"Действие управления",style=MaterialTheme.typography.titleMedium);Text(e.optString("actor_name")+e.nullableString("target_name")?.let{" → $it"}.orEmpty());Text(stamp(e.optLong("created_at")))}};More(page,busy){model.more("api/clubs/$id/audit","entries","auditPage")}}

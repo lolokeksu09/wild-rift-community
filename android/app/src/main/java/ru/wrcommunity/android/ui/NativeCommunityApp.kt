@@ -36,14 +36,35 @@ import ru.wrcommunity.android.features.*
     var route by rememberSaveable{mutableStateOf(deepLink ?: "catalog")}
     var history by rememberSaveable{mutableStateOf(listOf<String>())}
     var authMode by rememberSaveable{mutableStateOf("login")}
-    val tab=when{route=="profile"->"profile";route.startsWith("chat/")&&!route.startsWith("chat/club/")->"chat";route=="catalog"||route.startsWith("content/")||route.startsWith("chat/club/")->"clubs";else->"home"}
+    val tab=NativeRoutes.tab(route)
+    var authReturn by rememberSaveable{mutableStateOf<String?>(null)}
+    var creatorReturn by rememberSaveable{mutableStateOf(false)}
+    var tabRoutes by rememberSaveable{mutableStateOf(mapOf<String,String>())}
+    var tabHistory by rememberSaveable{mutableStateOf(mapOf<String,List<String>>())}
     var completedBoundary by remember{mutableStateOf<Long?>(null)}
     var completedOwner by remember{mutableStateOf<String?>(null)}
-    fun navigate(target:String){val destination=if(target=="account")"profile" else target;if(destination==route)return;history=history+route;route=destination;account.clearCodes()}
+    fun navigate(target:String){
+        val auth=NativeRoutes.auth(target)
+        var destination=auth?.route?:if(target=="account")"profile"else target
+        if(identity.user==null&&(auth!=null||NativeRoutes.requiresAccount(destination))){
+            authReturn=destination;creatorReturn=auth?.create==true;destination="profile"
+        }else if(identity.user==null&&destination=="profile"&&route.startsWith("content/club/")){
+            authReturn=route;creatorReturn=false
+        }else if(route=="profile"&&destination!="profile"){authReturn=null;creatorReturn=false}
+        if(destination==route)return
+        history=history+route;route=destination;account.clearCodes()
+    }
     LaunchedEffect(deepLink){if(deepLink!=null){welcome=false;history=emptyList();route=deepLink}}
+    LaunchedEffect(identity.ready,identity.user?.id,route){if(identity.ready&&identity.user==null&&NativeRoutes.requiresAccount(route))navigate("auth/$route")}
     LaunchedEffect(identity.boundary){
         guest.resetForAccountChange(identity.boundary);content.reset();messaging.reset();discovery.reset();moderation.reset();notifications.reset()
-        if(identity.user==null && identity.boundary>0){history=emptyList();route="profile"}
+        tabRoutes=emptyMap();tabHistory=emptyMap()
+        if(identity.user==null && identity.boundary>0){history=emptyList();route="profile";authReturn=null;creatorReturn=false}
+        else if(identity.user!=null&&authReturn!=null&&route=="profile"){
+            val target=authReturn!!
+            if(creatorReturn)discovery.setDraft("editor.$target","1")
+            authReturn=null;creatorReturn=false;route=target
+        }
         appliedBoundary=identity.boundary
     }
     LaunchedEffect(identity.boundary,identity.ready,identity.busy,identity.user?.id,identity.error){
@@ -57,6 +78,7 @@ import ru.wrcommunity.android.features.*
         if(identity.ready&&identity.user!=null)lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED){notifications.poll()}
     }
     BackHandler(!welcome){
+        if(route=="profile"){authReturn=null;creatorReturn=false}
         if(history.isNotEmpty()){route=history.last();history=history.dropLast(1)}
         else if(route!="catalog"){route="catalog"} else welcome=true
     }
@@ -74,13 +96,13 @@ import ru.wrcommunity.android.features.*
     val context=LocalContext.current
     val publicPath=when {
         route.startsWith("content/club/")->"/clubs/"+route.substringAfterLast('/')
-        route.startsWith("content/post/")->"/posts/"+route.substringAfterLast('/')
+        route.startsWith("content/post/")->"/posts/"+route.removePrefix("content/post/").substringBefore('/')
         route.startsWith("discovery/player/")->"/players/"+route.substringAfterLast('/')
         else->null
     }
     val title=when{route=="catalog"||route=="content/clubs"->"Клубы";route=="profile"->"Профиль";route=="discovery/home"->"Главная";route.startsWith("chat/")->"Сообщения";route=="more"->"Сообщество";route=="discovery/notifications"->"Уведомления";else->"Wild Rift Community"}
     Scaffold(topBar={TopAppBar(title={Text(title)},
-        navigationIcon={if(history.isNotEmpty()||(route!="catalog"&&route!="discovery/home"&&route!="chat/inbox"&&route!="profile"))IconButton(onClick={if(history.isNotEmpty()){route=history.last();history=history.dropLast(1)}else{route="catalog"}}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Назад")}},
+        navigationIcon={if(history.isNotEmpty()||(route!="catalog"&&route!="discovery/home"&&route!="chat/inbox"&&route!="profile"))IconButton(onClick={if(route=="profile"){authReturn=null;creatorReturn=false};if(history.isNotEmpty()){route=history.last();history=history.dropLast(1)}else{route="catalog"}}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Назад")}},
         actions={if(publicPath!=null)IconButton(onClick={val intent=Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,BuildConfig.API_ORIGIN+publicPath);context.startActivity(Intent.createChooser(intent,"Поделиться"))}){Icon(Icons.Default.Share,"Поделиться ссылкой")}
             if(identity.user!=null)IconButton(onClick={navigate("discovery/notifications")}){BadgedBox(badge={if(counts.total>0)Badge{Text(if(counts.total>99)"99+" else counts.total.toString())}}){Icon(Icons.Default.NotificationsNone,"Уведомления")}}
             else TextButton(onClick={navigate("profile")}){Icon(Icons.Default.PersonOutline,null);Text("Гость")}
@@ -88,8 +110,11 @@ import ru.wrcommunity.android.features.*
         bottomBar={NavigationBar{
             val tabs=listOf("home" to "Главная","clubs" to "Клубы","chat" to "Сообщения","profile" to "Профиль")
             tabs.forEach{(key,label)->NavigationBarItem(selected=tab==key,onClick={
-                history=emptyList();account.clearCodes()
-                route=when(key){"home"->"discovery/home";"clubs"->"catalog";"chat"->"chat/inbox";else->"profile"}
+                tabRoutes=tabRoutes+(tab to route);tabHistory=tabHistory+(tab to history)
+                account.clearCodes();authReturn=null;creatorReturn=false
+                val target=tabRoutes[key]?:when(key){"home"->"discovery/home";"clubs"->"catalog";"chat"->"chat/inbox";else->"profile"}
+                if(identity.user==null&&NativeRoutes.requiresAccount(target)){history=emptyList();navigate("auth/$target")}
+                else{route=target;history=tabHistory[key].orEmpty()}
                 if(key=="profile")account.refresh()
             },icon={BadgedBox(badge={if(key=="chat"&&counts.direct>0)Badge{Text(if(counts.direct>99)"99+" else counts.direct.toString())}}){Icon(when(key){"home"->Icons.Default.Home;"clubs"->Icons.Default.Groups;"chat"->Icons.Default.ChatBubbleOutline;else->Icons.Default.PersonOutline},null)}},label={Text(label)})}
         }}){padding->Column(Modifier.fillMaxSize().padding(padding)){

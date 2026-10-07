@@ -101,13 +101,28 @@ class MessagingViewModel(client:FeatureClient,private val store:MessageStore=Mem
     private fun isRoom()=flow.value.route.startsWith("chat/direct/")||flow.value.route.startsWith("chat/club/")
     fun draft(value:String){if(!flow.value.accessValidated)return;val v=value.take(2000);drafts[flow.value.route]=v;update{it.copy(draft=v)};saveRoom()}
     fun handle(value:String){if(!flow.value.accessValidated)return;val handle=value.take(24);handles[flow.value.route]=handle;update{it.copy(handle=handle)};saveRoom()}
-    private suspend fun guard(block:suspend()->Unit){
+    private suspend fun guard(recheckWriteAccess:Boolean=false,block:suspend()->Unit){
         val key=generation
         try{block()}
         catch(e:CancellationException){throw e}
         catch(e:Exception){
             if(key!=generation)return
-            val denied=e is ApiException&&e.status in listOf(401,403,404)
+            var denied=e is ApiException&&e.status in listOf(401,403,404)
+            // A write restriction does not revoke reading. Check the room contract rather
+            // than matching translated server errors before deleting a failed send.
+            if(recheckWriteAccess && isRoom() && e is ApiException && e.status==403){
+                try { reloadHistory(); denied=false }
+                catch(check:CancellationException){throw check}
+                catch(check:Exception){
+                    denied=check is ApiException&&check.status in listOf(401,403,404)
+                    if(!denied && key==generation){
+                        // Keep disk data for a future ACL check, but hide it while unverified.
+                        cursor=0
+                        update{it.copy(messages=emptyList(),pending=emptyList(),draft="",handle="",accessValidated=false)}
+                    }
+                }
+                if(key!=generation)return
+            }
             var storageError:String?=null
             if(denied&&(isRoom()||(e is ApiException&&e.status==401))){
                 cursor=0
@@ -160,7 +175,7 @@ class MessagingViewModel(client:FeatureClient,private val store:MessageStore=Mem
     fun moreInbox(){val next=flow.value.next?:return;if(flow.value.busy)return;mutate{val p=repository.inbox(next);update{it.copy(conversations=(it.conversations+p.conversations).distinctBy{c->c.id},next=p.next,unread=p.unread,requests=p.requests)}}}
     private fun mutate(block:suspend()->Unit){if(flow.value.busy)return;val key=generation;update{it.copy(busy=true,error=null,notice=null)};action=viewModelScope.launch{if(key!=generation)return@launch;guard{block();if(key==generation)update{it.copy(notice=it.notice?:"Готово.")}};if(key==generation)update{it.copy(busy=false)}}}
     fun send(){val s=flow.value;if(s.draft.isBlank()||s.pending.size>=20||s.denied||!s.accessValidated)return;val p=MessagingContract.pending(s.draft);queues[s.route]=s.pending+p;update{it.copy(pending=it.pending+p)};draft("");retry(p.clientId)}
-    fun retry(id:String){val p=flow.value.pending.find{it.clientId==id}?:return;if(p.busy||flow.value.denied||!flow.value.accessValidated)return;val route=flow.value.route;val key=generation;update{it.copy(pending=it.pending.map{p->if(p.clientId==id)p.copy(busy=true,error=null)else p})};viewModelScope.launch{guard{try{if(key!=generation)return@guard;val account=owner?:return@guard;persistRoom(route,account,roomSnapshot(route));if(key!=generation)return@guard;val m=repository.send(route,p);if(key==generation)merge(listOf(m))}catch(e:Exception){if(key==generation){update{it.copy(pending=it.pending.map{p->if(p.clientId==id)p.copy(busy=false,error="Отправка не подтверждена. Повтори с тем же идентификатором.")else p})};queues[route]=flow.value.pending;saveRoom()};throw e}}}}
+    fun retry(id:String){val p=flow.value.pending.find{it.clientId==id}?:return;if(p.busy||flow.value.denied||!flow.value.accessValidated)return;val route=flow.value.route;val key=generation;update{it.copy(pending=it.pending.map{p->if(p.clientId==id)p.copy(busy=true,error=null)else p})};viewModelScope.launch{guard(recheckWriteAccess=true){try{if(key!=generation)return@guard;val account=owner?:return@guard;persistRoom(route,account,roomSnapshot(route));if(key!=generation)return@guard;val m=repository.send(route,p);if(key==generation)merge(listOf(m))}catch(e:Exception){if(key==generation){update{it.copy(pending=it.pending.map{p->if(p.clientId==id)p.copy(busy=false,error="Отправка не подтверждена. Повтори с тем же идентификатором.")else p})};queues[route]=flow.value.pending;saveRoom()};throw e}}}}
     fun discard(id:String){update{it.copy(pending=it.pending.filterNot{p->p.clientId==id})};queues[flow.value.route]=flow.value.pending;saveRoom()}
     fun decide(id:String,accept:Boolean){mutate{client.post("api/direct/$id/decision",JSONObject().put("decision",if(accept)"accept" else "reject"));val p=repository.inbox();update{it.copy(conversations=p.conversations,next=p.next,requests=p.requests,unread=p.unread)}}}
     fun request(){val s=flow.value;if(s.busy||s.draft.isBlank()||s.handle.isBlank()||!s.accessValidated)return;val sig=s.handle.trim()+"\u0000"+s.draft.trim();if(sig!=signature){signature=sig;request=MessagingContract.pending(s.draft)};val p=request?:return;requests[s.route]=request to signature;saveRoom();mutate{val account=owner?:return@mutate;persistRoom(s.route,account,roomSnapshot(s.route));client.post("api/direct",MessagingContract.payload(p).put("handle",s.handle.trim()));if(flow.value.draft==s.draft&&flow.value.handle==s.handle)draft("");request=null;signature="";requests.remove(s.route);saveRoom();val page=repository.inbox();update{it.copy(conversations=page.conversations,next=page.next,unread=page.unread,requests=page.requests,budget=page.budget,notice="Запрос отправлен. Дополнительные сообщения доступны после принятия.")}}}

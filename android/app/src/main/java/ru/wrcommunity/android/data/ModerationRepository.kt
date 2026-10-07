@@ -4,7 +4,11 @@ import org.json.JSONObject
 
 /** Exact server moderation contract; target IDs for profiles and clubs remain strings. */
 class ModerationRepository(private val client: FeatureClient) {
-    suspend fun own(before: String? = null) = client.get("api/reports", cursor(before))
+    suspend fun own(before: String? = null): JSONObject {
+        val page = client.get("api/reports", cursor(before))
+        if(page.optString("viewerId") != client.userId) throw ApiException(403,"Обнови сеанс.")
+        return page
+    }
     suspend fun queue(before: String? = null) = client.get("api/moderation/reports", cursor(before))
     suspend fun summary() = client.get("api/reports/summary")
     suspend fun identity() = client.get("api/me")

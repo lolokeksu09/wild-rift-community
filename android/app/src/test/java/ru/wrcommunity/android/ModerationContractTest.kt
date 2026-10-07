@@ -11,6 +11,17 @@ import org.junit.Test
 import ru.wrcommunity.android.data.*
 
 class ModerationContractTest {
+
+    @Test fun ownPagesRejectAnotherViewerBeforeDetailLookup()=runBlocking {
+        val server=MockWebServer().apply { start() }
+        try {
+            val client=FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{"csrf"},{"self"},{1L},{},{})
+            server.enqueue(MockResponse().setBody("""{"viewerId":"other","reports":[{"id":17,"reason":"Private report"}],"next":null}"""))
+            try { ModerationRepository(client).own("20"); fail("Another viewer's reports accepted") }
+            catch(e: ApiException) { assertEquals(403,e.status) }
+            assertEquals("/api/reports?before=20",server.takeRequest().path)
+        } finally { server.shutdown() }
+    }
     @Test fun reportTargetTypesMatchEveryServerKind() {
         ModerationRepository.kinds.keys.forEach { kind ->
             val textual=kind in listOf("profile","club_page")
@@ -61,7 +72,7 @@ class ModerationContractTest {
             val client=FeatureClient(api,{"csrf"},{"viewer"},{0L},{},{})
             val repository=ModerationRepository(client)
             listOf("/api/reports?before=100","/api/moderation/reports?before=50","/api/reports/summary","/api/me").forEachIndexed { index,path ->
-                server.enqueue(MockResponse().setBody("{}"))
+                server.enqueue(MockResponse().setBody(if(index==0) """{"viewerId":"viewer"}""" else "{}"))
                 when(index) { 0 -> repository.own("100"); 1 -> repository.queue("50"); 2 -> repository.summary(); else -> repository.identity() }
                 val request=server.takeRequest(); assertEquals(path,request.path); assertEquals("GET",request.method); assertNull(request.getHeader("X-CSRF-Token"))
             }

@@ -24,7 +24,7 @@ class DiscoveryViewModel(client:FeatureClient):FeatureViewModel(client) {
     private var accountKey=client.identityKey
     fun setDraft(key:String,value:String){fields.value=fields.value+(key to value)}
     fun open(route:String,query:Map<String,String>?=null,selectedCategory:String=category,quiet:Boolean=false) {
-        if(accountKey!=client.identityKey){fields.value=emptyMap();createSubmission.clear();messageSubmission.clear();accountKey=client.identityKey}
+        if(accountKey!=client.identityKey)reset()
         if(mutable.value.busy && route==currentRoute)return
         if(quiet && fetch?.isActive==true)return
         if(route!=currentRoute){super.reset();mutable.value=FeatureState();messageSubmission.clear()}
@@ -37,7 +37,8 @@ class DiscoveryViewModel(client:FeatureClient):FeatureViewModel(client) {
         if(!quiet)mutable.value=mutable.value.copy(busy=true,error=null)
         viewModelScope.launch {
             try {
-                val result=if(route=="discovery/home")repo.home()
+                val result=if(client.userId==null && route in listOf("discovery/lfg","discovery/events"))repo.page("api/community-preview")
+                    else if(route=="discovery/home")repo.home()
                     else if(route=="discovery/notifications")repo.notificationPage(category,previous=prior.data)
                     else if(route.startsWith("discovery/group/")||route.startsWith("discovery/event/"))repo.detail(route,prior.data?.optJSONObject("chat"))
                     else repo.page(DiscoveryContract.routePath(route),selected)
@@ -67,7 +68,8 @@ class DiscoveryViewModel(client:FeatureClient):FeatureViewModel(client) {
                     // The requested page sets the new boundary; all earlier pages are freshly read.
                     repo.notificationPage(category,previous=if(p.rows(key).isNotEmpty())p else old)
                 }else {
-                    val merged=DiscoveryContract.merge(old,p,key)
+                    val merged=if(old.has("blockVersion") && p.has("blockVersion") && old.optLong("blockVersion")!=p.optLong("blockVersion"))
+                        repo.page(selectedPath,filters) else DiscoveryContract.merge(old,p,key)
                     if(old.has("summary"))merged.put("summary",old.getJSONObject("summary"))
                     merged
                 }
@@ -82,11 +84,17 @@ class DiscoveryViewModel(client:FeatureClient):FeatureViewModel(client) {
     }
     fun create(body:JSONObject,onCreated:(String)->Unit) {
         fetch?.cancel();serial++
-        val event=currentRoute=="discovery/events"
+        val creationRoute=currentRoute
+        val event=creationRoute=="discovery/events"
         act(if(event)"api/events" else "api/lfg",body=createSubmission.body(body),onSuccess={
-            createSubmission.clear();fields.value=fields.value.filterKeys{!it.startsWith("create.")}
+            createSubmission.clear();fields.value=fields.value.filterKeys{!it.startsWith("create.$creationRoute.") && it!="editor.$creationRoute"}
             onCreated("discovery/"+(if(event)"event/" else "group/")+it.get("id"))
         })
+    }
+    fun unsave(id:String) {
+        if(currentRoute!="discovery/saved" || mutable.value.busy)return
+        fetch?.cancel();serial++
+        act("api/posts/$id/saved",method="DELETE",onSuccess={refresh()})
     }
     fun send(text:String) {
         fetch?.cancel();serial++

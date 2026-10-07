@@ -1,10 +1,10 @@
 name: Android
 on:
   pull_request:
-    paths: ['android/**', '.github/workflows/android.yml']
+    paths: ['android/**', 'tools/android-walkthrough-server.mjs', '.github/workflows/android.yml']
   push:
     branches: [main, codex/android-native-community]
-    paths: ['android/**', '.github/workflows/android.yml']
+    paths: ['android/**', 'tools/android-walkthrough-server.mjs', '.github/workflows/android.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -37,6 +37,24 @@ jobs:
           echo '7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172  android/gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
           chmod +x android/gradlew
           sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Start isolated HTTPS scenario fixture
+        run: |
+          set -euo pipefail
+          npm ci
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' -keyout "$RUNNER_TEMP/walkthrough-key.pem" -out "$RUNNER_TEMP/walkthrough-cert.pem"
+          mkdir -p android/app/src/androidTest/assets
+          cp "$RUNNER_TEMP/walkthrough-cert.pem" android/app/src/androidTest/assets/contract-ca.pem
+          nohup env TLS_KEY="$RUNNER_TEMP/walkthrough-key.pem" TLS_CERT="$RUNNER_TEMP/walkthrough-cert.pem" node tools/android-walkthrough-server.mjs > "$RUNNER_TEMP/walkthrough.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/walkthrough.pid"
+          for attempt in $(seq 1 30); do
+            if test -s android/app/src/androidTest/assets/walkthrough.json; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/walkthrough.log"
+          exit 1
       - name: Build APK, lint and unit tests
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest lintDebug testDebugUnitTest
@@ -49,7 +67,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Install and verify real guest flow
+      - name: Install and walk guest and account scenarios
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: 35
@@ -61,6 +79,7 @@ jobs:
           emulator-boot-timeout: 300
           disable-animations: false
           script: |
+            adb reverse tcp:5032 tcp:5032
             cd android && ./gradlew --no-daemon connectedDebugAndroidTest
             adb pull /sdcard/Download/wr-onboarding android/app/build/device-screenshots
             adb pull /sdcard/Download/wr-community android/app/build/community-screenshots
@@ -72,10 +91,22 @@ jobs:
           path: |
             android/app/build/outputs/apk/debug/*.apk
             android/app/build/reports/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Save device screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: android-scenario-screenshots
+          path: |
             android/app/build/device-screenshots/
             android/app/build/community-screenshots/
           if-no-files-found: warn
           retention-days: 14
+      - name: Stop isolated fixture
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/walkthrough.pid"; then kill "$(cat "$RUNNER_TEMP/walkthrough.pid")" || true; fi
 
 
   publish:
@@ -110,8 +141,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          apk=wr-community-0.9.0-preview.apk
-          tag=android-v0.9.0-preview
+          apk=wr-community-0.10.0-preview.apk
+          tag=android-v0.10.0-preview
           if gh release view "$tag" >/dev/null 2>&1; then
             echo 'Version already exists; do not overwrite a published APK.'
             exit 0
@@ -120,10 +151,10 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           sha256sum "$apk" > SHA256SUMS.txt
           hash=$(sha256sum "$apk" | cut -d ' ' -f1)
-          cp docs/android/RELEASE_0_9.md release-notes.md
+          cp docs/android/RELEASE_0_10.md release-notes.md
           printf '\nИсходный commit APK: `%s`.\nSHA256: `%s`.\nПроверки: https://github.com/%s/actions/runs/%s\n' "$GITHUB_SHA" "$hash" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> release-notes.md
-          gh release create "$tag" --target "$GITHUB_SHA" --title 'Android 0.9.0-preview — главная, клубы и переписка' --notes-file release-notes.md --prerelease --draft
+          gh release create "$tag" --target "$GITHUB_SHA" --title 'Android 0.10.0-preview — сценарии сайта и права участников' --notes-file release-notes.md --prerelease --draft
           gh release upload "$tag" "$apk" SHA256SUMS.txt
-          uploaded=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name=="android-v0.9.0-preview") | .assets[] | select(.name=="wr-community-0.9.0-preview.apk") | .digest')
+          uploaded=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name=="android-v0.10.0-preview") | .assets[] | select(.name=="wr-community-0.10.0-preview.apk") | .digest')
           test "$uploaded" = "sha256:$hash"
           gh release edit "$tag" --draft=false

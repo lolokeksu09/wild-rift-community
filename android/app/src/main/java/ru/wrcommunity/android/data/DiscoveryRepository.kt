@@ -87,6 +87,18 @@ class DiscoveryRepository(private val client:FeatureClient) {
                 else->"Не удалось загрузить раздел. Обнови главную."
             })
         }
+        // /api/home returns compact rows without the state field from full list cards.
+        // Use its server clock, rather than the device clock, for the same visible labels.
+        personal?.let {
+            val now=it.optLong("generatedAt")
+            result.rows("events").forEach { event->
+                event.put("state",if(event.optLong("starts_at")<=now)"started"
+                    else if(event.optInt("members")>=event.optInt("capacity"))"full" else "open")
+            }
+            (result.rows("myGroups")+result.rows("groups")).forEach { group->
+                group.put("state",if(group.optInt("members")>=group.optInt("capacity"))"full" else "open")
+            }
+        }
         result.put("homeWarnings",warnings)
     }
     private fun verified(raw:JSONObject):JSONObject {

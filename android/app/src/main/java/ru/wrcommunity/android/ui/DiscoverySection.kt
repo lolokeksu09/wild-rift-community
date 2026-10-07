@@ -64,15 +64,18 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
             route.startsWith("discovery/player/")->state.data?.optJSONObject("profile")?.let{PlayerCard(it,model,onNavigate,true)}
             route=="discovery/lfg"||route=="discovery/events" -> {
                 val event=route.endsWith("events")
-                GroupFilters(model,event)
-                state.data?.let{d->val key=if(event)"events" else "groups";if(d.rows(key).isEmpty())Text("Пока нет объявлений. Можно создать своё.")
-                    d.rows(key).forEach{GroupCard(it,event,onNavigate)};Pager(d,key,model)}
-                Creator(model,route,onNavigate)
+                if(model.userId==null)AnnouncementPreviews(state.data,event,onNavigate)
+                else {
+                    GroupFilters(model,event)
+                    state.data?.let{d->val key=if(event)"events" else "groups";if(d.rows(key).isEmpty())Text("Пока нет объявлений. Можно создать своё.")
+                        d.rows(key).forEach{GroupCard(it,event,onNavigate)};Pager(d,key,model)}
+                    Creator(model,route,onNavigate)
+                }
             }
             route.startsWith("discovery/group/")||route.startsWith("discovery/event/") -> state.data?.let{Detail(model,it,route.contains("event/"),onNavigate){text,action->confirm=text to action}}
             route=="discovery/notifications" -> Notifications(model,state.data,onNavigate)
             route=="discovery/saved" -> state.data?.let{d->if(d.rows("posts").isEmpty())Text("Нет доступных сохранённых публикаций.")
-                d.rows("posts").forEach{p->Card{Column(Modifier.padding(16.dp)){Text(p.optString("title"),style=MaterialTheme.typography.titleLarge);Text(p.optString("club_name"));Text(p.optString("body").take(300));TextButton(onClick={onNavigate("content/post/${p.opt("id")}")}){Text("Читать")}}}};Pager(d,"posts",model)}
+                d.rows("posts").forEach{p->Card{Column(Modifier.padding(16.dp)){Text(p.optString("title"),style=MaterialTheme.typography.titleLarge);Text(p.optString("club_name"));Text(p.optString("body").take(300));TextButton(onClick={onNavigate("content/post/${p.opt("id")}")}){Text("Читать")};TextButton(enabled=!state.busy,onClick={model.unsave(p.optString("id"))}){Text("Убрать из сохранённого")}}}};Pager(d,"posts",model)}
         }
     }
 }
@@ -96,14 +99,15 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
 @Composable private fun Finder(model:DiscoveryViewModel,members:Boolean) {
     val viewState by model.state.collectAsStateWithLifecycle()
     val drafts by model.drafts.collectAsStateWithLifecycle()
+    fun key(name:String)="filter.${model.currentRoute}.$name"
     Text("Только опубликованные профили. Игровые сведения указаны игроками; ранг не проверен.")
-    Field("Имя или логин","filter.q",model,max=80)
-    DraftChoice("Роль","filter.role",model,"",mapOf("" to "Любая")+roleLabels)
-    if(!members){listOf("rank" to "Ранг","region" to "Регион","language" to "Язык").forEach{(k,l)->Field(l,"filter.$k",model,max=40)}
-        DraftChoice("Микрофон","filter.microphone",model,"",mapOf("" to "Любой","yes" to "Есть","no" to "Нет"))
+    Field("Имя или логин",key("q"),model,max=80)
+    DraftChoice("Роль",key("role"),model,"",mapOf("" to "Любая")+roleLabels)
+    if(!members){listOf("rank" to "Ранг","region" to "Регион","language" to "Язык").forEach{(k,l)->Field(l,key(k),model,max=40)}
+        DraftChoice("Микрофон",key("microphone"),model,"",mapOf("" to "Любой","yes" to "Есть","no" to "Нет"))
         Text("Ранг, регион и язык сравниваются точно без учёта регистра.")}
-    Button(onClick={val keys=if(members)listOf("q","role")else listOf("q","role","rank","region","language","microphone");model.open(model.currentRoute,keys.associateWith{drafts["filter.$it"]?.trim().orEmpty()}.filterValues{it.isNotBlank()})},enabled=!viewState.busy){Text("Найти")}
-    TextButton(onClick={listOf("q","role","rank","region","language","microphone").forEach{model.setDraft("filter.$it","")};model.open(model.currentRoute,emptyMap())}){Text("Сбросить фильтры")}
+    Button(onClick={val keys=if(members)listOf("q","role")else listOf("q","role","rank","region","language","microphone");model.open(model.currentRoute,keys.associateWith{drafts[key(it)]?.trim().orEmpty()}.filterValues{it.isNotBlank()})},enabled=!viewState.busy){Text("Найти")}
+    TextButton(onClick={listOf("q","role","rank","region","language","microphone").forEach{model.setDraft(key(it),"")};model.open(model.currentRoute,emptyMap())}){Text("Сбросить фильтры")}
 }
 @Composable private fun PlayerCard(p:JSONObject,model:DiscoveryViewModel,navigate:(String)->Unit,detail:Boolean) {
     Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
@@ -244,15 +248,33 @@ private fun homeMemberCount(club:JSONObject):String {
     val bots=club.optInt("bots")
     return if(bots>0)"Участников: $total · из них ботов: $bots" else "Участников: $total"
 }
+@Composable private fun AnnouncementPreviews(data:JSONObject?,event:Boolean,navigate:(String)->Unit) {
+    Text("Объявления доступны для просмотра. Войди в аккаунт для участия и создания; чат откроется после принятия в состав.")
+    data?.let {
+        val rows=it.rows(if(event)"events"else "groups")
+        if(rows.isEmpty())Text(if(event)"Пока нет предстоящих игровых вечеров."else "Сейчас нет открытых команд.")
+        rows.forEach { item->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+            Text(item.optString("title"),style=MaterialTheme.typography.titleLarge)
+            Text("${modes[item.optString("mode")]} · ${item.optString("region")} · ${item.optString("language")}")
+            Text(if(item.isNull("starts_at"))"Игра сейчас"else "${time(item.optLong("starts_at"))} · твоё время")
+            Text(if(item.optInt("available")>0)"Свободных мест: ${item.optInt("available")}"else "Состав собран")
+            TextButton(onClick={navigate("auth/discovery/"+(if(event)"event/"else "group/")+item.optLong("id"))}){Text("Войти и участвовать")}
+        }}}
+    }
+    Button(onClick={navigate("auth/create/discovery/"+(if(event)"events"else "lfg"))}){Text(if(event)"Войти и организовать вечер"else "Войти и собрать команду")}
+}
+
 @Composable private fun GroupFilters(model:DiscoveryViewModel,event:Boolean) {
     val viewState by model.state.collectAsStateWithLifecycle()
     val drafts by model.drafts.collectAsStateWithLifecycle()
-    DraftChoice("Показать","list.mine",model,"",mapOf("" to "Предстоящие","1" to "Мои"))
-    DraftChoice(if(event)"Свободная роль" else "Нужная роль","list.role",model,"",mapOf("" to "Любая")+(if(event)roleLabels else mapOf("any" to "Любая роль")+roleLabels))
-    if(!event){DraftChoice("Режим","list.mode",model,"",mapOf("" to "Все")+modes)
-        listOf("region" to "Регион","language" to "Язык","rank" to "Желаемый ранг").forEach{(k,l)->Field(l,"list.$k",model,max=40)}
-        DraftChoice("Голос","list.voice",model,"",mapOf("" to "Любой","none" to "Без голоса","optional" to "По желанию","required" to "Обязателен"))}
-    Button(onClick={val keys=if(event)listOf("mine","role")else listOf("mine","role","mode","region","language","rank","voice");model.open(model.currentRoute,keys.associateWith{drafts["list.$it"].orEmpty().trim()}.filterValues{it.isNotBlank()})},enabled=!viewState.busy){Text("Показать")}
+    fun key(name:String)="list.${model.currentRoute}.$name"
+    DraftChoice("Показать",key("mine"),model,"",mapOf("" to "Предстоящие","1" to "Мои"))
+    DraftChoice(if(event)"Свободная роль" else "Нужная роль",key("role"),model,"",mapOf("" to "Любая")+(if(event)roleLabels else mapOf("any" to "Любая роль")+roleLabels))
+    if(!event){DraftChoice("Режим",key("mode"),model,"",mapOf("" to "Все")+modes)
+        listOf("region" to "Регион","language" to "Язык","rank" to "Желаемый ранг").forEach{(k,l)->Field(l,key(k),model,max=40)}
+        DraftChoice("Голос",key("voice"),model,"",mapOf("" to "Любой","none" to "Без голоса","optional" to "По желанию","required" to "Обязателен"))}
+    Button(onClick={val keys=if(event)listOf("mine","role")else listOf("mine","role","mode","region","language","rank","voice");model.open(model.currentRoute,keys.associateWith{drafts[key(it)].orEmpty().trim()}.filterValues{it.isNotBlank()})},enabled=!viewState.busy){Text("Показать")}
+    TextButton(enabled=!viewState.busy,onClick={listOf("mine","role","mode","region","language","rank","voice").forEach{model.setDraft(key(it),"")};model.open(model.currentRoute,emptyMap())}){Text("Сбросить фильтры")}
 }
 @Composable private fun GroupCard(g:JSONObject,event:Boolean,navigate:(String)->Unit) {
     Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
@@ -279,7 +301,7 @@ private fun homeMemberCount(club:JSONObject):String {
     val event=route.endsWith("events")
     val drafts by model.drafts.collectAsStateWithLifecycle()
     var expanded by remember(route){mutableStateOf(drafts["editor.$route"]=="1")}
-    TextButton(onClick={expanded=!expanded}){Text(if(expanded)"Свернуть создание"else if(event)"Организовать игровой вечер" else "Создать объявление")}
+    TextButton(onClick={expanded=!expanded;model.setDraft("editor.$route",if(expanded)"1"else "0")}){Text(if(expanded)"Свернуть создание"else if(event)"Организовать игровой вечер" else "Создать объявление")}
     if(!expanded)return
     fun v(key:String,fallback:String="")=drafts["create.$route.$key"]?:fallback
     fun key(name:String)="create.$route.$name"
@@ -382,15 +404,15 @@ private fun homeMemberCount(club:JSONObject):String {
     if(d.rows(key).isEmpty())Text("Уведомлений в этой категории пока нет.")
     d.rows(key).forEach{n->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
         when(model.category){
-            "direct"->{Text(n.optString("peer_name"),style=MaterialTheme.typography.titleLarge);Text("${n.optInt("unread")} непрочитанных · ${states[n.optString("status")]?:n.optString("status")}");TextButton(onClick={navigate(if(n.optString("status")=="accepted")"chat/direct/${n.optString("id")}" else "chat/inbox")}){Text("Открыть переписку")}}
-            "reports"->{Text("Жалоба №${n.opt("id")} · ${when(n.optString("status")){"pending"->"На рассмотрении";"resolved"->"Решение принято";"dismissed"->"Отклонена";else->"Рассмотрена"}}")
+            "direct"->{Text(n.optString("peer_name"),style=MaterialTheme.typography.titleLarge);Text("${n.optInt("unread")} непрочитанных · ${when(n.optString("status")){"accepted"->"Переписка открыта";"pending"->"Запрос ожидает решения";"rejected"->"Запрос отклонён";else->"Переписка недоступна"}}");TextButton(onClick={navigate(if(n.optString("status")=="accepted")"chat/direct/${n.optString("id")}" else "chat/inbox")}){Text("Открыть переписку")}}
+            "reports"->{Text("Жалоба №${n.opt("id")} · ${when(n.optString("status")){"pending"->"На рассмотрении";"upheld"->"Нарушение подтверждено";"dismissed"->"Отклонена";else->"Рассмотрена"}}")
                 n.nullableString("decision_note")?.let{Text(it)};TextButton(onClick={navigate("moderation/reports")}){Text("Жалобы и апелляции")}
                 if(n.optString("status")!="pending"&&n.optInt("decision_seen")==0)TextButton(enabled=!viewState.busy,onClick={model.read(n.optString("id"))}){Text("Отметить решение прочитанным")}
                 if(n.nullableString("appeal_status")!=null&&n.optString("appeal_status")!="pending"&&n.optInt("appeal_seen")==0)TextButton(enabled=!viewState.busy,onClick={model.read(n.optString("id"),true)}){Text("Отметить апелляцию прочитанной")}}
             else->{Text(notices[n.optString("kind")]?:"Новое событие")
                 if(model.category=="discussions"){Text(n.optString("title"));Text(n.optString("actor_name"))}
                 Text(time(n.optLong("created_at")))
-                TextButton(onClick={navigate(when(model.category){"lfg"->"discovery/group/${n.opt("group_id")}";"events"->"discovery/event/${n.opt("event_id")}";else->"content/post/${n.opt("post_id")}"})}){Text("Открыть")}
+                TextButton(onClick={navigate(when(model.category){"lfg"->"discovery/group/${n.opt("group_id")}";"events"->"discovery/event/${n.opt("event_id")}";else->NativeRoutes.post(n.optLong("post_id"),n.optLong("comment_id").takeIf{it>0})})}){Text("Открыть")}
                 if(n.optInt("seen")==0)TextButton(enabled=!viewState.busy,onClick={model.read(n.optString("id"))}){Text("Прочитано")}
                 else Text("Прочитано",style=MaterialTheme.typography.labelSmall)
             }

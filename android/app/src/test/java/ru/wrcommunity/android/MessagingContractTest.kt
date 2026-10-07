@@ -32,6 +32,34 @@ class MessagingContractTest {
   }finally{server.shutdown()}
  }
 
+ @Test fun refreshReplacesWholeLoadedRangeIncludingDeletedMessages()=runBlocking {
+  val server=MockWebServer().apply{start()}
+  try {
+   val client=FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{"csrf"},{"self"},{1L},{},{})
+   fun row(id:Long)=JSONObject().put("id",id).put("sender_id","peer").put("sender_name","Другой").put("client_id","history-identifier-$id").put("body","Текст $id").put("created_at",id)
+   fun page(ids:List<Long>,more:Boolean)=JSONObject().put("viewerId","self").put("blockVersion",2).put("messages",org.json.JSONArray(ids.map(::row))).put("hasMore",more).put("next",if(more)ids.first() else JSONObject.NULL)
+   server.enqueue(MockResponse().setBody(page(listOf(61,62),true).toString()))
+   server.enqueue(MockResponse().setBody(page(listOf(11,13),false).toString()))
+   val result=MessagingRepository(client).history("chat/club/room",11)
+   assertEquals(listOf(11L,13L,61L,62L),result.messages.map{it.id})
+   assertFalse(result.more);assertEquals(2L,result.blockVersion)
+   assertEquals("/api/clubs/room/messages",server.takeRequest().path)
+   assertEquals("/api/clubs/room/messages?before=61",server.takeRequest().path)
+  }finally{server.shutdown()}
+ }
+ @Test fun refreshRestartsWhenBlockVersionChangesBetweenHistoryPages()=runBlocking {
+  val server=MockWebServer().apply{start()}
+  try {
+   val client=FeatureClient(CommunityApi(server.url("/").toString(),allowLoopbackForTests=true),{"csrf"},{"self"},{1L},{},{})
+   fun page(id:Long,version:Long,more:Boolean)=JSONObject().put("viewerId","self").put("blockVersion",version).put("messages",org.json.JSONArray().put(JSONObject().put("id",id).put("sender_id","peer").put("sender_name","Другой").put("client_id","history-identifier-$id").put("body","Текст").put("created_at",id))).put("hasMore",more).put("next",if(more)id else JSONObject.NULL)
+   server.enqueue(MockResponse().setBody(page(61,2,true).toString()))
+   server.enqueue(MockResponse().setBody(page(11,3,false).toString()))
+   server.enqueue(MockResponse().setBody(page(62,3,false).toString()))
+   val result=MessagingRepository(client).history("chat/club/room",11)
+   assertEquals(listOf(62L),result.messages.map{it.id});assertEquals(3L,result.blockVersion)
+   assertEquals(3,server.requestCount)
+  }finally{server.shutdown()}
+ }
  @Test fun pageAndSendConfirmationAreIndependent(){val p=MessagingContract.page(JSONObject("""{"messages":[{"id":8,"sender_id":"peer","sender_name":"Имя","client_id":"incoming-identifier","body":"<& текст","created_at":123}],"hasMore":true,"next":8,"blockVersion":4}"""));assertEquals(8L,p.next);assertEquals(4L,p.blockVersion);assertTrue(p.more);assertEquals("<& текст",p.messages.single().body);val m=MessagingContract.message(JSONObject("""{"id":20,"sender_id":"self","sender_name":"Я","client_id":"outgoing-identifier","body":"Ответ","created_at":124}"""));assertEquals(20L,m.id);assertEquals(8L,p.next)}
  @Test fun retryPreservesIdentifierAndBody(){val p=MessagingContract.pending(" текст ");assertEquals(MessagingContract.payload(p).toString(),MessagingContract.payload(p.copy(error="Нет связи")).toString());assertEquals("текст",p.body);assertTrue(p.clientId.matches(Regex("[A-Za-z0-9_-]{16,80}")));assertNotEquals(p.clientId,MessagingContract.pending("текст").clientId)}
  @Test fun confirmationCannotRemoveAnotherAccountsPending(){val p=MessagingContract.pending("Текст");val other=ChatMessage(1,"peer","Другой",p.clientId,"Текст",1);assertEquals(listOf(p),MessagingContract.reconcile(listOf(p),listOf(other),"self"));assertTrue(MessagingContract.reconcile(listOf(p),listOf(other.copy(senderId="self")),"self").isEmpty())}

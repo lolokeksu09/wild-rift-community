@@ -84,6 +84,40 @@ class MessagingPersistenceTest {
         assertTrue(model.chatState.value.pending.isEmpty());assertTrue(store.read("self")[room]!!.pending.isEmpty())
         assertEquals("Продолжение",model.chatState.value.draft)
     }
+    @Test fun writeRestrictionPreservesRoomAndFailedSendAfterFreshReadAcl()=runBlocking {
+        val store=stored();val model=model(store);model.open(room)
+        server.enqueue(page());model.refresh();loaded(model);server.takeRequest()
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":"Сообщения временно ограничены. Чтение доступно."}"""))
+        server.enqueue(page());model.retry(pending.clientId);failed(model)
+        assertEquals("POST",server.takeRequest().method)
+        assertEquals("/api/direct/one/messages",server.takeRequest().path)
+        assertFalse(model.chatState.value.denied);assertTrue(model.chatState.value.accessValidated)
+        assertEquals("Продолжение",model.chatState.value.draft)
+        assertEquals(pending.clientId,model.chatState.value.pending.single().clientId)
+        assertEquals(pending.body,store.read("self")[room]!!.pending.single().body)
+        assertTrue(model.chatState.value.error!!.contains("ограничены"))
+    }
+    @Test fun rejectedSendWithRevokedReadAclDeletesRoomData()=runBlocking {
+        val store=stored();val model=model(store);model.open(room)
+        server.enqueue(page());model.refresh();loaded(model);server.takeRequest()
+        repeat(2){server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":"Беседа заблокирована."}"""))}
+        model.retry(pending.clientId);failed(model)
+        assertTrue(model.chatState.value.denied);assertFalse(model.chatState.value.accessValidated)
+        assertTrue(model.chatState.value.pending.isEmpty());assertEquals("",model.chatState.value.draft)
+        assertNull(store.read("self")[room]);assertEquals("Другой клуб",store.read("self")["chat/club/two"]!!.draft)
+    }
+    @Test fun rejectedSendWithUnavailableReadCheckHidesButRetainsDiskUntilFreshAcl()=runBlocking {
+        val store=stored();val model=model(store);model.open(room)
+        server.enqueue(page());model.refresh();loaded(model);server.takeRequest()
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":"Отправка недоступна."}"""))
+        server.enqueue(MockResponse().setResponseCode(503).setBody("""{"error":"Нет связи."}"""))
+        model.retry(pending.clientId);failed(model)
+        assertFalse(model.chatState.value.accessValidated);assertTrue(model.chatState.value.pending.isEmpty())
+        assertEquals("",model.chatState.value.draft);assertEquals(pending.clientId,store.read("self")[room]!!.pending.single().clientId)
+        server.enqueue(page());model.refresh();loaded(model)
+        assertEquals("Продолжение",model.chatState.value.draft)
+        assertEquals(pending.clientId,model.chatState.value.pending.single().clientId)
+    }
     @Test fun restoredRetrySendsTheExactOriginalIdentifierAndBody()=runBlocking {
         val store=stored();val model=model(store);model.open(room)
         server.enqueue(page());model.refresh();loaded(model);server.takeRequest()

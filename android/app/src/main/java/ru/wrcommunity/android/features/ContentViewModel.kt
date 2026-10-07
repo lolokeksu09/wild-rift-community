@@ -30,7 +30,7 @@ class ContentViewModel(client:FeatureClient):FeatureViewModel(client) {
         return UUID.randomUUID().toString().also{attempts[scopedKey]=payload to it}
     }
     fun open(route:String,query:Map<String,String>? = null) {
-        val requested=query ?: routeFilters[route] ?: if(route.startsWith("content/search"))mapOf("q" to "Wild Rift") else emptyMap()
+        val requested=query ?: routeFilters[route] ?: emptyMap()
         val selected=if((route.startsWith("content/guides/")||route.startsWith("content/search/")))requested+mapOf("club" to route.substringAfterLast('/')) else requested
         if(routeFilters[route]!=null && routeFilters[route]!=selected){pagePlans.remove(route);positions.remove(route)}
         routeFilters[route]=selected

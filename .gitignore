@@ -38,3 +38,7 @@ android/.idea/
 *.aab
 *.jks
 *.keystore
+
+# Generated isolated Android instrument fixture assets (test APK only).
+android/app/src/androidTest/assets/walkthrough.json
+android/app/src/androidTest/assets/contract-ca.pem

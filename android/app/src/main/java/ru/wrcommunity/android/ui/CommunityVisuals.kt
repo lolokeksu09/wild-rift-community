@@ -66,7 +66,10 @@ import ru.wrcommunity.android.data.CommunityApi
 }
 
 @Composable fun RiftCard(content:@Composable ColumnScope.()->Unit) {
-    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceContainerLow)) {
+    RiftCard(Modifier,content)
+}
+@Composable fun RiftCard(modifier:Modifier,content:@Composable ColumnScope.()->Unit) {
+    Card(modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp),content=content)
     }
 }
