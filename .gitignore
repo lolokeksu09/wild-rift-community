@@ -18,6 +18,8 @@ uploads/
 
 # Local database (never publish or commit)
 data/
+!android/app/src/main/java/**/data/
+!android/app/src/main/java/**/data/**
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
