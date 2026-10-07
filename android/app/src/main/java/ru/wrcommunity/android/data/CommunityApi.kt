@@ -34,13 +34,14 @@ class CommunityApi(origin: String, private val client: OkHttpClient = defaultCli
         return id
     }
     private suspend fun request(path: String, query: Map<String, String> = emptyMap(),
-                                method: String = "GET", payload: JSONObject? = null, csrf: String? = null): ByteArray {
+                                method: String = "GET", payload: JSONObject? = null, csrf: String? = null, raw:ByteArray?=null, mime:String?=null, uploadId:String?=null): ByteArray {
         val url = base.newBuilder().addPathSegments(path).apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()
         val request = Request.Builder().url(url).header("Accept", if(path.startsWith("api/media/")) "image/webp" else "application/json").apply {
             if(method=="GET") get() else {
                 header("Origin",base.toString().removeSuffix("/"));header("X-Community-Request","1")
                 if(csrf!=null) header("X-CSRF-Token",csrf)
-                method(method,(payload ?: JSONObject()).toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+                if(uploadId!=null)header("X-Upload-Id",uploadId)
+                method(method,raw?.toRequestBody(requireNotNull(mime).toMediaType()) ?: (payload ?: JSONObject()).toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
             }
         }.build()
         return suspendCancellableCoroutine { continuation ->
@@ -72,6 +73,18 @@ class CommunityApi(origin: String, private val client: OkHttpClient = defaultCli
                 }
             })
         }
+    }
+    suspend fun community(path:String,query:Map<String,String> = emptyMap(),method:String="GET",
+                          payload:JSONObject=JSONObject(),csrf:String?=null):JSONObject {
+        require(path.startsWith("api/") && path.split('/').all{Regex("[A-Za-z0-9_-]+").matches(it)})
+        require(method in setOf("GET","POST","PATCH","DELETE"))
+        if(method!="GET")require(!csrf.isNullOrBlank())
+        return JSONObject(request(path,query,method,payload,csrf).toString(Charsets.UTF_8))
+    }
+    suspend fun upload(bytes:ByteArray,mime:String,id:String,csrf:String):JSONObject {
+        require(bytes.size in 1..5*1024*1024 && mime in setOf("image/jpeg","image/png","image/webp"))
+        require(Regex("[-a-zA-Z0-9_]{16,80}").matches(id) && csrf.isNotBlank())
+        return JSONObject(request("api/media",method="POST",csrf=csrf,raw=bytes,mime=mime,uploadId=id).toString(Charsets.UTF_8))
     }
     suspend fun catalog(q: String, tag: String, sort: String, after: String?) =
         JsonModels.catalog(request("api/clubs", buildMap {

@@ -44,7 +44,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun CommunityApp(model: GuestViewModel, api: CommunityApi, accountName:String?=null) {
+@Composable fun CommunityApp(model: GuestViewModel, api: CommunityApi, accountName:String?=null, onNavigate:(String)->Unit={}) {
     val state by model.state.collectAsStateWithLifecycle()
     val catalogScroll=rememberLazyListState()
     val clubScroll=rememberSaveable(state.club.data?.club?.id, saver=LazyListState.Saver){ LazyListState() }
@@ -54,7 +54,7 @@ import java.util.Locale
             navigationIcon={ if(state.screen>0) IconButton(onClick=model::back){
                 Icon(Icons.AutoMirrored.Filled.ArrowBack,contentDescription="Назад")
             }},
-            actions={ Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surfaceVariant,modifier=Modifier.padding(end=16.dp)){ Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.PersonOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text(accountName ?: "Гость",style=MaterialTheme.typography.labelLarge,maxLines=1)} } }) }
+            actions={ IconButton(onClick={onNavigate("more")}){Icon(Icons.Default.MoreHoriz,"Все разделы")}; Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surfaceVariant,modifier=Modifier.padding(end=16.dp)){ Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.PersonOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text(accountName ?: "Гость",style=MaterialTheme.typography.labelLarge,maxLines=1)} } }) }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).imePadding()) {
             AnimatedContent(targetState=state.screen,transitionSpec={
@@ -62,16 +62,16 @@ import java.util.Locale
                     (fadeOut(tween(120))+slideOutHorizontally(tween(240)){-it/10})
             },label="Переход экрана") { screen ->
                 when(screen) {
-                    0 -> CatalogScreen(state,model,catalogScroll,api)
-                    1 -> ClubScreen(state.club,model,clubScroll,api)
-                    else -> PostScreen(state.post,model,api)
+                    0 -> CatalogScreen(state,model,catalogScroll,api,onNavigate)
+                    1 -> ClubScreen(state.club,model,clubScroll,api,onNavigate)
+                    else -> PostScreen(state.post,model,api,onNavigate)
                 }
             }
         }
     }
 }
 
-@Composable private fun CatalogScreen(state: GuestState, model: GuestViewModel, scroll: LazyListState, api: CommunityApi) {
+@Composable private fun CatalogScreen(state: GuestState, model: GuestViewModel, scroll: LazyListState, api: CommunityApi,onNavigate:(String)->Unit) {
     val keyboard=LocalSoftwareKeyboardController.current
     LaunchedEffect(state.catalog.busy){ if(state.catalog.busy) scroll.scrollToItem(0) }
     LazyColumn(state=scroll,modifier=Modifier.fillMaxSize().testTag("catalog-list"),contentPadding=PaddingValues(16.dp),
@@ -117,7 +117,8 @@ import java.util.Locale
             items(catalog.page.items,key={it.id}) { club -> ClubCard(club,api){ model.openClub(club.id) } }
             if(state.catalog.next!=null)item { More(state.catalog.moreBusy,"Ещё клубы"){model.catalog(more=true)} }
         }
-        item { Text("Здесь открытые клубы. Аккаунт доступен в разделе «Профиль»; участие и переписка появятся в следующих обновлениях.",
+        item { OutlinedButton(onClick={onNavigate("content/clubs")},modifier=Modifier.fillMaxWidth()){Text("Все клубы, заявки и создание клуба")} }
+        item { Text("Открытые клубы можно читать без регистрации. Для участия войди в аккаунт.",
             style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
@@ -134,7 +135,7 @@ import java.util.Locale
         }
     }
 }
-@Composable private fun ClubScreen(load: Load<ClubContent>, model: GuestViewModel, scroll: LazyListState, api: CommunityApi) {
+@Composable private fun ClubScreen(load: Load<ClubContent>, model: GuestViewModel, scroll: LazyListState, api: CommunityApi,onNavigate:(String)->Unit) {
     LazyColumn(state=scroll,modifier=Modifier.fillMaxSize().testTag("club-list"),contentPadding=PaddingValues(16.dp),
         verticalArrangement=Arrangement.spacedBy(16.dp)) {
         if(load.busy)item{Loading()}
@@ -146,6 +147,7 @@ import java.util.Locale
                     Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
                         Text(content.club.name,style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
                         Text(content.club.description)
+                        Button(onClick={onNavigate("content/club/${content.club.id}")}){Text("Участие и управление клубом")}
                         Text(content.club.tags.joinToString(" · "),color=MaterialTheme.colorScheme.primary)
                         if(content.club.isDemo)DemoLabel("Демонстрационный клуб")
                         var rules by rememberSaveable(content.club.id){mutableStateOf(false)}
@@ -176,7 +178,7 @@ import java.util.Locale
         }
     }
 }
-@Composable private fun PostScreen(load: Load<PostContent>, model: GuestViewModel, api: CommunityApi) {
+@Composable private fun PostScreen(load: Load<PostContent>, model: GuestViewModel, api: CommunityApi,onNavigate:(String)->Unit) {
     var photo by rememberSaveable(load.data?.post?.id){mutableStateOf(false)}
     if(photo && load.data?.post?.imageId!=null) Dialog(onDismissRequest={photo=false},
         properties=DialogProperties(usePlatformDefaultWidth=false)){
@@ -218,7 +220,8 @@ import java.util.Locale
                     }
                 }
             }
-            item{Text("Сейчас доступно чтение. Возможность отвечать появится в следующем обновлении клубов.",
+            item{Button(onClick={onNavigate("content/post/${content.post.id}")},modifier=Modifier.fillMaxWidth()){Text("Ответить, оценить или сохранить")} }
+            item{Text("Для участия в обсуждении требуется членство в клубе.",
                 style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
         }
     }

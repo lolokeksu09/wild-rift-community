@@ -50,6 +50,11 @@ class AccountViewModel(private val repo:Accounts):ViewModel() {
             }finally{mutable.value=mutable.value.copy(busy=false,ready=true)}
         }
     }
+    fun csrfToken():String?=csrf
+    fun expireSession(){
+        job?.cancel();identity(Identity(null,null));mutable.value=mutable.value.copy(busy=true,error="Сеанс завершён. Войди снова.")
+        viewModelScope.launch{try{repo.forget()}catch(e:CancellationException){throw e}catch(_:Exception){}finally{mutable.value=mutable.value.copy(busy=false)}}
+    }
     fun refresh()=operation{identity(repo.restore())}
     fun signIn(handle:String,password:String,name:String?=null)=operation {
         require(Regex("[a-zA-Z0-9_]{3,24}").matches(handle.trim()))
@@ -62,6 +67,11 @@ class AccountViewModel(private val repo:Accounts):ViewModel() {
         require(name.trim().length in 1..40 && bio.trim().length<=300)
         val updated=repo.update(name.trim(),bio.trim(),visible,game,requireNotNull(csrf))
         mutable.value=mutable.value.copy(user=updated,notice="Профиль сохранён.")
+    }
+    fun updateExtra(game:org.json.JSONObject,avatar:String?,cover:String?)=operation {
+        val payload=org.json.JSONObject().put("gameProfile",game).put("avatarId",avatar ?: org.json.JSONObject.NULL).put("coverId",cover ?: org.json.JSONObject.NULL)
+        val updated=repo.updateExtra(payload,requireNotNull(csrf))
+        mutable.value=mutable.value.copy(user=updated,notice="Игровые поля и фотографии сохранены.")
     }
     fun logout(all:Boolean=false)=operation {
         repo.logout(requireNotNull(csrf),all);identity(Identity(null,null))

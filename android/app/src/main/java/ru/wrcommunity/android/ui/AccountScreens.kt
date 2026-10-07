@@ -56,7 +56,7 @@ import java.time.format.DateTimeFormatter
     }}
 }
 
-@Composable internal fun AccountScreen(state:AccountState,model:AccountViewModel,initialMode:String="login") {
+@Composable internal fun AccountScreen(state:AccountState,model:AccountViewModel,initialMode:String="login",featureClient:FeatureClient?=null) {
     val keyboard=LocalSoftwareKeyboardController.current
     LaunchedEffect(state.notice){if(state.notice!=null)keyboard?.hide()}
     LazyColumn(Modifier.fillMaxSize().imePadding().testTag("account-list"),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -76,6 +76,7 @@ import java.time.format.DateTimeFormatter
         state.user?.let{user->
             item{Text("@${user.handle}",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.titleLarge)}
             item{ProfileForm(user,state.busy,model)}
+            if(featureClient!=null)item{NativeProfileFields(user,state.busy,featureClient){game,avatar,cover->model.updateExtra(game,avatar,cover)}}
             item{SecurityForm(state,model)}
         }
     }
