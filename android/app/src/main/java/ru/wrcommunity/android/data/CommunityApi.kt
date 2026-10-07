@@ -77,7 +77,7 @@ class CommunityApi(origin: String, private val client: OkHttpClient = defaultCli
     suspend fun community(path:String,query:Map<String,String> = emptyMap(),method:String="GET",
                           payload:JSONObject=JSONObject(),csrf:String?=null):JSONObject {
         require(path.startsWith("api/") && path.split('/').all{Regex("[A-Za-z0-9_-]+").matches(it)})
-        require(method in setOf("GET","POST","PATCH","DELETE"))
+        require(method in setOf("GET","POST","PUT","PATCH","DELETE"))
         if(method!="GET")require(!csrf.isNullOrBlank())
         return JSONObject(request(path,query,method,payload,csrf).toString(Charsets.UTF_8))
     }
