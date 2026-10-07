@@ -131,6 +131,7 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
 }
 @Composable private fun Home(model:DiscoveryViewModel,d:JSONObject?,navigate:(String)->Unit) {
     val signed=model.userId!=null
+    val homeState by model.state.collectAsStateWithLifecycle()
     RiftHero(
         eyebrow="Сообщество Wild Rift",
         title="Своя компания.\nТвоя игра.",
@@ -143,7 +144,7 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
         OutlinedButton(onClick={navigate("discovery/lfg")}){Icon(Icons.Default.Groups,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Команды")}
         OutlinedButton(onClick={navigate("discovery/events")}){Icon(Icons.Default.EventAvailable,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Игровые вечера")}
     }
-    TextButton(onClick={model.refresh()}){Text("Обновить подборку")}
+    TextButton(onClick={model.refresh()},enabled=!homeState.busy){Text("Обновить подборку")}
     if(d==null)return
     val warnings=d.optJSONObject("homeWarnings")
     val catalog=d.optJSONObject("catalog")
