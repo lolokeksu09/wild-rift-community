@@ -11,7 +11,7 @@ try{
    const owner=await actor('club_owner'),mod=await actor('club_mod');const club=await owner.api('/api/clubs','POST',{name:'Клуб вечерних игр',description:'Спокойно обсуждаем матчи и играем вместе.',access:'request'}),path='/api/clubs/'+club.id;
    await mod.api(path+'/join','POST',{});await owner.api(path+'/decision','POST',{userId:mod.id,decision:'approve'});
    const post=await owner.api(path+'/posts','POST',{title:'Добро пожаловать в наш клуб',body:'Расскажи, когда играешь и какие роли предпочитаешь.',clientId:'browser-club-post'});
-   async function open(player){await player.page.goto(origin);await player.page.locator('.welcome-hero').waitFor();await player.page.locator('#home').click();await player.page.locator(`[data-open="${club.id}"]`).click();await player.page.locator('[data-club-tab=posts]').waitFor();}
+   async function open(player){await player.page.goto(origin+'/feed');await player.page.locator('.welcome-hero').waitFor();await player.page.locator('#home').click();await player.page.locator(`[data-open="${club.id}"]`).click();await player.page.locator('[data-club-tab=posts]').waitFor();}
    async function layout(page,label){assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}: overflow ${label}`);assert.equal(await page.locator('#main img[src=x]').count(),0);assert.deepEqual(errors,[]);}
    await open(owner);await owner.page.locator('[data-club-tab=settings]').click();const settings=owner.page.locator('[data-club-settings]');await settings.waitFor();
    await settings.locator('[name=rules]').fill('Уважаем друг друга. Без спама. <img src=x> — это текст. '+'ДлинноеПравило'.repeat(20));await settings.locator('[name=tags]').fill('Ранкед, Общение, Лес');await settings.locator('[name=accent]').selectOption('violet');await settings.locator('button').click();await owner.page.locator('.club-banner.accent-violet').waitFor();assert.equal(await settings.locator('[name=rules]').inputValue(),'Уважаем друг друга. Без спама. <img src=x> — это текст. '+'ДлинноеПравило'.repeat(20));
@@ -35,3 +35,4 @@ try{
   }finally{for(const c of contexts)await c.close();await app.close();}
  }
 }finally{await browser.close();}
+

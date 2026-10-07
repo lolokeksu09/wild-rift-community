@@ -18,3 +18,4 @@ try{for(const width of [360,390,768,1440]){
   p.once('dialog',d=>d.accept());await p.locator('[data-current-session="1"]').click();await p.locator('#login').waitFor();assert.equal((await call(c,'/api/me')).user,null);assert.deepEqual(errors,[]);console.log(`PASS ${width}px: individual session revoke, dirty profile guard, password rotation and current logout`);
  }finally{await c.close();await other.close();await app.close();}
 }}finally{await browser.close();}
+

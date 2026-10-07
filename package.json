@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node server/start.mjs",
     "test": "node --test server/tests/*.test.mjs",
-    "verify": "npm run check:docs && npm test && npm test --prefix tests && npm run test:server-ui --prefix tests && npm run test:chat-ui --prefix tests && npm run test:direct-ui --prefix tests && npm run test:moderation-ui --prefix tests && npm run test:lfg-ui --prefix tests && npm run test:composer-ui --prefix tests",
+    "verify": "npm run check:docs && npm test && npm test --prefix tests && npm run test:server-ui --prefix tests && npm run test:chat-ui --prefix tests && npm run test:direct-ui --prefix tests && npm run test:moderation-ui --prefix tests && npm run test:lfg-ui --prefix tests && npm run test:composer-ui --prefix tests && npm run test:launch-ui --prefix tests",
     "check:docs": "node tools/check-docs.mjs"
   },
   "dependencies": {

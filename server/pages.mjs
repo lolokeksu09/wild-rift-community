@@ -2,6 +2,7 @@ const brand='Wild Rift Community';
 const defaultDescription='Сообщество Wild Rift. Находи напарников, создавай клубы и обсуждай игру.';
 const sections={
  '/':['Твои люди, твой клуб',defaultDescription],
+ '/feed':['Обсуждения','Обсуждения, публикации и клубы сообщества Wild Rift.'],
  '/clubs':['Клубы','Клубы и обсуждения игроков Wild Rift. Найди сообщество по своим интересам.'],
  '/players':['Люди','Публичные профили участников сообщества Wild Rift.'],
  '/guides':['Руководства','Руководства игроков Wild Rift: роли, чемпионы и игровой опыт.'],
@@ -12,7 +13,7 @@ const sections={
  '/notifications':['Ответы',defaultDescription],'/reports':['Жалобы',defaultDescription],
  '/saved':['Сохранённое',defaultDescription],'/drafts':['Черновики',defaultDescription],'/search':['Поиск',defaultDescription]
 };
-const indexable=new Set(['/','/clubs','/players','/guides','/teams','/events','/rules']);
+const indexable=new Set(['/','/feed','/clubs','/players','/guides','/teams','/events','/rules']);
 export const escapeHTML=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const excerpt=value=>String(value||'').replace(/\s+/g,' ').trim().slice(0,180);
 export function pageMetadata(db,path,user){
@@ -43,9 +44,10 @@ export function pageMetadata(db,path,user){
 }
 export function pageHTML(template,meta,origin){
  const title=escapeHTML(`${meta.title} — ${brand}`),description=escapeHTML(meta.description),canonical=escapeHTML(origin+meta.path);
- return template.replace(/<title>[^<]*<\/title>/,`<title>${title}</title>`)
- .replace(/<meta name="description" content="[^"]*">/,`<meta name="description" content="${description}">`)
- .replace('</head>',`<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="canonical" href="${canonical}"><meta name="robots" content="${meta.index?'index,follow':'noindex,nofollow'}"><meta property="og:type" content="${meta.type||'website'}"><meta property="og:title" content="${title}"><meta property="og:description" content="${description}"><meta property="og:url" content="${canonical}"><meta property="og:site_name" content="${brand}"></head>`);
+ // Replacement functions keep "$&", "$`" and "$$" in stored text literal.
+ return template.replace(/<title>[^<]*<\/title>/,()=>`<title>${title}</title>`)
+ .replace(/<meta name="description" content="[^"]*">/,()=>`<meta name="description" content="${description}">`)
+ .replace('</head>',()=>`<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="canonical" href="${canonical}"><meta name="robots" content="${meta.index?'index,follow':'noindex,nofollow'}"><meta property="og:type" content="${meta.type||'website'}"><meta property="og:title" content="${title}"><meta property="og:description" content="${description}"><meta property="og:url" content="${canonical}"><meta property="og:site_name" content="${brand}"></head>`);
 }
 export function sitemap(db,origin){
  // Only guest-visible URLs; no private post titles, media or account routes.
@@ -57,3 +59,4 @@ export function sitemap(db,origin){
  ) ORDER BY path LIMIT ?`).all(50000-urls.length))urls.push(row.path);
  return '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+urls.map(path=>`<url><loc>${escapeHTML(origin+path)}</loc></url>`).join('')+'</urlset>';
 }
+

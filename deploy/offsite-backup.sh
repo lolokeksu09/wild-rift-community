@@ -17,16 +17,16 @@ flock -n 9 || { echo 'Another backup is running.'; exit 1; }
 work=$(mktemp -d)
 file="community-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 8).wrbackup"
 cleanup() {
-  docker compose exec -T app rm -f "/tmp/$file" >/dev/null 2>&1 || true
+  docker compose exec -T app rm -f "/data/.offsite-$file" >/dev/null 2>&1 || true
   rm -rf -- "$work"
 }
 trap cleanup EXIT
 opts=(-i "$WR_BACKUP_SSH_KEY_FILE" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$WR_BACKUP_KNOWN_HOSTS" -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
 # -e NAME forwards the environment; no key value appears in command arguments.
-docker compose exec -T -e WR_BACKUP_KEY app node server/backup-cli.mjs create /data/community.sqlite "/tmp/$file"
+docker compose exec -T -e WR_BACKUP_KEY app node server/backup-cli.mjs create /data/community.sqlite "/data/.offsite-$file"
 container=$(docker compose ps -q app)
 test -n "$container"
-docker cp "$container:/tmp/$file" "$work/$file"
+docker cp "$container:/data/.offsite-$file" "$work/$file"
 scp "${opts[@]}" "$work/$file" "$WR_BACKUP_TARGET/$file"
 # Retrieve from the independent destination and verify authenticated decryption,
 # SQLite integrity, schema and session/code revocation on an isolated copy.

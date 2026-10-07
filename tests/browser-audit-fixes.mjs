@@ -59,3 +59,4 @@ try{
   await peerContext.close();await context.close();console.log('PASS '+width+'px: profile text/checkbox/file guards, history cancellation, save, public report buttons and layout'+(width===390?', hidden polling pause/resume':''));
  }
 }finally{await browser.close();await app.close();rmSync(dir,{recursive:true,force:true});}
+
