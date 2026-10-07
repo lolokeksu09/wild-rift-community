@@ -5,7 +5,7 @@
 ## Проверенные факты
 
 - package.json: сервер 0.31.0, Node >=24.19.0 <25, единственная runtime-зависимость Sharp 0.35.5.
-- HTTP: server/app.mjs и тематические модули; SQLite и миграции в server/database.mjs; текущая схема 20.
+- HTTP: server/app.mjs и тематические модули; SQLite и миграции в server/database.mjs; текущая схема 22.
 - server/public/ — работающий web-клиент; Docker копирует server/, тесты используют текущие пути.
 - Вход рассчитан на cookie/Origin/CSRF. Полноценного mobile/versioned API-контракта пока нет.
 - Изображения хранятся в SQLite BLOB. Размер и права проверяются сервером.

@@ -2,6 +2,7 @@ import { replaceCodes, consumeCode } from './recovery.mjs';
 import {catalogRoutes} from './catalog.mjs';
 import {pageMetadata,pageHTML,sitemap} from './pages.mjs';
 import {contactPolicy} from './contact-budget.mjs';
+import {sanctionFor,restrictedWrite,sanctionDate} from './sanctions.mjs';
 import {guideRoutes} from './guides.mjs';
 import {pollRoutes} from './polls.mjs';
 import {postManagementRoutes} from './post-management.mjs';
@@ -12,7 +13,7 @@ import {communityMemberRoutes} from './community-members.mjs';
 import {isDemo} from './demo.mjs';
 import {eventRoutes} from './events.mjs';
 import {clubRoutes,clubRole,audit as clubAudit} from './clubs.mjs';
-import { discussionRoutes, postExtras, attemptId, mentions, unblocked } from './discussions.mjs';
+import { discussionRoutes, postExtras, attemptId, mentions, unblocked, staffOf } from './discussions.mjs';
 import { playerRoutes, fold } from './players.mjs';
 import { profileFields, profileView } from './profiles.mjs';
 import { readImage, encodeImage, saveImage, ownedImage, imageAttached } from './media.mjs';
@@ -35,6 +36,7 @@ const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/composer.js', ['composer.js','text/javascript; charset=utf-8']],
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
+  ['/launch.css', ['launch.css', 'text/css; charset=utf-8']],
   ['/premium.css', ['premium.css', 'text/css; charset=utf-8']],
   ['/events.js', ['events.js','text/javascript; charset=utf-8']],
   ['/clubs.js', ['clubs.js','text/javascript; charset=utf-8']],
@@ -85,6 +87,8 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.hash=? AND expires_at>?`, digest(raw), now());
   }
   function signed(user) { if (!user) fail(401, 'Сначала войди в аккаунт.'); return user; }
+  // Read limits key on the proxy-supplied address; auth routes reject a missing one separately.
+  const readerKey = (req, user) => user ? 'user:' + user.id : 'ip:' + (proxyClientHeader ? (isIP(req.headers['x-wr-client-ip'] || '') ? req.headers['x-wr-client-ip'] : 'unknown') : req.socket.remoteAddress);
   function clubFor(id, user, write = false) {
     const club = sql('SELECT * FROM clubs WHERE id=?', id);
     if (!club) fail(404, 'Клуб не найден.');
@@ -98,11 +102,13 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
     if (!club || club.owner_id !== user.id) fail(403, 'Действие доступно владельцу клуба.');
     return club;
   }
-  function postFor(id, user, write = false) {
+  // ignoreBlocks: reports and club staff actions. An author's block does not hide a post from its club staff for reading.
+  function postFor(id, user, write = false, ignoreBlocks = false) {
     const post = sql('SELECT * FROM posts WHERE id=?', id);
     if (!post) fail(404, 'Публикация недоступна.');
     clubFor(post.club_id, user, write);
-    if(user && sql('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',user.id,post.author_id,post.author_id,user.id))fail(404,'Публикация недоступна.');
+    if(user && !ignoreBlocks && (sql('SELECT 1 FROM blocks WHERE blocker_id=? AND target_id=?',user.id,post.author_id)
+      || (sql('SELECT 1 FROM blocks WHERE blocker_id=? AND target_id=?',post.author_id,user.id) && (write || !staffOf(db,post.club_id,user.id)))))fail(404,'Публикация недоступна.');
     return post;
   }
   function newSession(user, previous, res,mutate=()=>{}) {
@@ -133,11 +139,12 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         if(method==='GET'||method==='HEAD'){
           if(path==='/favicon.ico'){res.writeHead(308,{Location:'/favicon.svg'});res.end();return;}
           if(path==='/robots.txt'||path==='/sitemap.xml'){
+            if(path==='/sitemap.xml')rate('sitemap:'+readerKey(req,null),10);
             const value=path==='/robots.txt'?`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /account\nDisallow: /messages\nDisallow: /notifications\nDisallow: /reports\nDisallow: /saved\nDisallow: /drafts\nDisallow: /search\nSitemap: ${expectedOrigin}/sitemap.xml\n`:sitemap(db,expectedOrigin);
             res.writeHead(200,{'Content-Type':path==='/robots.txt'?'text/plain; charset=utf-8':'application/xml; charset=utf-8'});res.end(method==='HEAD'?undefined:value);return;
           }
         }
-        const pageRoute=/^\/(?:clubs(?:\/[\w-]{1,80})?|posts\/\d{1,16}|players(?:\/[\w-]{1,80})?|guides|teams|events|account|messages|notifications|reports|saved|drafts|search|rules)\/?$/.test(path);
+        const pageRoute=/^\/(?:feed|clubs(?:\/[\w-]{1,80})?|posts\/\d{1,16}|players(?:\/[\w-]{1,80})?|guides|teams|events|account|messages|notifications|reports|saved|drafts|search|rules)\/?$/.test(path);
         const asset = assets.get(path)||(pageRoute?assets.get('/'):null);
         if (!['GET','HEAD'].includes(method)) fail(404, 'Страница не найдена.');
         if(!asset){
@@ -155,7 +162,17 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         res.writeHead(200, { 'Content-Type': resource.type });
         res.end(method==='HEAD'?undefined:resource.bytes); return;
       }
-      const user = session(req);
+      const user = session(req), sanction = user ? sanctionFor(db, user.id, now()) : null;
+      if (sanction?.level === 'suspended') {
+        // A suspension ends every session; the next login attempt explains why.
+        run('DELETE FROM sessions WHERE user_id=?', user.id);
+        res.setHeader('Set-Cookie', `wr_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`);
+        if (method === 'GET' && path === '/api/me') { send(200, { user: null, csrf: null }); return; }
+        fail(401, `Аккаунт приостановлен до ${sanctionDate(sanction.until)} за повторные нарушения правил.`);
+      }
+      const restricted = sanction?.level === 'restricted' ? `Публикации, сообщения и загрузки ограничены до ${sanctionDate(sanction.until)}: модераторы подтвердили повторные нарушения правил. Чтение, жалобы и выход из клубов доступны.` : null;
+      // Search scans whole tables in a single-threaded server; bound it per account or guest address.
+      if(method==='GET'&&(['/api/posts/search','/api/guides'].includes(path)||(['/api/clubs','/api/community-members','/api/players'].includes(path)&&url.searchParams.get('q'))))rate('search:'+readerKey(req,user),120);
       if(path==='/api/page-metadata'&&method==='GET'){
         const target=url.searchParams.get('path');
         if(!target||target.length>200||!target.startsWith('/')||target.startsWith('//'))fail(422,'Некорректный путь страницы.');
@@ -170,6 +187,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           rate(`write:${user.id}`, 120);
         }
         if (path === '/api/media' && method === 'POST') {
+          if (restricted) fail(403, restricted);
           rate(`upload:${user.id}`,10);
           const clientId=req.headers['x-upload-id'];
           if(typeof clientId!=='string'||!/^[-a-zA-Z0-9_]{16,80}$/.test(clientId)) fail(422,'Некорректный идентификатор загрузки.');
@@ -190,8 +208,9 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           const current = session(req);
           if (!current || current.id !== user.id || current.csrf !== user.csrf) fail(403, 'Сеанс изменился. Войди снова.');
         }
+        if (restricted && restrictedWrite(method, path, body)) fail(403, restricted);
       }
-      if (method === 'GET' && path === '/api/me') { send(200, { user: user ? safeUser(user) : null, csrf: user?.csrf || null }); return; }
+      if (method === 'GET' && path === '/api/me') { send(200, { user: user ? safeUser(user) : null, csrf: user?.csrf || null, sanction }); return; }
       if(path==='/api/sessions'&&method==='GET'){
         signed(user);let cursor=null;const after=url.searchParams.get('after');
         if(after!==null){try{cursor=JSON.parse(Buffer.from(after,'base64url').toString('utf8'));}catch{fail(422,'Некорректный курсор.');}
@@ -287,6 +306,8 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
             account = sql('SELECT * FROM users WHERE handle=?', handle);
             const valid = await passwordMatches(password, account?.password || dummyPassword);
             if (!valid || !account || isDemo(account) || sql('SELECT password FROM users WHERE id=?', account.id)?.password !== account.password) fail(401, 'Неверный логин или пароль.');
+            const blocked = sanctionFor(db, account.id, now());
+            if (blocked?.level === 'suspended') fail(403, `Аккаунт приостановлен до ${sanctionDate(blocked.until)} за повторные нарушения правил.`);
           }
           send(path === '/api/register' ? 201 : 200, newSession(account, user, res));
         } finally { activeAuth--; }
@@ -438,7 +459,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           if (method === 'GET') {
             const before = url.searchParams.get('before') || String(Number.MAX_SAFE_INTEGER);
             if (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before))) fail(422, 'Некорректный курсор.');
-            const result = rows(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id FROM posts p JOIN users u ON u.id=p.author_id WHERE p.club_id=:club AND p.id<:before AND ${unblocked()} ORDER BY p.id DESC LIMIT 21`, {club:id,before:Number(before),viewer:user?.id||''});
+            const result = rows(`SELECT p.*,u.name AS author_name,CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS author_avatar_id FROM posts p JOIN users u ON u.id=p.author_id WHERE p.club_id=:club AND p.id<:before AND ${unblocked('p',staffOf(db,id,user?.id))} ORDER BY p.id DESC LIMIT 21`, {club:id,before:Number(before),viewer:user?.id||''});
             const more = result.length > 20; const posts = result.slice(0, 20);
             send(200, { posts:postExtras(db,posts,user,now), next: more ? posts.at(-1).id : null }); return;
           }
@@ -460,7 +481,10 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       match = path.match(/^\/api\/posts\/(\d+)(\/comments)?$/);
       if (match) {
         const id = Number(match[1]); if (!Number.isSafeInteger(id)) fail(404, 'Публикация недоступна.');
-        const post = postFor(id, user, method !== 'GET');
+        const own = !match[2] && method === 'DELETE' && sql('SELECT * FROM posts WHERE id=? AND author_id=?', id, user.id);
+        if (own && sql("SELECT 1 FROM memberships WHERE club_id=? AND user_id=? AND status='banned'", own.club_id, user.id)) fail(403, 'Нет доступа к содержимому клуба.');
+        // Leaving a club does not take away an author's ability to remove their own post.
+        const post = own || postFor(id, user, method !== 'GET');
         if (!match[2] && method === 'GET') { send(200, { post:postExtras(db,[{...post,author_name:sql('SELECT name FROM users WHERE id=?',post.author_id).name,club_name:sql('SELECT name FROM clubs WHERE id=?',post.club_id).name,author_avatar_id:sql('SELECT CASE WHEN profile_visible=1 THEN avatar_id ELSE NULL END AS avatar FROM users WHERE id=?',post.author_id).avatar}],user,now)[0] }); return; }
         if (!match[2] && method === 'DELETE') {
           if (post.author_id !== user.id) fail(403, 'Удалить публикацию может только автор.');
@@ -480,3 +504,4 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
     async close() { if (server.listening) await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }); db.close(); }
   };
 }
+

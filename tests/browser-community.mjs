@@ -32,7 +32,7 @@ try {
         const registration = await api('/api/register', { handle, name: handle, password: 'Browser-community-only-12345' });
         const page = await context.newPage();
         page.on('pageerror', e => errors.push(e.message));
-        await page.goto(origin);
+        await page.goto(origin+'/feed');
         await page.locator('.welcome-hero').waitFor();
         await page.locator('#home').click();
         await page.locator('#createClub').waitFor();
@@ -55,7 +55,7 @@ try {
       app = await createApp({ databasePath, moderatorIds: [mod.id] });
       origin = await app.listen();
       for (const user of [mod, owner, member]) {
-        await user.page.goto(origin);
+        await user.page.goto(origin+'/feed');
         await user.page.locator('.welcome-hero').waitFor();
         await user.page.locator('#home').click();
         await user.page.locator('#createClub').waitFor();
@@ -141,3 +141,4 @@ try {
     }
   }
 } finally { await browser.close(); }
+
