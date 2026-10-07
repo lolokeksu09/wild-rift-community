@@ -71,7 +71,8 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
 }
 
 @Composable private fun Pager(data:JSONObject,key:String,model:DiscoveryViewModel,after:Boolean=false) {
-    data.nullableString("next")?.let{cursor->OutlinedButton(onClick={model.more(key,cursor,cursorName=if(after)"after" else "before")},enabled=!model.state.value.busy){Text("Показать ещё")}}
+    val viewState by model.state.collectAsStateWithLifecycle()
+    data.nullableString("next")?.let{cursor->OutlinedButton(onClick={model.more(key,cursor,cursorName=if(after)"after" else "before")},enabled=!viewState.busy){Text("Показать ещё")}}
 }
 @Composable private fun Field(label:String,key:String,model:DiscoveryViewModel,initial:String="",max:Int=1000) {
     val drafts by model.drafts.collectAsStateWithLifecycle()
@@ -86,6 +87,7 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
     val drafts by model.drafts.collectAsStateWithLifecycle();Choice(label,drafts[key]?:initial,options){model.setDraft(key,it)}
 }
 @Composable private fun Finder(model:DiscoveryViewModel,members:Boolean) {
+    val viewState by model.state.collectAsStateWithLifecycle()
     val drafts by model.drafts.collectAsStateWithLifecycle()
     Text("Только опубликованные профили. Игровые сведения указаны игроками; ранг не проверен.")
     Field("Имя или логин","filter.q",model,max=80)
@@ -93,7 +95,7 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
     if(!members){listOf("rank" to "Ранг","region" to "Регион","language" to "Язык").forEach{(k,l)->Field(l,"filter.$k",model,max=40)}
         DraftChoice("Микрофон","filter.microphone",model,"",mapOf("" to "Любой","yes" to "Есть","no" to "Нет"))
         Text("Ранг, регион и язык сравниваются точно без учёта регистра.")}
-    Button(onClick={val keys=if(members)listOf("q","role")else listOf("q","role","rank","region","language","microphone");model.open(model.currentRoute,keys.associateWith{drafts["filter.$it"]?.trim().orEmpty()}.filterValues{it.isNotBlank()})},enabled=!model.state.value.busy){Text("Найти")}
+    Button(onClick={val keys=if(members)listOf("q","role")else listOf("q","role","rank","region","language","microphone");model.open(model.currentRoute,keys.associateWith{drafts["filter.$it"]?.trim().orEmpty()}.filterValues{it.isNotBlank()})},enabled=!viewState.busy){Text("Найти")}
     TextButton(onClick={listOf("q","role","rank","region","language","microphone").forEach{model.setDraft("filter.$it","")};model.open(model.currentRoute,emptyMap())}){Text("Сбросить фильтры")}
 }
 @Composable private fun PlayerCard(p:JSONObject,model:DiscoveryViewModel,navigate:(String)->Unit,detail:Boolean) {
@@ -135,13 +137,14 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
     d.rows("groups").forEach{GroupCard(it,false,navigate)}
 }
 @Composable private fun GroupFilters(model:DiscoveryViewModel,event:Boolean) {
+    val viewState by model.state.collectAsStateWithLifecycle()
     val drafts by model.drafts.collectAsStateWithLifecycle()
     DraftChoice("Показать","list.mine",model,"",mapOf("" to "Предстоящие","1" to "Мои"))
     DraftChoice(if(event)"Свободная роль" else "Нужная роль","list.role",model,"",mapOf("" to "Любая")+(if(event)roleLabels else mapOf("any" to "Любая роль")+roleLabels))
     if(!event){DraftChoice("Режим","list.mode",model,"",mapOf("" to "Все")+modes)
         listOf("region" to "Регион","language" to "Язык","rank" to "Желаемый ранг").forEach{(k,l)->Field(l,"list.$k",model,max=40)}
         DraftChoice("Голос","list.voice",model,"",mapOf("" to "Любой","none" to "Без голоса","optional" to "По желанию","required" to "Обязателен"))}
-    Button(onClick={val keys=if(event)listOf("mine","role")else listOf("mine","role","mode","region","language","rank","voice");model.open(model.currentRoute,keys.associateWith{drafts["list.$it"].orEmpty().trim()}.filterValues{it.isNotBlank()})},enabled=!model.state.value.busy){Text("Показать")}
+    Button(onClick={val keys=if(event)listOf("mine","role")else listOf("mine","role","mode","region","language","rank","voice");model.open(model.currentRoute,keys.associateWith{drafts["list.$it"].orEmpty().trim()}.filterValues{it.isNotBlank()})},enabled=!viewState.busy){Text("Показать")}
 }
 @Composable private fun GroupCard(g:JSONObject,event:Boolean,navigate:(String)->Unit) {
     Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
@@ -164,6 +167,7 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
     }}
 }
 @Composable private fun Creator(model:DiscoveryViewModel,route:String,navigate:(String)->Unit) {
+    val viewState by model.state.collectAsStateWithLifecycle()
     val event=route.endsWith("events")
     val drafts by model.drafts.collectAsStateWithLifecycle()
     var expanded by remember(route){mutableStateOf(drafts["editor.$route"]=="1")}
@@ -191,7 +195,7 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
         DraftChoice("Игроков вместе с тобой",key("capacity"),model,"5",(2..5).associate{it.toString() to it.toString()})
         Text("Начало сейчас или в ближайшие 7 дней. Игровые данные указаны игроками.")
     }
-    Button(enabled=!model.state.value.busy,onClick={try{
+    Button(enabled=!viewState.busy,onClick={try{
         require(v("title").trim().length>=3){"Название должно содержать от 3 до 80 символов."}
         require(v("region").isNotBlank()&&v("language").isNotBlank()){"Укажи регион и язык."}
         val payload=JSONObject().put("title",v("title")).put("description",v("description")).put("mode",v("mode","ranked"))
@@ -208,6 +212,7 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
 }
 
 @Composable private fun Detail(model:DiscoveryViewModel,d:JSONObject,event:Boolean,navigate:(String)->Unit,confirm:(String,()->Unit)->Unit) {
+    val viewState by model.state.collectAsStateWithLifecycle()
     val g=d.optJSONObject(if(event)"event"else "group")?:return
     val id=g.optString("id");val owner=g.optString("owner_id")==model.userId
     val member=if(event)g.nullableString("myRole")!=null else g.optString("membership")=="accepted"
@@ -226,39 +231,40 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
             Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp)){
                 Text("${roleLabels[s.optString("role")]} · ${if(s.optBoolean("taken"))person?.optString("name")?:"Занято" else "Свободно"}")
                 person?.let{p->TextButton(onClick={navigate("discovery/player/${p.optString("id")}")}){Text("Профиль игрока")}
-                    if(owner&&p.optString("id")!=model.userId)TextButton(enabled=!model.state.value.busy,onClick={confirm("Исключить игрока? Чат закроется для него, повторная запись будет запрещена."){model.action("remove",JSONObject().put("userId",p.optString("id")))}}){Text("Исключить")}}
-                if(!s.optBoolean("taken")&&!member&&status=="open")Button(enabled=!model.state.value.busy,onClick={model.action("join",JSONObject().put("role",s.optString("role")))}){Text("Занять место")}
+                    if(owner&&p.optString("id")!=model.userId)TextButton(enabled=!viewState.busy,onClick={confirm("Исключить игрока? Чат закроется для него, повторная запись будет запрещена."){model.action("remove",JSONObject().put("userId",p.optString("id")))}}){Text("Исключить")}}
+                if(!s.optBoolean("taken")&&!member&&status=="open")Button(enabled=!viewState.busy,onClick={model.action("join",JSONObject().put("role",s.optString("role")))}){Text("Занять место")}
             }}
         }
-        if(owner && status!="cancelled")OutlinedButton(enabled=!model.state.value.busy,onClick={confirm("Отменить событие? Набор и отправка сообщений прекратятся, история останется составу."){model.action("cancel")}}){Text("Отменить событие")}
+        if(owner && status!="cancelled")OutlinedButton(enabled=!viewState.busy,onClick={confirm("Отменить событие? Набор и отправка сообщений прекратятся, история останется составу."){model.action("cancel")}}){Text("Отменить событие")}
     }else{
         Text(states[g.optString("membership")]?:"Ты ещё не в составе")
-        if(!owner&&status=="open"&&g.optString("membership") !in listOf("pending","accepted","rejected"))Button(enabled=!model.state.value.busy,onClick={model.action("apply")}){Text("Подать заявку")}
+        if(!owner&&status=="open"&&g.optString("membership") !in listOf("pending","accepted","rejected"))Button(enabled=!viewState.busy,onClick={model.action("apply")}){Text("Подать заявку")}
         d.rows("members").forEach{p->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp)){
             Text("${p.optString("name")} · ${states[p.optString("status")]?:if(p.optString("status")=="cancelled")"Вышел"else p.optString("status")}")
             TextButton(onClick={navigate("discovery/player/${p.optString("id")}")}){Text("Профиль")}
             if(owner&&live&&p.optString("id")!=model.userId){
-                if(p.optString("status")=="pending"&&status=="open")Button(enabled=!model.state.value.busy,onClick={model.action("decision",JSONObject().put("userId",p.optString("id")).put("decision","accept"))}){Text("Принять")}
-                if(p.optString("status") in listOf("pending","accepted"))TextButton(enabled=!model.state.value.busy,onClick={confirm("Отклонить или исключить игрока? Доступ к чату закроется, новая заявка будет запрещена."){model.action("decision",JSONObject().put("userId",p.optString("id")).put("decision","reject"))}}){Text(if(p.optString("status")=="accepted")"Исключить"else "Отклонить")}
+                if(p.optString("status")=="pending"&&status=="open")Button(enabled=!viewState.busy,onClick={model.action("decision",JSONObject().put("userId",p.optString("id")).put("decision","accept"))}){Text("Принять")}
+                if(p.optString("status") in listOf("pending","accepted"))TextButton(enabled=!viewState.busy,onClick={confirm("Отклонить или исключить игрока? Доступ к чату закроется, новая заявка будет запрещена."){model.action("decision",JSONObject().put("userId",p.optString("id")).put("decision","reject"))}}){Text(if(p.optString("status")=="accepted")"Исключить"else "Отклонить")}
             }
         }}}
-        if(owner&&live)OutlinedButton(enabled=!model.state.value.busy,onClick={confirm("Закрыть группу? Набор и отправка сообщений прекратятся."){model.action("close")}}){Text("Закрыть группу")}
+        if(owner&&live)OutlinedButton(enabled=!viewState.busy,onClick={confirm("Закрыть группу? Набор и отправка сообщений прекратятся."){model.action("close")}}){Text("Закрыть группу")}
     }
-    if(!owner&&(member||(!event&&g.optString("membership")=="pending")))OutlinedButton(enabled=!model.state.value.busy,onClick={confirm("Покинуть состав или отменить заявку? Доступ к чату закроется."){model.action("leave")}}){Text(if(member)"Покинуть состав"else "Отменить заявку")}
+    if(!owner&&(member||(!event&&g.optString("membership")=="pending")))OutlinedButton(enabled=!viewState.busy,onClick={confirm("Покинуть состав или отменить заявку? Доступ к чату закроется."){model.action("leave")}}){Text(if(member)"Покинуть состав"else "Отменить заявку")}
     if(!member)Text("Чат и имена состава доступны только участникам.")
     else d.optJSONObject("chat")?.let{chat->
         Text("Чат состава",style=MaterialTheme.typography.titleLarge)
-        chat.nullableString("next")?.let{cursor->OutlinedButton(enabled=!model.state.value.busy,onClick={model.more("messages",cursor,DiscoveryContract.routePath(model.currentRoute)+"/messages")}){Text("Ранее")}}
+        chat.nullableString("next")?.let{cursor->OutlinedButton(enabled=!viewState.busy,onClick={model.more("messages",cursor,DiscoveryContract.routePath(model.currentRoute)+"/messages")}){Text("Ранее")}}
         if(chat.rows("messages").isEmpty())Text("Сообщений пока нет.")
         chat.rows("messages").forEach{m->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp)){Text(m.optString("sender_name"),style=MaterialTheme.typography.labelLarge);Text(m.optString("body"));Text(time(m.optLong("created_at")),style=MaterialTheme.typography.labelSmall)}}}
         if(chat.optBoolean("canSend")){val drafts by model.drafts.collectAsStateWithLifecycle();val key="message.${model.currentRoute}";Field("Сообщение",key,model,max=2000)
-            Button(enabled=!model.state.value.busy&&!drafts[key].isNullOrBlank(),onClick={model.send(drafts[key].orEmpty())}){Text("Отправить")}
+            Button(enabled=!viewState.busy&&!drafts[key].isNullOrBlank(),onClick={model.send(drafts[key].orEmpty())}){Text("Отправить")}
             Text("Если ответ потерян, проверь историю. Повтор с тем же текстом сохраняет идентификатор отправки.")
         }else Text("Чат доступен только для чтения.")
     }
 }
 
 @Composable private fun Notifications(model:DiscoveryViewModel,d:JSONObject?,navigate:(String)->Unit) {
+    val viewState by model.state.collectAsStateWithLifecycle()
     val categories=linkedMapOf("discussions" to "Ответы и упоминания","lfg" to "Группы и заявки","events" to "События и напоминания","direct" to "Личные сообщения","reports" to "Решения по жалобам")
     Choice("Категория",model.category,categories){model.open("discovery/notifications",selectedCategory=it)}
     val summary=d?.optJSONObject("summary")
@@ -271,17 +277,17 @@ private fun JSONObject.words(key:String)=optJSONArray(key)?.let{a->List(a.length
             "direct"->{Text(n.optString("peer_name"),style=MaterialTheme.typography.titleLarge);Text("${n.optInt("unread")} непрочитанных · ${states[n.optString("status")]?:n.optString("status")}");TextButton(onClick={navigate(if(n.optString("status")=="accepted")"chat/direct/${n.optString("id")}" else "chat/inbox")}){Text("Открыть переписку")}}
             "reports"->{Text("Жалоба №${n.opt("id")} · ${when(n.optString("status")){"pending"->"На рассмотрении";"resolved"->"Решение принято";"dismissed"->"Отклонена";else->"Рассмотрена"}}")
                 n.nullableString("decision_note")?.let{Text(it)};TextButton(onClick={navigate("moderation/reports")}){Text("Жалобы и апелляции")}
-                if(n.optString("status")!="pending"&&n.optInt("decision_seen")==0)TextButton(enabled=!model.state.value.busy,onClick={model.read(n.optString("id"))}){Text("Отметить решение прочитанным")}
-                if(n.nullableString("appeal_status")!=null&&n.optString("appeal_status")!="pending"&&n.optInt("appeal_seen")==0)TextButton(enabled=!model.state.value.busy,onClick={model.read(n.optString("id"),true)}){Text("Отметить апелляцию прочитанной")}}
+                if(n.optString("status")!="pending"&&n.optInt("decision_seen")==0)TextButton(enabled=!viewState.busy,onClick={model.read(n.optString("id"))}){Text("Отметить решение прочитанным")}
+                if(n.nullableString("appeal_status")!=null&&n.optString("appeal_status")!="pending"&&n.optInt("appeal_seen")==0)TextButton(enabled=!viewState.busy,onClick={model.read(n.optString("id"),true)}){Text("Отметить апелляцию прочитанной")}}
             else->{Text(notices[n.optString("kind")]?:"Новое событие")
                 if(model.category=="discussions"){Text(n.optString("title"));Text(n.optString("actor_name"))}
                 Text(time(n.optLong("created_at")))
                 TextButton(onClick={navigate(when(model.category){"lfg"->"discovery/group/${n.opt("group_id")}";"events"->"discovery/event/${n.opt("event_id")}";else->"content/post/${n.opt("post_id")}"})}){Text("Открыть")}
-                if(n.optInt("seen")==0)TextButton(enabled=!model.state.value.busy,onClick={model.read(n.optString("id"))}){Text("Прочитано")}
+                if(n.optInt("seen")==0)TextButton(enabled=!viewState.busy,onClick={model.read(n.optString("id"))}){Text("Прочитано")}
                 else Text("Прочитано",style=MaterialTheme.typography.labelSmall)
             }
         }
     }}}
-    d.nullableString("next")?.let{cursor->OutlinedButton(enabled=!model.state.value.busy,onClick={model.more(key,cursor,cursorName=if(model.category=="direct")"after"else "before")}){Text("Ранее")}}
+    d.nullableString("next")?.let{cursor->OutlinedButton(enabled=!viewState.busy,onClick={model.more(key,cursor,cursorName=if(model.category=="direct")"after"else "before")}){Text("Ранее")}}
     Text("Напоминания появляются внутри приложения. Отдельная доставка push не подключена.")
 }
