@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 21) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 22) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -315,6 +315,25 @@ export function openDatabase(path) {
         db.prepare("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='reports'").run(sequence);
         db.prepare("INSERT INTO sqlite_sequence(name,seq) SELECT 'reports',? WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='reports')").run(sequence);
         if(db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Report migration integrity check failed.');
+      });
+    } catch(error) {db.close();throw error;}
+    finally {if(db.isOpen)db.exec('PRAGMA foreign_keys=ON;');}
+  }
+  if (version < 22) {
+    // Removal actions for clubs, groups, events and club chat messages; table rebuild keeps all rows.
+    db.exec('PRAGMA foreign_keys=OFF;');
+    try {
+      transaction(db,()=>{
+        db.exec(`CREATE TABLE moderation_actions_next (
+          report_id INTEGER PRIMARY KEY REFERENCES reports(id), actor_id TEXT NOT NULL REFERENCES users(id),
+          action TEXT NOT NULL CHECK(action IN ('remove-post','remove-comment','hide-profile','remove-club','close-group','cancel-event','remove-chat-message')),
+          note TEXT NOT NULL, created_at INTEGER NOT NULL
+        ) STRICT;
+        INSERT INTO moderation_actions_next SELECT report_id,actor_id,action,note,created_at FROM moderation_actions;
+        DROP TABLE moderation_actions;
+        ALTER TABLE moderation_actions_next RENAME TO moderation_actions;
+        PRAGMA user_version=22;`);
+        if(db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Moderation action migration integrity check failed.');
       });
     } catch(error) {db.close();throw error;}
     finally {if(db.isOpen)db.exec('PRAGMA foreign_keys=ON;');}
