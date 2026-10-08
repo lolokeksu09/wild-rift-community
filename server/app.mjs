@@ -1,3 +1,4 @@
+import { replaceCodes, consumeCode } from './recovery.mjs';
 import {guideRoutes} from './guides.mjs';
 import {pollRoutes} from './polls.mjs';
 import {postManagementRoutes} from './post-management.mjs';
@@ -121,7 +122,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       let body = {};
       if (method !== 'GET') {
         if (req.headers.origin !== expectedOrigin || req.headers['x-community-request'] !== '1') fail(403, 'Запрос с другого источника отклонён.');
-        if (!['/api/register', '/api/login'].includes(path)) {
+        if (!['/api/register', '/api/login', '/api/recover'].includes(path)) {
           signed(user);
           if (req.headers['x-csrf-token'] !== user.csrf) fail(403, 'Сеанс изменился. Обнови страницу.');
           rate(`write:${user.id}`, 120);
@@ -142,8 +143,49 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           return;
         }
         body = await jsonBody(req,/^\/api\/(?:clubs\/[\w-]+\/guides|posts\/\d+\/guide)$/.test(path)?65536:16384);
+        // Body parsing yields; a recovery/logout may revoke this session meanwhile.
+        if (!['/api/register', '/api/login', '/api/recover'].includes(path)) {
+          const current = session(req);
+          if (!current || current.id !== user.id || current.csrf !== user.csrf) fail(403, 'Сеанс изменился. Войди снова.');
+        }
       }
       if (method === 'GET' && path === '/api/me') { send(200, { user: user ? safeUser(user) : null, csrf: user?.csrf || null }); return; }
+      if (method === 'GET' && path === '/api/recovery-codes') {
+        signed(user);
+        send(200, { remaining: sql('SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id=?', user.id).n }); return;
+      }
+      if (method === 'POST' && path === '/api/recovery-codes') {
+        rate(`recovery-generate:${user.id}`, 5);
+        if (activeAuth >= 4) fail(429, 'Сервер занят. Повтори чуть позже.');
+        activeAuth++;
+        try {
+          const valid = await passwordMatches(passwordValue(body.password), user.password);
+          const current = session(req);
+          if (!valid) fail(401, 'Неверный пароль.');
+          if (!current || current.id !== user.id || current.csrf !== user.csrf || current.password !== user.password) fail(403, 'Сеанс изменился. Войди снова.');
+          send(200, { codes: replaceCodes(db, user.id, now()) });
+        } finally { activeAuth--; }
+        return;
+      }
+      if (method === 'POST' && path === '/api/recover') {
+        const clientAddress = proxyClientHeader ? req.headers['x-wr-client-ip'] : req.socket.remoteAddress;
+        if (proxyClientHeader && (typeof clientAddress !== 'string' || !isIP(clientAddress))) fail(403, 'Недопустимый адрес клиента.');
+        rate(`auth:${clientAddress}`, authLimit);
+        if (activeAuth >= 4) fail(429, 'Сервер занят. Повтори чуть позже.');
+        const handle = text(body.handle, 'Логин', 3, 24).toLowerCase();
+        if (!/^[a-z0-9_]+$/.test(handle)) fail(422, 'Логин: латиница, цифры и подчёркивание.');
+        const password = passwordValue(body.password);
+        activeAuth++;
+        try {
+          // Always hash the new password, including nonexistent accounts/invalid codes.
+          const hash = await passwordHash(password);
+          const account = sql('SELECT * FROM users WHERE handle=?', handle);
+          if (!account) fail(401, 'Неверный логин или резервный код.');
+          consumeCode(db, account.id, body.code, hash);
+          send(200, { ok: true });
+        } finally { activeAuth--; }
+        return;
+      }
       if (method === 'POST' && ['/api/register', '/api/login'].includes(path)) {
         const clientAddress = proxyClientHeader ? req.headers['x-wr-client-ip'] : req.socket.remoteAddress;
         if (proxyClientHeader && (typeof clientAddress !== 'string' || !isIP(clientAddress))) fail(403, 'Недопустимый адрес клиента.');
@@ -165,7 +207,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           } else {
             account = sql('SELECT * FROM users WHERE handle=?', handle);
             const valid = await passwordMatches(password, account?.password || dummyPassword);
-            if (!valid || !account) fail(401, 'Неверный логин или пароль.');
+            if (!valid || !account || sql('SELECT password FROM users WHERE id=?', account.id)?.password !== account.password) fail(401, 'Неверный логин или пароль.');
           }
           send(path === '/api/register' ? 201 : 200, newSession(account, user, res));
         } finally { activeAuth--; }
