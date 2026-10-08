@@ -4,7 +4,7 @@ if (process.env.NODE_ENV === 'production') throw new Error('Local development se
 const port = Number(process.env.PORT || 3000);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('PORT must be an integer from 1024 to 65535.');
 process.umask(0o077);
-const app = await createApp({ databasePath: resolve(process.env.COMMUNITY_DB || 'data/community.sqlite') });
+const app = await createApp({ databasePath: resolve(process.env.COMMUNITY_DB || 'data/community.sqlite'), moderatorIds: (process.env.COMMUNITY_MODERATOR_IDS || '').split(',').map(x=>x.trim()).filter(Boolean) });
 console.log(`Local community: ${await app.listen(port)}`);
 console.log('Development only. Data persists in SQLite; use separate test passwords.');
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { await app.close(); process.exit(0); });

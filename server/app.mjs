@@ -1,3 +1,4 @@
+import { moderationRoutes } from './moderation.mjs';
 import { directRoutes } from './direct.mjs';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -13,14 +14,15 @@ const assets = new Map([
   ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']]
 ]);
-export async function createApp({ databasePath = ':memory:', now = Date.now, authLimit = 20 } = {}) {
+export async function createApp({ databasePath = ':memory:', now = Date.now, authLimit = 20, moderatorIds = [] } = {}) {
+  moderatorIds = [...moderatorIds];
   const db = openDatabase(databasePath);
   const dummyPassword = await passwordHash(token());
   const counters = new Map(); let activeAuth = 0;
   const sql = (query, ...params) => db.prepare(query).get(...params);
   const run = (query, ...params) => db.prepare(query).run(...params);
   const rows = (query, ...params) => db.prepare(query).all(...params);
-  const safeUser = user => ({ id: user.id, handle: user.handle, name: user.name, bio: user.bio, dmRequests: user.dm_requests !== 0 });
+  const safeUser = user => ({ id: user.id, handle: user.handle, name: user.name, bio: user.bio, isModerator: moderatorIds.includes(user.id), dmRequests: user.dm_requests !== 0 });
   function rate(key, limit, windowMs = 60000) {
     const time = now();
     for (const [k, v] of counters) if (v.until <= time) counters.delete(k);
@@ -127,6 +129,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         run('UPDATE users SET name=?,bio=? WHERE id=?', text(body.name, 'Имя', 1, 40), text(body.bio, 'Описание', 0, 300), user.id);
         send(200, { user: safeUser(sql('SELECT * FROM users WHERE id=?', user.id)) }); return;
       }
+      if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds})) return;
       if (directRoutes({ db, user, path, method, body, url, send, now })) return;
       if (method === 'GET' && path === '/api/clubs') {
         send(200, { clubs: rows(`SELECT c.*, m.status AS membership,

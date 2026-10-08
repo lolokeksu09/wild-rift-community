@@ -37,6 +37,14 @@ async function render() {
     if (version !== requestVersion) return;
     clubs = result.clubs;
     $('#account').textContent = user ? user.name : 'Вход';
+    if (view === 'reports') {
+      if(!user){$('#main').innerHTML=auth();return;}
+      const mine=await api('/api/reports');
+      const queue=user.isModerator?await api('/api/moderation/reports'):null;
+      if(version!==requestVersion)return;
+      $('#main').innerHTML=`<h1>Жалобы</h1><p class="note">Решение по жалобе не удаляет сообщение и не блокирует аккаунт автоматически.</p><h2>Мои обращения</h2>${mine.reports.map(r=>`<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p>${esc(r.reason)}</p><p>${esc(r.decision_note)}</p></article>`).join('')||'<p>Обращений нет.</p>'}${queue?`<h2>Очередь модерации</h2><div id="reportQueue">${queue.reports.map(reportCard).join('')}</div>${queue.next?`<button class="btn quiet" data-reports-more="${queue.next}">Ранее</button>`:''}`:''}`;
+      return;
+    }
     if (view === 'direct') { $('#main').innerHTML = user ? '<section id=directRoot></section>' : auth(); if(user) chatController = window.createDirectInbox({root:$('#directRoot'),user,api}); return; }
     if (view === 'account') { $('#main').innerHTML = user ? profile() : auth(); return; }
     if (view === 'club') {
@@ -61,6 +69,7 @@ async function comments(id) {
   const club = clubs.find(c => c.id === selectedClub);
   el.innerHTML = comments.map(c => `<div class="comment"><small>${esc(c.author_name)}</small><p class="content">${esc(c.body)}</p></div>`).join('') + (club?.membership === 'member' ? `<form data-comment-form="${id}"><label class="field">Комментарий<textarea name="body" maxlength="1000" required></textarea></label>${errorLine}<button class="btn primary">Ответить</button></form>` : '<p class="note">Для ответа нужно вступить в клуб.</p>');
 }
+$('#reports').onclick=()=>{view='reports';render();};
 $('#direct').onclick = () => { view = 'direct'; render(); };
 $('#home').onclick = () => { view = 'clubs'; render(); };
 $('#account').onclick = () => { view = 'account'; render(); };
@@ -69,6 +78,7 @@ $('#confirmDelete').onclick = async () => { if (!pendingDelete) return; const id
 document.addEventListener('click', async event => {
   const b = event.target.closest('button'); if (!b) return;
   try {
+    if(b.dataset.reportsMore){b.disabled=true;const result=await api('/api/moderation/reports?before='+b.dataset.reportsMore);if(!b.isConnected)return;$('#reportQueue').insertAdjacentHTML('beforeend',result.reports.map(reportCard).join(''));if(result.next){b.dataset.reportsMore=result.next;b.disabled=false;}else b.remove();}
     if (b.id === 'retry') return render();
     if (b.dataset.open) { selectedClub = b.dataset.open; view = 'club'; await render(); }
     if (b.dataset.logout) { await api(b.dataset.logout, 'POST', {}); try { const prefix = `wr-chat-pending:${user.id}:`; for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key); } catch {} user = csrf = null; view = 'account'; await render(); }
@@ -82,7 +92,8 @@ document.addEventListener('click', async event => {
 });
 document.addEventListener('submit', async event => {
   const form = event.target;
-  if (!['login', 'register', 'profile', 'createClub', 'post'].includes(form.id) && !form.dataset.commentForm) return;
+  if(form.dataset.reportDecision){event.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('button');button.disabled=true;try{await api(`/api/moderation/reports/${form.dataset.reportDecision}/decision`,'POST',Object.fromEntries(new FormData(form)));await render();}catch(e){formError(form,e);}finally{button.disabled=false;}return;}
+  if (!['login' , 'register', 'profile', 'createClub', 'post'].includes(form.id) && !form.dataset.commentForm) return;
   event.preventDefault(); if (!form.reportValidity()) return;
   const button = form.querySelector('button'); button.disabled = true;
   const data = Object.fromEntries(new FormData(form));
@@ -112,3 +123,6 @@ async function updateMessageBadge(){
   finally{clearTimeout(deadline);badgeBusy=false;}
 }
 setInterval(updateMessageBadge,5000);
+
+function reportStatus(status){return ({pending:'Ожидает рассмотрения',upheld:'Нарушение подтверждено',dismissed:'Отклонено'})[status]||status;}
+function reportCard(r){return `<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p class="note">${r.kind==='direct'?'Личное сообщение':'Сообщение клуба'}</p><blockquote class="content">${esc(r.snapshot)}</blockquote><p>${esc(r.reason)}</p>${r.status==='pending'?`<form data-report-decision="${r.id}"><label class="field">Решение<select name="decision"><option value="upheld">Нарушение подтверждено</option><option value="dismissed">Отклонено</option></select></label><label class="field">Объяснение для заявителя<textarea name="note" required minlength="3" maxlength="1000"></textarea></label>${errorLine}<button class="btn primary">Сохранить решение</button></form>`:`<p>${esc(r.decision_note)}</p>`}</article>`;}
