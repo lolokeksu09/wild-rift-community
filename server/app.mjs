@@ -1,3 +1,4 @@
+import {homeRoutes} from './home.mjs';
 import {eventRoutes} from './events.mjs';
 import {clubRoutes,clubRole,audit as clubAudit} from './clubs.mjs';
 import { discussionRoutes, postExtras, attemptId, mentions, unblocked } from './discussions.mjs';
@@ -215,6 +216,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFor})) return;
       if (discussionRoutes({db,user,path,method,body,url,send,now,postFor})) return;
       if (playerRoutes({db,user,path,method,url,send})) return;
+      if (homeRoutes({db,user,path,method,send,now})) return;
       if (eventRoutes({db,user,path,method,body,url,send,now})) return;
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
       if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds})) return;
