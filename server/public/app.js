@@ -106,7 +106,7 @@ async function render() {
     if(view==='editPost'){
       const data=await api('/api/posts/'+selectedPost);if(version!==requestVersion)return;
       if(data.post.author_id!==user?.id||!clubs.some(c=>c.id===data.post.club_id&&c.membership==='member'))throw Error('Редактирование недоступно.');
-      $('#main').innerHTML=postManagement.editor(data.post);return;
+      $('#main').innerHTML=postManagement.editor(data.post);$('[data-post-edit-form] input')?.focus();return;
     }
     if(view==='post'){
       const data=await api('/api/posts/'+selectedPost);if(version!==requestVersion)return;
@@ -344,3 +344,5 @@ window.addEventListener('beforeunload',event=>{const form=document.querySelector
 window.addEventListener('beforeunload',event=>{const form=document.querySelector('[data-post-edit-form]');if(form&&[form.elements.title,form.elements.body].some(el=>el.value!==el.defaultValue)){event.preventDefault();event.returnValue='';}});
 
 window.addEventListener('beforeunload',event=>{const form=document.querySelector('[data-post-edit-form]');if(form&&[form.elements.title,form.elements.body].some(el=>el.value!==el.defaultValue)){event.preventDefault();event.returnValue='';}});
+
+document.addEventListener('click',event=>{const form=document.querySelector('[data-post-edit-form]');if(form&&event.target.closest('button')&&!form.contains(event.target)&&[form.elements.title,form.elements.body].some(el=>el.value!==el.defaultValue)&&!confirm('Уйти из редактора? Несохранённые изменения будут потеряны.')){event.preventDefault();event.stopImmediatePropagation();}},true);
