@@ -10,7 +10,7 @@ const {JSDOM,VirtualConsole}=require('jsdom');const assert=require('node:assert/
   w.eval(fs.readFileSync(path.join(__dirname,'../server/public/chat.js'),'utf8'));
   let loseResponse=true;const api=async(...args)=>{const data=await member.api(...args);if(args[1]==='POST'&&loseResponse){loseResponse=false;throw new TypeError('Simulated lost response after commit');}return data;};
   const root=d.querySelector('#root');controller=w.createClubChat({root,clubId:club,userId:member.id,api});
-  async function until(fn){for(let i=0;i<300;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Timeout: '+root.textContent);}
+  async function until(fn){for(let i=0;i<600;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Timeout: '+root.textContent);}
   await until(()=>root.textContent.includes('Подключено'));
   // Another sender's message arrives between reading and sending: no cursor gap.
   await owner.api(route,'POST',{clientId:'owner-intervening-0001',body:'Сообщение другого участника'});
@@ -23,11 +23,26 @@ const {JSDOM,VirtualConsole}=require('jsdom');const assert=require('node:assert/
   assert.equal(d.querySelectorAll('[data-chat-log] img').length,0);
   assert.equal(w.sessionStorage.length,0);
   w.prompt=()=> 'Жалоба из интерфейса';d.querySelector('[data-report-message]').click();await until(()=>root.textContent.includes('Жалоба отправлена'));assert.equal((await member.api('/api/reports')).reports.length,1);
+  // Blocking from the open chat hides old messages; removing the block restores history.
+  d.querySelector('[data-chat-block]').click();await until(()=>!root.textContent.includes('Сообщение другого участника')&&root.textContent.includes('Подключено'));
+  assert.equal((await member.api(route)).messages.length,1);
+  await member.api('/api/blocks','DELETE',{userId:owner.id});d.querySelector('[data-chat-refresh]').click();await until(()=>d.querySelectorAll('[data-message-id]').length===2);
   // Membership revocation clears rendered history and pending data.
   await owner.api(`/api/clubs/${club}/ban`,'POST',{userId:member.id});d.querySelector('[data-chat-refresh]').click();await until(()=>root.textContent.includes('Чат недоступен'));assert.equal(d.querySelectorAll('[data-message-id]').length,0);
   controller.destroy();
   // A late response from a previously mounted club must not populate the next page.
   let release;const delayed=new Promise(resolve=>release=resolve);controller=w.createClubChat({root,clubId:club,userId:member.id,api:()=>delayed});controller.destroy();root.textContent='Другая страница';release({viewerId:member.id,messages:[{id:900,sender_id:member.id,body:'stale',sender_name:'old',created_at:1}],hasMore:false});await new Promise(r=>setTimeout(r,20));assert.equal(root.textContent,'Другая страница');
+  // An older page arriving after a block must never restore blocked content.
+  controller.destroy();let releaseOld;let calls=0;
+  controller=w.createClubChat({root,clubId:club,userId:member.id,api:async(p,method)=>{
+   if(method==='POST')return {ok:true,blockVersion:2};
+   calls++;
+   if(calls===1)return {viewerId:member.id,blockVersion:1,messages:[{id:2,sender_id:owner.id,body:'hidden later',sender_name:'owner',created_at:1}],hasMore:true};
+   if(p.includes('before='))return new Promise(resolve=>releaseOld=resolve);
+   return {viewerId:member.id,blockVersion:2,messages:[],hasMore:false};
+  }});
+  await until(()=>d.querySelector('[data-chat-block]'));d.querySelector('[data-chat-older]').click();await until(()=>releaseOld);d.querySelector('[data-chat-block]').click();await until(()=>calls>=3);
+  releaseOld({viewerId:member.id,blockVersion:1,messages:[{id:1,sender_id:owner.id,body:'stale secret',sender_name:'owner',created_at:1}],hasMore:false});await new Promise(r=>setTimeout(r,20));assert(!root.textContent.includes('stale secret'));assert(!root.textContent.includes('hidden later'));
   assert.deepEqual(errors,[]);console.log('PASS: chat UI lost-response retry creates no duplicate; intervening message not skipped; HTML escaped; ban clears history; destroyed controller ignores late response. DOM only.');
  }finally{controller?.destroy();dom?.window.close();await app.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

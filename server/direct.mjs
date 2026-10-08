@@ -27,9 +27,12 @@ export function directRoutes({db,user,path,method,body,url,send,now}) {
     if(method==='POST'||method==='DELETE'){
       const target=text(body.userId,'Пользователь',1,80);
       if(target===user.id||!get('SELECT id FROM users WHERE id=?',target))fail(422,'Недопустимый пользователь.');
-      if(method==='POST')run('INSERT OR IGNORE INTO blocks VALUES(?,?)',user.id,target);
-      else run('DELETE FROM blocks WHERE blocker_id=? AND target_id=?',user.id,target);
-      send(200,{ok:true});return true;
+      const blockVersion=transaction(db,()=>{
+        const result=method==='POST'?run('INSERT OR IGNORE INTO blocks VALUES(?,?)',user.id,target):run('DELETE FROM blocks WHERE blocker_id=? AND target_id=?',user.id,target);
+        if(result.changes)run('UPDATE users SET block_version=block_version+1 WHERE id=?',user.id);
+        return get('SELECT block_version FROM users WHERE id=?',user.id).block_version;
+      });
+      send(200,{ok:true,blockVersion});return true;
     }
   }
   if(path==='/api/direct' && method==='GET'){

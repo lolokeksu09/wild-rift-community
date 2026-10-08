@@ -48,6 +48,17 @@ test('club chat: retries, history, restart and access revocation',async t=>{
   const tail=(await member.request(route+`?after=${catchup.next}`)).data;assert.equal(tail.messages.length,17);assert.equal(tail.hasMore,false);
   assert.deepEqual([...catchup.messages,...tail.messages].map(m=>m.id),combined.map(m=>m.id));
  });
+ await t.test('personal blocking filters every history page without changing club membership',async()=>{
+  const first=(await owner.request('/api/blocks','POST',{userId:member.id})).data.blockVersion;
+  assert.equal((await owner.request('/api/blocks','POST',{userId:member.id})).data.blockVersion,first);
+  for(const suffix of ['', '?after=0','?before=999999']){
+   const response=await owner.request(route+suffix);assert.equal(response.status,200);assert.equal(response.data.blockVersion,first);assert(response.data.messages.every(m=>m.sender_id!==member.id));assert.equal(response.data.messages.length,1);
+  }
+  assert.equal((await member.request(route)).data.messages.length,50);
+  assert.equal((await owner.request(`/api/clubs/${club}/members`)).data.members.find(m=>m.id===member.id).status,'member');
+  const next=(await owner.request('/api/blocks','DELETE',{userId:member.id})).data.blockVersion;assert(next>first);
+  assert.equal((await owner.request(route)).data.messages.length,50);
+ });
  await t.test('restart keeps messages and retry identity',async()=>{
   await app.close();app=await createApp({databasePath});origin=await app.listen();
   const retry=await member.request(route,'POST',{clientId:'stable-message-id-0001',body:'Привет'});
@@ -71,7 +82,7 @@ test('club chat: retries, history, restart and access revocation',async t=>{
  });
 });
 
-test('v1 migration preserves existing records and v7 opens repeatedly',()=>{
+test('v1 migration preserves existing records and v8 opens repeatedly',()=>{
  const dir=mkdtempSync(join(tmpdir(),'wr-migration-')),file=join(dir,'db.sqlite');let db;
  try{
   db=new DatabaseSync(file);db.exec(readFileSync(new URL('./fixtures/schema-v1.sql',import.meta.url),'utf8'));
@@ -79,6 +90,6 @@ test('v1 migration preserves existing records and v7 opens repeatedly',()=>{
   db.prepare('INSERT INTO clubs VALUES(?,?,?,?,?,?)').run('club1','user1','Старый клуб','Описание','open',1);
   db.prepare('INSERT INTO memberships VALUES(?,?,?)').run('club1','user1','member');
   db.prepare('INSERT INTO posts(club_id,author_id,title,body,created_at) VALUES(?,?,?,?,?)').run('club1','user1','Заголовок','Старый текст',1);db.close();
-  for(let i=0;i<2;i++){db=openDatabase(file);assert.equal(db.prepare('PRAGMA user_version').get().user_version,7);assert.equal(db.prepare('SELECT body FROM posts').get().body,'Старый текст');assert.equal(db.prepare('SELECT count(*) AS n FROM users').get().n,1);assert.equal(db.prepare('SELECT count(*) AS n FROM messages').get().n,0);db.close();db=null;}
+  for(let i=0;i<2;i++){db=openDatabase(file);assert.equal(db.prepare('PRAGMA user_version').get().user_version,8);assert.equal(db.prepare('SELECT body FROM posts').get().body,'Старый текст');assert.equal(db.prepare('SELECT count(*) AS n FROM users').get().n,1);assert.equal(db.prepare('SELECT count(*) AS n FROM messages').get().n,0);db.close();db=null;}
  }finally{if(db?.isOpen)db.close();rmSync(dir,{recursive:true,force:true});}
 });
