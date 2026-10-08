@@ -4,7 +4,7 @@ import { fail, HttpError } from './security.mjs';
 import { transaction } from './database.mjs';
 sharp.cache(false);
 sharp.concurrency(1);
-const MAX_BYTES=5*1024*1024;
+const MAX_BYTES=5*1024*1024,UNATTACHED_MS=24*60*60*1000;
 export async function readImage(req) {
   if (!['image/jpeg','image/png','image/webp'].includes(req.headers['content-type'])) fail(415,'Выбери JPEG, PNG или WebP.');
   if(Number(req.headers['content-length'])>MAX_BYTES) fail(413,'Изображение должно быть не больше 5 МБ.');
@@ -37,6 +37,9 @@ export function saveImage(db,user,clientId,input,encoded,now) {
   return transaction(db,()=>{
     const old=db.prepare('SELECT id,signature,width,height,size FROM media WHERE owner_id=? AND client_id=?').get(user.id,clientId);
     if(old){if(old.signature!==signature)fail(409,'Идентификатор загрузки уже использован для другого файла.');return {image:{id:old.id,width:old.width,height:old.height,size:old.size},replayed:true};}
+    // Uploads never attached anywhere expire after a day instead of holding the shared quota forever.
+    db.prepare(`DELETE FROM media WHERE created_at<? AND NOT EXISTS(SELECT 1 FROM post_drafts WHERE image_id=media.id) AND NOT EXISTS(SELECT 1 FROM posts WHERE image_id=media.id)
+      AND NOT EXISTS(SELECT 1 FROM clubs WHERE cover_id=media.id) AND NOT EXISTS(SELECT 1 FROM users WHERE avatar_id=media.id OR cover_id=media.id)`).run(now()-UNATTACHED_MS);
     const own=db.prepare('SELECT coalesce(sum(size),0) AS size FROM media WHERE owner_id=?').get(user.id).size;
     const total=db.prepare('SELECT coalesce(sum(size),0) AS size FROM media').get().size;
     if(own+encoded.size>50*1024*1024 || total+encoded.size>500*1024*1024)fail(413,'Лимит хранения изображений достигнут.');
