@@ -2,7 +2,7 @@
 const $ = s => document.querySelector(s);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const mediaUI=window.WRProfiles;
-const composerUI=window.WRComposer;
+const composerUI=window.WRComposer;const pollUI=window.WRPolls;
 let composerController=null;
 const postManagement=window.WRPostManagement;let searchState={query:'',club:''};
 const discussionUI=window.WRDiscussions;
@@ -57,7 +57,7 @@ function personalHome(feed,home,homeError){
 }
 function postHTML(p) {
   const member=clubs.some(c=>c.id===p.club_id&&c.membership==='member');
-  return `<article class="panel"><div class="post-author">${mediaUI.avatar(p.author_avatar_id,p.author_name)}<div><button type="button" class="author-link" data-player="${esc(p.author_id)}">${esc(p.author_name)}</button><small>${esc(new Date(p.created_at).toLocaleString('ru-RU'))}${p.edited_at?` · <span title="${esc(new Date(p.edited_at).toLocaleString('ru-RU'))}">Изменено</span>`:''}</small></div></div><h3 class="post-title">${esc(p.title)}</h3><p class="content">${esc(p.body)}</p>${mediaUI.image(p.image_id,'Изображение к публикации: '+p.title)}${discussionUI.actions(p,user,member)}${view==='club'?clubUI.postTools(p,clubs.find(c=>c.id===p.club_id),clubPins.has(p.id),user):''}<div id="comments-${p.id}"></div></article>`;
+  return `<article class="panel"><div class="post-author">${mediaUI.avatar(p.author_avatar_id,p.author_name)}<div><button type="button" class="author-link" data-player="${esc(p.author_id)}">${esc(p.author_name)}</button><small>${esc(new Date(p.created_at).toLocaleString('ru-RU'))}${p.edited_at?` · <span title="${esc(new Date(p.edited_at).toLocaleString('ru-RU'))}">Изменено</span>`:''}</small></div></div><h3 class="post-title">${esc(p.title)}</h3><p class="content">${esc(p.body)}</p>${mediaUI.image(p.image_id,'Изображение к публикации: '+p.title)}${pollUI?.card(p,user,member)||''}${discussionUI.actions(p,user,member)}${view==='club'?clubUI.postTools(p,clubs.find(c=>c.id===p.club_id),clubPins.has(p.id),user):''}<div id="comments-${p.id}"></div></article>`;
 }
 async function render() {
   composerController?.destroy();composerController=null;
@@ -139,7 +139,7 @@ async function render() {
       if(clubTab==='posts'){
         const posts=canRead?await api(`/api/clubs/${club.id}/posts`):{posts:[],next:null},pins=canRead?await api(`/api/clubs/${club.id}/pins`):{posts:[]};
         clubPins=new Set(pins.posts.map(p=>p.id));
-        content=`${canRead?`<button class="btn quiet wide search-entry" data-search-open="${esc(club.id)}">Поиск в этом клубе →</button>`:''}${clubUI.pins(pins.posts)}${member?`<details class="club-compose panel"><summary>Написать публикацию</summary><form id="post"><h3>Новая публикация</h3><label class="field">Заголовок<input name="title" required maxlength="100"></label><label class="field">Текст<textarea name="body" required maxlength="4000"></textarea></label>${mediaUI.picker('imageFile','Изображение к публикации')}${errorLine}<button class="btn primary">Опубликовать</button></form></details>`:''}<div id="posts">${posts.posts.map(postHTML).join('')||(canRead?'<div class="empty-state"><h3>Обсуждение начинается здесь</h3><p>Публикаций пока нет.</p></div>':'')}</div>${posts.next?`<button class="btn quiet" data-more="${posts.next}">Показать ещё</button>`:''}`;
+        content=`${canRead?`<button class="btn quiet wide search-entry" data-search-open="${esc(club.id)}">Поиск в этом клубе →</button>`:''}${clubUI.pins(pins.posts)}${member?`<details class="club-compose panel"><summary>Написать публикацию</summary><form id="post"><h3>Новая публикация</h3><label class="field">Заголовок<input name="title" required maxlength="100"></label><label class="field">Текст<textarea name="body" required maxlength="4000"></textarea></label>${mediaUI.picker('imageFile','Изображение к публикации')}${errorLine}<button class="btn primary">Опубликовать</button></form></details>${pollUI?.editor(club)||''}`:''}<div id="posts">${posts.posts.map(postHTML).join('')||(canRead?'<div class="empty-state"><h3>Обсуждение начинается здесь</h3><p>Публикаций пока нет.</p></div>':'')}</div>${posts.next?`<button class="btn quiet" data-more="${posts.next}">Показать ещё</button>`:''}`;
       }else if(clubTab==='chat')content='<section class="panel" id="clubChat"></section>';
       else if(clubTab==='members'){
         const members=await api(`/api/clubs/${club.id}/members`);content=clubUI.members(club,members,user);if(staff)content+=clubUI.journal(await api(`/api/clubs/${club.id}/audit`));
@@ -184,6 +184,8 @@ $('#confirmDelete').onclick = async () => { if (!pendingDelete) return; const id
 document.addEventListener('click', async event => {
   const b = event.target.closest('button'); if (!b) return;
   try {
+    if(b.hasAttribute('data-poll-add')||b.hasAttribute('data-poll-remove')){pollUI.manage(b);return;}
+    if(b.dataset.pollVote||b.dataset.pollRefresh){await pollUI.vote(b,{api,user,version:requestVersion,currentVersion:()=>requestVersion,currentUser:()=>user?.id});return;}
     if(b.hasAttribute('data-search-open')){searchState={query:'',club:b.dataset.searchOpen||''};view='search';await render();return;}
     if(b.dataset.searchMore){b.disabled=true;const params=new URLSearchParams({q:searchState.query,before:b.dataset.searchMore});if(searchState.club)params.set('club',searchState.club);const data=await api('/api/posts/search?'+params);if(!b.isConnected||data.viewerId!==(user?.id||null))return;$('#searchPosts').insertAdjacentHTML('beforeend',data.posts.map(feedCard).join(''));if(data.next){b.dataset.searchMore=data.next;b.disabled=false;}else b.remove();return;}
     if(b.dataset.editPost){selectedPost=b.dataset.editPost;if(view!=='post')if(view!=='post')if(view!=='post')postReturnView=view;view='editPost';await render();return;}
@@ -248,14 +250,13 @@ document.addEventListener('click', async event => {
 });
 document.addEventListener('submit', async event => {
   const form = event.target;
+  if(form.dataset.pollCreate){event.preventDefault();if(!form.reportValidity())return;const version=requestVersion,viewer=user?.id;try{await pollUI.create(form,api);if(version!==requestVersion||viewer!==user?.id||!form.isConnected)return;await render();notify('Опрос опубликован.');}catch{}return;}
   if(form.hasAttribute('data-post-search')){event.preventDefault();if(!form.reportValidity())return;const data=new FormData(form);searchState={query:String(data.get('query')).trim(),club:String(data.get('club'))};view='search';await render();return;}
   if(form.dataset.postEditForm){event.preventDefault();if(!form.reportValidity())return;const version=requestVersion,viewer=user?.id;try{await postManagement.save(form,api);if(version!==requestVersion||viewer!==user?.id||!form.isConnected)return;view='post';await render();notify('Изменения сохранены.');}catch{}return;}
   if(form.hasAttribute('data-club-settings')||form.hasAttribute('data-club-invite')){
     event.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('button');button.disabled=true;const data=Object.fromEntries(new FormData(form));
     try{
-      if(form.hasAttribute('data-post-search')){event.preventDefault();if(!form.reportValidity())return;const data=new FormData(form);searchState={query:String(data.get('query')).trim(),club:String(data.get('club'))};view='search';await render();return;}
-  if(form.dataset.postEditForm){event.preventDefault();if(!form.reportValidity())return;const version=requestVersion,viewer=user?.id;try{await postManagement.save(form,api);if(version!==requestVersion||viewer!==user?.id||!form.isConnected)return;view='post';await render();notify('Изменения сохранены.');}catch{}return;}
-  if(form.hasAttribute('data-club-settings')){await api(`/api/clubs/${selectedClub}/settings`,'PATCH',{...data,version:Number(data.version),tags:data.tags.split(',').map(t=>t.trim()).filter(Boolean)});await render();}
+      if(form.hasAttribute('data-club-settings')){await api(`/api/clubs/${selectedClub}/settings`,'PATCH',{...data,version:Number(data.version),tags:data.tags.split(',').map(t=>t.trim()).filter(Boolean)});await render();}
       else{const payload={durationHours:Number(data.durationHours),maxUses:Number(data.maxUses)};const result=await api(`/api/clubs/${selectedClub}/invites`,'POST',{...payload,clientId:sendingAttempt(form,JSON.stringify(payload))});if(!form.isConnected)return;const link=location.origin+'/#invite='+result.token;form.querySelector('[data-invite-share]').innerHTML=`<label class="field">Ссылка приглашения<input readonly value="${esc(link)}" aria-label="Ссылка приглашения"></label><p class="note">Скопируй и передай тем, кого ждёшь. Ссылка доступна в этой форме; список приглашений хранит только сведения об использовании.</p>`;button.textContent='Ссылка создана';}
     }catch(e){formError(form,e);}finally{button.disabled=false;}return;
   }
