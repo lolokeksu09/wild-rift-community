@@ -1,5 +1,12 @@
 'use strict';
 const $ = s => document.querySelector(s);
+function navBadge(id,label,detail='',count=0){
+ const button=$('#'+id);
+ button.replaceChildren(document.createTextNode(label));
+ if(count>0){const badge=document.createElement('span');badge.className='nav-count';badge.setAttribute('aria-hidden','true');badge.textContent=count>99?'99+':String(count);button.append(badge);}
+ button.setAttribute('aria-label',detail?label+' · '+detail:label);
+ button.title=detail||label;
+}
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const mediaUI=window.WRProfiles;
 const guideUI=window.WRGuides;let guideState={};
@@ -247,6 +254,7 @@ function createWelcomeCarousel(){
  return {destroy(){root.removeEventListener('click',click);track.removeEventListener('keydown',key);track.removeEventListener('scroll',scrolled);clearTimeout(settleTimer);if(frame!==null)window.cancelAnimationFrame(frame);}};
 }
 async function render(options={}) {
+  const menu=$('.section-menu');if(menu)menu.open=false;
   const nextRoute=routePath(),routeChanged=renderedRoute!==null&&renderedRoute!==nextRoute;
   document.body.classList.toggle('launch-mode',view==='welcome');
   syncRoute(options.history!==false);
@@ -258,6 +266,7 @@ async function render(options={}) {
   const version = ++requestVersion;
   const activeNav={discover:'discover',clubs:'home',members:'people',club:'home',player:'people',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',drafts:'account',saved:'account',notifications:'notifications',post:'discover',editPost:'discover',search:'discover',guides:'discover',invite:'home'}[view];
   for(const button of document.querySelectorAll('.primary-nav button, #reports, #notifications')){if(button.id===activeNav)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
+  for(const button of document.querySelectorAll('.section-menu [data-nav]')){if(button.dataset.nav===view)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
   $('#main').setAttribute('aria-busy','true');
   if(view==='notfound'){
     $('#main').innerHTML='<section class="panel"><h1>Страница не найдена</h1><p>Проверь ссылку или вернись на главную.</p><button class="btn quiet" data-nav="discover">На главную</button></section>';
@@ -277,7 +286,8 @@ async function render(options={}) {
     if(user){let after=null;do{const mine=await api('/api/clubs?scope=mine'+(after?'&after='+encodeURIComponent(after):''));if(version!==requestVersion)return;
       for(const c of mine.clubs){const i=clubs.findIndex(x=>x.id===c.id);if(i<0)clubs.push(c);else clubs[i]=c;}after=mine.next;
     }while(after);}
-    $('#account').textContent = user ? 'Профиль' : 'Вход';
+    $('#account').textContent = 'Профиль';
+    $('#account').setAttribute('aria-label',user?'Профиль':'Профиль · вход и регистрация');
     document.body.classList.toggle('guest',!user);
     $('#notifications').hidden=!user;$('#reports').hidden=!user;
     $('#guestJoin').hidden=!!user;
@@ -582,12 +592,12 @@ let badgeBusy=false;
 async function updateMessageBadge(){
   if(badgeBusy)return;
   const id=user?.id;
-  if(!id){$('#direct').textContent='Сообщения';return;}
+  if(!id){navBadge('direct','Чаты');return;}
   badgeBusy=true;const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),10000);
   try{const data=await api('/api/direct/summary','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;
-    if(data.viewerId!==id){$('#direct').textContent='Сообщения · обнови сеанс';return;}
-    $('#direct').textContent=`Сообщения${data.unread?' · '+data.unread:''}${data.requests?' · запросы: '+data.requests:''}`;
-  }catch{if(user?.id===id)$('#direct').textContent='Сообщения · нет связи';}
+    if(data.viewerId!==id){navBadge('direct','Чаты','обнови сеанс');return;}
+    navBadge('direct','Чаты',`непрочитанных: ${data.unread}, запросов: ${data.requests}`,data.unread+data.requests);
+  }catch{if(user?.id===id)navBadge('direct','Чаты','нет связи');}
   finally{clearTimeout(deadline);badgeBusy=false;}
 }
 
@@ -625,10 +635,10 @@ function appealCard(r,moderator){
 
 let lfgBadgeBusy=false;
 async function updateLfgBadge(){
- if(lfgBadgeBusy)return;const id=user?.id;if(!id){$('#lfg').textContent='Найти команду';return;}
+ if(lfgBadgeBusy)return;const id=user?.id;if(!id){navBadge('lfg','Найти');return;}
  lfgBadgeBusy=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
- try{const data=await api('/api/lfg/notifications/summary','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;$('#lfg').textContent=data.viewerId===id?`Найти команду${data.unread?' · '+data.unread:''}`:'Найти команду · обнови сеанс';}
- catch{if(user?.id===id)$('#lfg').textContent='Найти команду · нет связи';}
+ try{const data=await api('/api/lfg/notifications/summary','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;navBadge('lfg','Найти',data.viewerId===id?`уведомлений: ${data.unread}`:'обнови сеанс',data.viewerId===id?data.unread:0);}
+ catch{if(user?.id===id)navBadge('lfg','Найти','нет связи');}
  finally{clearTimeout(timer);lfgBadgeBusy=false;}
 }
 
@@ -655,9 +665,9 @@ async function pollBadges(){
   if(user?.id!==id||d.viewerId!==id)return;
   const signature=JSON.stringify([d.direct.unread,d.direct.requests,d.reports.unread,d.lfg.unread,d.discussions.unread,d.events.unread]);
   badgeInterval=signature===badgeSignature?Math.min(badgeInterval*2,30000):5000;badgeSignature=signature;
-  $('#direct').textContent='Сообщения'+(d.direct.unread?' · '+d.direct.unread:'')+(d.direct.requests?' · запросы: '+d.direct.requests:'');
+  navBadge('direct','Чаты',`непрочитанных: ${d.direct.unread}, запросов: ${d.direct.requests}`,d.direct.unread+d.direct.requests);
   $('#reports').textContent='Жалобы'+(d.reports.unread?' · решений: '+d.reports.unread:'');
-  $('#lfg').textContent='Найти команду'+(d.lfg.unread?' · '+d.lfg.unread:'');
+  navBadge('lfg','Найти',`уведомлений: ${d.lfg.unread}`,d.lfg.unread);
   $('#notifications').textContent='Ответы'+(d.discussions.unread?' · '+d.discussions.unread:'');
   $('#events').textContent='События'+(d.events.unread?' · '+d.events.unread:'');
  }catch{badgeInterval=Math.min(badgeInterval*2,60000);}
@@ -665,6 +675,9 @@ async function pollBadges(){
 }
 document.addEventListener('visibilitychange',()=>{clearTimeout(badgeTimer);if(!document.hidden){badgeInterval=5000;pollBadges();}});
 badgeTimer=setTimeout(pollBadges,5000);
+
+document.addEventListener('click',event=>{const menu=$('.section-menu');if(menu?.open&&!menu.contains(event.target))menu.open=false;});
+document.addEventListener('keydown',event=>{const menu=$('.section-menu');if(event.key==='Escape'&&menu?.open){menu.open=false;menu.querySelector('summary').focus();}});
 
 
 
