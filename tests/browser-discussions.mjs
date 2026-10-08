@@ -13,6 +13,8 @@ try{
    await member.api(`/api/clubs/${club.id}/join`,'POST',{});await owner.api(`/api/clubs/${club.id}/decision`,'POST',{userId:member.id,decision:'approve'});
    const post=await owner.api(`/api/clubs/${club.id}/posts`,'POST',{title:'После матча: что получилось?',body:'@disc_member Как сыграли сегодня? Обсудим решения и следующий матч.',clientId:'browser-post-attempt'});
    await member.page.goto(origin);await member.page.locator('.welcome-hero').waitFor();
+   await member.page.keyboard.press('Tab');assert.equal(await member.page.locator('.skip').evaluate(el=>document.activeElement===el),true);assert((await member.page.locator('.skip').boundingBox()).width>100);await member.page.keyboard.press('Tab');
+   const headerBoxes=await member.page.locator('#notifications,#reports').evaluateAll(els=>els.map(el=>({top:el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom})));assert.equal(headerBoxes[0].top,headerBoxes[1].top,'Header actions share one row');
    const reactions=member.page.locator(`[data-post-actions="${post.id}"]`);
    await reactions.locator('[data-kind=useful]').click();await reactions.locator('[data-kind=useful][aria-pressed=true]').waitFor();
    assert.equal((await member.api(`/api/posts/${post.id}`)).post.reactions[0].count,1);
@@ -32,13 +34,13 @@ try{
    await form.locator('[name=body]').fill('Согласен, запланируем следующую игру.');await form.locator('button.btn.primary').click();await member.page.locator('.comment-reply').filter({hasText:'Согласен'}).waitFor();
    assert.equal(await member.page.locator('#main img[src=x]').count(),0);
    async function layout(label){assert.equal(await member.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}: overflow ${label}`);assert.deepEqual(errors,[]);}
-   await layout('comments');await member.page.screenshot({path:`ui-screenshots/discussions-${width}.png`,fullPage:true});
+   await layout('comments');await member.page.evaluate(()=>scrollTo(0,0));await member.page.screenshot({path:`ui-screenshots/discussions-${width}.png`,fullPage:true});
    await member.page.locator('#notifications').click();await member.page.getByRole('heading',{name:'Ответы и упоминания'}).waitFor();assert.equal(await member.page.locator('[data-discussion-post]').count(),2);
    await member.page.locator('[data-discussion-read]').first().click();await member.page.getByText('Прочитано',{exact:true}).waitFor();assert.equal((await member.api('/api/discussions/notifications/summary')).unread,1);
-   await layout('notifications');await member.page.screenshot({path:`ui-screenshots/discussion-events-${width}.png`,fullPage:true});
+   await layout('notifications');await member.page.evaluate(()=>scrollTo(0,0));await member.page.screenshot({path:`ui-screenshots/discussion-events-${width}.png`,fullPage:true});
    await member.page.locator('[data-discussion-post]').first().click();await member.page.locator('.comment-reply').first().waitFor();
    await member.page.locator('#account').click();await member.page.locator('[data-nav=saved]').click();await member.page.getByRole('heading',{name:'Сохранённое',exact:true}).waitFor();assert.equal(await member.page.locator('[data-save][aria-pressed=true]').count(),1);
-   await layout('saved');await member.page.screenshot({path:`ui-screenshots/saved-${width}.png`,fullPage:true});
+   await layout('saved');await member.page.evaluate(()=>scrollTo(0,0));await member.page.screenshot({path:`ui-screenshots/saved-${width}.png`,fullPage:true});
    await owner.api(`/api/clubs/${club.id}/ban`,'POST',{userId:member.id});await member.page.locator('#account').click();await member.page.locator('[data-nav=saved]').click();await member.page.getByRole('heading',{name:'Сохрани то, к чему хочется вернуться'}).waitFor();
    await member.page.locator('#notifications').click();await member.page.getByRole('heading',{name:'Пока тихо'}).waitFor();assert.equal((await member.api('/api/discussions/notifications/summary')).unread,0);
    console.log(`PASS ${width}px: reactions, saved items, retry after lost response, replies, mentions, notification read, access revocation, escaped text and layout`);
