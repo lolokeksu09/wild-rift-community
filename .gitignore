@@ -26,6 +26,7 @@ data/
 *.wrbackup
 tests/ui-screenshots/
 
+# Generated installers and signing secrets
 *.apk
 *.aab
 *.jks

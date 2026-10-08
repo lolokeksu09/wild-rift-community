@@ -1,5 +1,6 @@
 # GitHub проекта
 
+> Документ ранней организации проекта. Текущий статус сайта — [ROADMAP.md](ROADMAP.md), база оформления — [этап 24](DESIGN_BASELINE_STAGE24.md).
 
 Репозиторий: https://github.com/lolokeksu09/wild-rift-community
 Владелец: `lolokeksu09`. Видимость: Private. Основная ветка: `main`.
