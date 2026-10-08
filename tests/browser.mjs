@@ -85,9 +85,24 @@ try {
         await page.locator('#profile [name=roles][value=jungle]').check();
         await page.locator('#profile [name=avatarFile]').setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:image});
         await page.locator('#profile [name=coverFile]').setInputFiles({name:'cover.png',mimeType:'image/png',buffer:image});
+        let recoveredAvatar=null;
+        if(width===360){
+          let dropped=false;
+          await page.route('**/api/media',async route=>{
+            if(!dropped){dropped=true;const response=await route.fetch();recoveredAvatar=(await response.json()).image.id;await route.abort();}
+            else await route.continue();
+          });
+          await page.locator('#profile button[type=submit]').click();
+          await page.waitForFunction(()=>document.querySelector('#profile .error')?.textContent.length>0);
+        }
         await page.locator('#profile button[type=submit]').click();
         await page.locator('.identity-avatar img').waitFor();
         await page.locator('.game-card').getByText('Мастер',{exact:true}).waitFor();
+        if(width===360){
+          const saved=await page.evaluate(async()=> (await (await fetch('/api/me')).json()).user.avatarId);
+          assert.equal(saved,recoveredAvatar,'Lost upload response must reuse the same stored image');
+          await page.unroute('**/api/media');
+        }
         await layout('saved player profile');
         const guest=await context.browser().newContext({viewport:{width,height:900}});
         const other=await guest.newPage();await other.goto(origin);await other.locator('.author-link').first().click();

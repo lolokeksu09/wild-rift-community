@@ -136,9 +136,9 @@ document.addEventListener('submit', async event => {
   try {
     if (form.id === 'register' || form.id === 'login') { const result = await api('/api/' + form.id, 'POST', data); user = result.user; csrf = result.csrf; view = 'clubs'; }
     if (form.id === 'profile') await mediaUI.save(form,api,csrf);
-    if(form.id==='clubCover'){const id=await mediaUI.upload(new FormData(form).get('coverFile'),csrf);if(!id)throw Error('Выбери изображение.');await api(`/api/clubs/${selectedClub}/cover`,'PATCH',{coverId:id});}
+    if(form.id==='clubCover'){const id=await mediaUI.upload(form.elements.coverFile.files[0],csrf);if(!id)throw Error('Выбери изображение.');await api(`/api/clubs/${selectedClub}/cover`,'PATCH',{coverId:id});}
     if (form.id === 'createClub') { const result = await api('/api/clubs', 'POST', data); selectedClub = result.id; view = 'club'; }
-    if (form.id === 'post'){const id=await mediaUI.upload(new FormData(form).get('imageFile'),csrf);await api(`/api/clubs/${selectedClub}/posts`, 'POST',{title:data.title,body:data.body,imageId:id});}
+    if (form.id === 'post'){const id=await mediaUI.upload(form.elements.imageFile.files[0],csrf);await api(`/api/clubs/${selectedClub}/posts`, 'POST',{title:data.title,body:data.body,imageId:id});}
     if (form.dataset.commentForm) { await api(`/api/posts/${form.dataset.commentForm}/comments`, 'POST', data); await comments(form.dataset.commentForm); return; }
     await render();
   } catch (e) { formError(form, e); }
