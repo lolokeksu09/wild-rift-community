@@ -36,7 +36,11 @@
     23,
     24
   ],
-  "deploymentStatus": "not-verified",
+  "deploymentStatus": "verified",
   "nextStage": 25,
-  "policy": "Сохранять этот архив неизменным; новые изменения выпускать следующим этапом. Данные аккаунтов и база не являются частью снимка кода."
+  "policy": "Сохранять этот архив неизменным; новые изменения выпускать следующим этапом. Данные аккаунтов и база не являются частью снимка кода.",
+  "deploymentVerifiedAt": "2026-10-08",
+  "deployedCommit": "eaf34d9d2b0ba57da764f3d32c05f6e7a67da2ba",
+  "serverArchiveSha256": "74a12aaddddad4163079730799b9f6fd4fb2e622037729474cadd4e555919ced",
+  "verificationRunUrl": "https://github.com/lolokeksu09/wild-rift-community/actions/runs/37811846138"
 }
