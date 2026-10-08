@@ -118,11 +118,13 @@ try {
       await member.page.locator('[data-lfg-refresh]').click();
       await send(member.page, longText);
       await layout(member.page, 'accepted group chat', '[data-message-id]');
+      owner.page.once('dialog', dialog => dialog.accept());
       await owner.page.locator('[data-lfg-action=close]').click();
       await owner.page.getByText('Чат группы · только чтение', { exact: true }).waitFor();
       await member.page.locator('[data-lfg-refresh]').click();
       await member.page.waitForFunction(() => document.querySelector('[data-chat-form] textarea')?.disabled);
       await layout(member.page, 'closed group / read only', '[data-message-id]');
+      member.page.once('dialog', dialog => dialog.accept());
       await member.page.locator('[data-lfg-action=leave]').click();
       await member.page.locator('[data-lfg-chat]').waitFor({ state: 'detached' });
       await member.page.locator('[data-lfg-back]').click();
