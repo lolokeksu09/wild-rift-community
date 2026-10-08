@@ -47,3 +47,42 @@
 .skip:focus{width:auto;height:auto;padding:12px;clip-path:none;overflow:visible}
 .post-actions button[aria-pressed=true]{border:1px solid #91beff;border-radius:22px;color:#aacfff;background:#172c44;padding:8px 12px}
 @media(max-width:600px){.topbar-actions{flex-wrap:nowrap;flex-shrink:0}.topbar>div:first-child{min-width:0;flex:1}.topbar .tiny-label{font-size:7px;letter-spacing:1.4px}}
+
+/* Clubs: one active workspace, scoped administration and public identity. */
+.accent-azure{--club-accent:#91beff;--club-wash:#183556}
+.accent-emerald{--club-accent:#78d8b0;--club-wash:#173c34}
+.accent-violet{--club-accent:#bea0ff;--club-wash:#32264d}
+.accent-coral{--club-accent:#ffb3a7;--club-wash:#492a33}
+.club-banner[class*=accent-]{border-top:3px solid var(--club-accent);background:linear-gradient(120deg,var(--club-wash),#111b2d)}
+.club-card[class*=accent-] .club-cover{border-bottom:2px solid var(--club-accent)}
+.club-tabs{display:flex;gap:6px;overflow-x:auto;margin:22px 0;padding:5px;border:1px solid #293a52;background:#101a2a;border-radius:14px;scrollbar-width:thin}
+.club-tabs button{flex:1;white-space:nowrap;min-height:44px;padding:10px 14px;border:0;border-radius:10px;color:#96aac5;background:transparent;font:inherit;font-size:13px;cursor:pointer}
+.club-tabs button[aria-current=page]{color:#dbeaff;background:#213d5e}
+.club-tags,.club-card-tags{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+.club-card-tags:empty,.club-tags:empty{display:none}
+.club-tags .pill,.club-card-tags .pill{font-size:11px;overflow-wrap:anywhere;max-width:100%}
+.club-rules{margin-top:14px;border-top:1px solid #293a52;padding-top:12px}
+.club-rules summary,.club-journal summary,.club-invites-history summary{cursor:pointer;min-height:44px;display:list-item;align-content:center;color:#b7cbea;font-size:13px;font-weight:600}
+.club-rules .content{font-size:13px;line-height:1.7;margin-top:10px;color:#bbcbe1}
+.club-member{padding:16px 0;border-top:1px solid #293a52;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:start;overflow-wrap:anywhere}
+.club-member:first-child{border-top:0}
+.club-member small{display:block;margin-top:6px;color:#96aac5;font-size:12px}
+.member-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:420px}
+.member-controls .btn{font-size:12px;min-height:44px}
+.member-controls .text-link,.club-post-tools .text-link{min-height:44px;padding:8px 4px}
+.club-post-tools{display:flex;gap:16px;flex-wrap:wrap;border-top:1px solid #293a52;margin-top:12px}
+.audit-entry,.club-invite{border-top:1px solid #293a52;padding:14px 0;overflow-wrap:anywhere}
+.audit-entry strong{font-size:13px}.audit-entry p,.club-invite p{font-size:12px;margin:5px 0;color:#b7c6da}.audit-entry small,.club-invite small{font-size:11px;color:#8298b5}
+.club-invites-history{margin-top:20px}
+[data-invite-share]{margin-top:12px}[data-invite-share]:empty{display:none}
+[data-invite-share] input{font-size:12px}
+.pinned-link{width:100%;display:grid;grid-template-columns:16px minmax(0,1fr) 16px;gap:10px;text-align:left;background:transparent;color:#d1e4ff;border:0;border-top:1px solid #293a52;padding:14px 0;font:inherit;font-size:14px;cursor:pointer;overflow-wrap:anywhere}
+.pinned-link small{display:block;font-size:11px;color:#90a6c5;margin-top:5px}
+.club-pin-list h2{margin-bottom:12px}
+.transfer-notice{border-color:#5c6f94}.transfer-notice p{font-size:13px;line-height:1.65;color:#bacce5}
+.invite-preview{border-top:3px solid var(--club-accent)}
+@media(max-width:600px){.club-tabs button{padding:10px 9px;font-size:12px}.club-member{grid-template-columns:1fr;gap:10px}.member-controls{justify-content:flex-start;max-width:none}.club-tabs{margin:18px 0}.club-overview .row{gap:10px}}
+
+.club-compose summary{min-height:44px;align-content:center;cursor:pointer;font-weight:600;color:#c8dfff;font-size:14px}
+.club-compose[open] summary{margin-bottom:18px}
+.club-compose form{margin:0}
