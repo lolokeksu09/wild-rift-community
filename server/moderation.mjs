@@ -16,14 +16,15 @@ export function moderationRoutes({db,user,path,method,body,url,send,now,moderato
   if(kind==='direct')message=get(`SELECT m.* FROM direct_messages m JOIN direct_conversations c ON c.id=m.conversation_id WHERE m.id=? AND (c.user_low=? OR c.user_high=?)`,id,user.id,user.id);
   else if(kind==='club')message=get(`SELECT m.* FROM messages m JOIN memberships s ON s.club_id=m.club_id WHERE m.id=? AND s.user_id=? AND s.status='member'`,id,user.id);
   else if(kind==='post'){
-   const p=postFor(id,user);message={sender_id:p.author_id,body:p.title+'\n'+p.body};
+   const p=postFor(id,user,false,true);message={sender_id:p.author_id,body:p.title+'\n'+p.body};
   }else if(kind==='comment'){
-   const c=get('SELECT * FROM comments WHERE id=?',id);if(c){postFor(c.post_id,user);message={sender_id:c.author_id,body:c.body};}
+   const c=get('SELECT * FROM comments WHERE id=?',id);if(c){postFor(c.post_id,user,false,true);message={sender_id:c.author_id,body:c.body};}
   }else{
    const p=get('SELECT * FROM users WHERE id=? AND profile_visible=1',id);
    if(p)message={sender_id:p.id,body:profileSnapshot(p)};
   }
-  if(!message||message.sender_id===user.id||get('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',user.id,message.sender_id,message.sender_id,user.id))fail(404,'Объект недоступен для жалобы.');
+  // Blocking either way must not prevent reporting content the reporter could access.
+  if(!message||message.sender_id===user.id)fail(404,'Объект недоступен для жалобы.');
   const result=transaction(db,()=>{
    const old=get('SELECT id FROM reports WHERE reporter_id=? AND kind=? AND target_id=?',user.id,kind,String(id));
    if(old)return {id:old.id,replayed:true};
