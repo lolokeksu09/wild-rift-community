@@ -12,7 +12,7 @@ try{browser=await chromium.launch();for(const width of [320,360,390,680,768,1440
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.equal(requests.some(url=>url.includes('/api/clubs')),false);
  assert.equal(await page.locator('[data-launch-card]').count(),4);
  if(width<=700){
-  assert.equal(await page.locator('.launch-card').evaluate(el=>getComputedStyle(el).display),'flex');
+  assert.equal(await page.locator('.launch-card').first().evaluate(el=>getComputedStyle(el).display),'flex');
   assert((await page.locator('.launch-art').first().boundingBox()).height<=121);
   assert((await page.locator('.launch-card').first().boundingBox()).height<380);
   assert((await page.locator('.launch-entry').boundingBox()).y<600);
