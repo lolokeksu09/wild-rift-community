@@ -1,3 +1,4 @@
+import {draftRoutes} from './drafts.mjs';
 import {homeRoutes} from './home.mjs';
 import {eventRoutes} from './events.mjs';
 import {clubRoutes,clubRole,audit as clubAudit} from './clubs.mjs';
@@ -18,6 +19,7 @@ import { token, digest, passwordHash, passwordMatches, fail, HttpError, text, pa
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
+  ['/composer.js', ['composer.js','text/javascript; charset=utf-8']],
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
   ['/events.js', ['events.js','text/javascript; charset=utf-8']],
   ['/clubs.js', ['clubs.js','text/javascript; charset=utf-8']],
@@ -198,8 +200,9 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           run('DELETE FROM media WHERE id=?',id);send(200,{ok:true});return;
         }
         if(method!=='GET')fail(405,'Метод не поддерживается.');
-        const post=sql('SELECT id FROM posts WHERE image_id=?',id),club=sql('SELECT id FROM clubs WHERE cover_id=?',id),profile=sql('SELECT id,profile_visible FROM users WHERE avatar_id=? OR cover_id=?',id,id);
-        if(post)postFor(post.id,user);
+        const draft=sql('SELECT club_id,user_id FROM post_drafts WHERE image_id=?',id),post=sql('SELECT id FROM posts WHERE image_id=?',id),club=sql('SELECT id FROM clubs WHERE cover_id=?',id),profile=sql('SELECT id,profile_visible FROM users WHERE avatar_id=? OR cover_id=?',id,id);
+        if(draft){if(draft.user_id!==user?.id)fail(404,'Изображение недоступно.');clubFor(draft.club_id,user,true);}
+        else if(post)postFor(post.id,user);
         else if(club){if(user && sql("SELECT 1 FROM memberships WHERE club_id=? AND user_id=? AND status='banned'",club.id,user.id))fail(403,'Изображение недоступно.');}
         else if(profile){if(profile.id!==user?.id && (!profile.profile_visible || (user && sql('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',user.id,profile.id,profile.id,user.id))))fail(404,'Изображение недоступно.');}
         else if(image.owner_id!==user?.id)fail(404,'Изображение недоступно.');
@@ -216,6 +219,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFor})) return;
       if (discussionRoutes({db,user,path,method,body,url,send,now,postFor})) return;
       if (playerRoutes({db,user,path,method,url,send})) return;
+      if (draftRoutes({db,user,path,method,body,send,now,clubFor})) return;
       if (homeRoutes({db,user,path,method,send,now})) return;
       if (eventRoutes({db,user,path,method,body,url,send,now})) return;
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;

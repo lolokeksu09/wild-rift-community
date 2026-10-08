@@ -2,6 +2,8 @@
 const $ = s => document.querySelector(s);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const mediaUI=window.WRProfiles;
+const composerUI=window.WRComposer;
+let composerController=null;
 const discussionUI=window.WRDiscussions;
 const clubUI=window.WRClubs;
 let clubTab='posts',clubPins=new Set(),postReturnView='notifications';
@@ -36,7 +38,7 @@ function clubCards() {
 }
 function profile() {
   const mine=clubs.filter(c=>c.membership==='member');
-  return `<div class="pagehead"><div><span class="tiny-label">ТВОЯ ИСТОРИЯ В СООБЩЕСТВЕ</span><h1>Аккаунт</h1></div></div>${mediaUI.showcase(user,true)}<div class="profile-columns">${mediaUI.editor(user,errorLine)}<section class="panel"><span class="tiny-label">ТВОИ ЛЮДИ</span><h2>Мои клубы</h2><button class="btn quiet wide" data-nav="saved">Сохранённые публикации</button>${mine.length?mine.map(c=>`<button class="profile-club" data-open="${esc(c.id)}"><span class="avatar">${initials(c.name)}</span><span>${esc(c.name)}</span><span aria-hidden="true">↗</span></button>`).join(''):'<p class="note">Ты ещё не вступил в клуб.</p><button class="btn quiet" data-nav="clubs">Найти клуб</button>'}</section></div><section class="panel"><h3>Сеансы</h3><p class="note">Выход со всех устройств отзывает все текущие сеансы аккаунта.</p><div class="row wrap"><button class="btn quiet" data-logout="/api/logout">Выйти здесь</button><button class="btn quiet" data-logout="/api/logout-all">Выйти везде</button></div></section>`;
+  return `<div class="pagehead"><div><span class="tiny-label">ТВОЯ ИСТОРИЯ В СООБЩЕСТВЕ</span><h1>Аккаунт</h1></div></div>${mediaUI.showcase(user,true)}<div class="profile-columns">${mediaUI.editor(user,errorLine)}<section class="panel"><span class="tiny-label">ТВОИ ЛЮДИ</span><h2>Мои клубы</h2><button class="btn quiet wide" data-nav="saved">Сохранённые публикации</button><button class="btn quiet wide" data-nav="drafts">Мои черновики</button>${mine.length?mine.map(c=>`<button class="profile-club" data-open="${esc(c.id)}"><span class="avatar">${initials(c.name)}</span><span>${esc(c.name)}</span><span aria-hidden="true">↗</span></button>`).join(''):'<p class="note">Ты ещё не вступил в клуб.</p><button class="btn quiet" data-nav="clubs">Найти клуб</button>'}</section></div><section class="panel"><h3>Сеансы</h3><p class="note">Выход со всех устройств отзывает все текущие сеансы аккаунта.</p><div class="row wrap"><button class="btn quiet" data-logout="/api/logout">Выйти здесь</button><button class="btn quiet" data-logout="/api/logout-all">Выйти везде</button></div></section>`;
 }
 function feedCard(p) {
   return `<div class="feed-entry"><button class="feed-club" data-open="${esc(p.club_id)}">${esc(p.club_name)} <span aria-hidden="true">↗</span></button>${postHTML(p).replace('data-comments=',`data-comment-club="${esc(p.club_id)}" data-comments=`)}</div>`;
@@ -57,17 +59,18 @@ function postHTML(p) {
   return `<article class="panel"><div class="post-author">${mediaUI.avatar(p.author_avatar_id,p.author_name)}<div><button type="button" class="author-link" data-player="${esc(p.author_id)}">${esc(p.author_name)}</button><small>${esc(new Date(p.created_at).toLocaleString('ru-RU'))}</small></div></div><h3 class="post-title">${esc(p.title)}</h3><p class="content">${esc(p.body)}</p>${mediaUI.image(p.image_id,'Изображение к публикации: '+p.title)}${discussionUI.actions(p,user,member)}${view==='club'?clubUI.postTools(p,clubs.find(c=>c.id===p.club_id),clubPins.has(p.id),user):''}<div id="comments-${p.id}"></div></article>`;
 }
 async function render() {
+  composerController?.destroy();composerController=null;
   mediaUI.cleanup();
   chatController?.destroy(); chatController = null;
   const version = ++requestVersion;
-  const activeNav={discover:'discover',clubs:'home',club:'home',player:'account',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',saved:'account',notifications:'notifications',post:'discover',invite:'home'}[view];
+  const activeNav={discover:'discover',clubs:'home',club:'home',player:'account',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',drafts:'account',saved:'account',notifications:'notifications',post:'discover',invite:'home'}[view];
   for(const button of document.querySelectorAll('.primary-nav button, #reports, #notifications')){if(button.id===activeNav)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
   $('#main').setAttribute('aria-busy','true');
   $('#main').innerHTML='<div class=loading-state role=status>Загружаем…</div>';
   try {
     const session = await api('/api/me');
     if (version !== requestVersion) return;
-    if(user?.id!==session.user?.id){lfgState={};eventState={};directDraftHandle='';}
+    if(user?.id!==session.user?.id){lfgState={};eventState={};directDraftHandle='';composerUI?.reset();}
     user = session.user; csrf = session.csrf;
     const result = await api('/api/clubs');
     if (version !== requestVersion) return;
@@ -79,6 +82,10 @@ async function render() {
       if(!user){$('#main').innerHTML=`<section class="panel"><h2>Тебя пригласили в клуб</h2><p>Войди или зарегистрируйся, чтобы проверить приглашение и правила клуба.</p><button class="text-link" data-invite-dismiss>К клубам</button></section>${auth()}`;return;}
       const data=await api('/api/club-invites/preview','POST',{token:inviteToken});if(version!==requestVersion)return;const c=data.club;
       $('#main').innerHTML=`<section class="panel invite-preview accent-${esc(c.accent)}"><span class="tiny-label">ИГРАЙТЕ ВМЕСТЕ</span><h1>${esc(c.name)}</h1><p>${esc(c.description)}</p>${clubUI.about(c)}<p class="note">${c.access==='request'?'После заявки нужно дождаться принятия. Ссылка не открывает содержимое клуба.':'Вступление сразу.'}</p><div class="row wrap"><button class="btn primary" data-invite-accept>${c.membership==='member'?'Открыть клуб':c.membership==='pending'?'Открыть заявку':c.access==='request'?'Подать заявку':'Вступить в клуб'}</button><button class="btn quiet" data-invite-dismiss>К клубам</button></div></section>`;return;
+    }
+    if(view==='drafts'){
+      if(!user){$('#main').innerHTML=auth();return;}const data=await api('/api/drafts');if(version!==requestVersion||data.viewerId!==user.id)return;
+      $('#main').innerHTML=`<div class="pagehead"><div><h1>Мои черновики</h1><p class="note">Видны только тебе. Для публикации нужно оставаться участником клуба.</p></div></div>${data.drafts.map(d=>`<article class="panel"><span class="tiny-label">${esc(d.club_name)}</span><h3>${esc(d.title)||'Без заголовка'}</h3><p class="note">${esc(new Date(d.updated_at).toLocaleString('ru-RU'))}</p><button class="btn quiet" data-home-compose="${esc(d.club_id)}">Продолжить публикацию →</button></article>`).join('')||'<div class="empty-state"><h3>Черновиков пока нет</h3><p>Начни публикацию в своём клубе — редактор сохранит её для продолжения.</p><button class="btn quiet" data-nav="clubs">К клубам</button></div>'}`;return;
     }
     if(view==='saved'){
       if(!user){$('#main').innerHTML=auth();return;}
@@ -130,6 +137,7 @@ async function render() {
       }
       if(version!==requestVersion)return;
       $('#main').innerHTML=`<div class="club-banner accent-${esc(club.accent)}"><button class="back-link" data-nav="clubs">← Все клубы</button>${club.cover_id?`<img class="club-banner-image" src="/api/media/${esc(club.cover_id)}" alt="Обложка клуба">`:''}<div class="club-banner-content"><span class="identity-avatar">${initials(club.name)}</span><div><span class="tiny-label">ТВОЁ МЕСТО В СООБЩЕСТВЕ</span><h1>${esc(club.name)}</h1><p>${esc(club.description)}</p></div></div></div><section class="panel club-overview"><div class="row wrap"><span class="pill">${club.access==='open'?'Открытый клуб':'По заявкам'}</span><small>Участников: ${club.members}</small>${club.myRole?`<span class="pill">${({owner:'Владелец',moderator:'Модератор',member:'Участник'})[club.myRole]}</span>`:''}${user&&!owner&&club.membership!=='banned'?`<button class="btn primary" data-membership="${member||club.membership==='pending'?'leave':'join'}">${member?'Выйти из клуба':club.membership==='pending'?'Отменить заявку':club.access==='open'?'Вступить':'Подать заявку'}</button>`:''}</div>${clubUI.about(club)}${!user?'<p class="note">Для участия войди в аккаунт.</p>':''}${!canRead?'<p class="note">Содержимое доступно только принятым участникам.</p>':''}</section>${clubUI.transfer(detail.transfer,user)}${clubUI.tabs(club,clubTab)}${content}`;
+      if(clubTab==='posts'&&member&&composerUI)composerController=composerUI.mount({form:$('#post'),user,club,api,csrf,getUserId:()=>user?.id,onPublished:()=>render()});
       if(member&&clubTab==='chat')chatController=window.createClubChat({root:$('#clubChat'),clubId:club.id,userId:user.id,api});return;
     }
     $('#main').innerHTML = clubCards();
@@ -213,7 +221,7 @@ document.addEventListener('click', async event => {
     if(b.dataset.reportsMore){b.disabled=true;const result=await api('/api/moderation/reports?before='+b.dataset.reportsMore);if(!b.isConnected)return;$('#reportQueue').insertAdjacentHTML('beforeend',result.reports.map(reportCard).join(''));if(result.next){b.dataset.reportsMore=result.next;b.disabled=false;}else b.remove();}
     if (b.id === 'retry') return render();
     if (b.dataset.open) { selectedClub = b.dataset.open;clubTab='posts'; view = 'club'; await render(); }
-    if (b.dataset.logout) { await api(b.dataset.logout, 'POST', {}); try { const prefix = `wr-chat-pending:${user.id}:`; for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key); } catch {} user = csrf = null;lfgState={};eventState={};directDraftHandle='';inviteToken=null;clubTab='posts'; view = 'account'; await render(); }
+    if (b.dataset.logout) { if(composerController)await composerController.flush();composerUI?.reset();await api(b.dataset.logout, 'POST', {}); try { const prefix = `wr-chat-pending:${user.id}:`; for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key); } catch {} user = csrf = null;lfgState={};eventState={};directDraftHandle='';inviteToken=null;clubTab='posts'; view = 'account'; await render(); }
     if (b.dataset.membership) { b.disabled = true; await api(`/api/clubs/${selectedClub}/${b.dataset.membership}`, 'POST', {}); await render(); }
     if (b.dataset.decision) { b.disabled = true; await api(`/api/clubs/${selectedClub}/decision`, 'POST', { userId: b.dataset.user, decision: b.dataset.decision }); await render(); }
     if (b.dataset.ban && confirm('Участник потеряет доступ к содержимому клуба и не сможет вступить снова. Продолжить?')) { await api(`/api/clubs/${selectedClub}/ban`, 'POST', { userId: b.dataset.ban }); await render(); }
@@ -233,6 +241,7 @@ document.addEventListener('submit', async event => {
   }
   if(form.dataset.appeal||form.dataset.appealDecision){event.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('button');button.disabled=true;try{const route=form.dataset.appeal?`/api/reports/${form.dataset.appeal}/appeal`:`/api/moderation/reports/${form.dataset.appealDecision}/appeal-decision`;await api(route,'POST',Object.fromEntries(new FormData(form)));await render();}catch(e){formError(form,e);}finally{button.disabled=false;}return;}
   if(form.dataset.reportDecision){event.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('button');button.disabled=true;try{await api(`/api/moderation/reports/${form.dataset.reportDecision}/decision`,'POST',Object.fromEntries(new FormData(form)));await render();}catch(e){formError(form,e);}finally{button.disabled=false;}return;}
+  if(form.dataset.composerMounted)return;
   if (!['login' , 'register', 'profile', 'createClub', 'post', 'clubCover'].includes(form.id) && !form.dataset.commentForm) return;
   event.preventDefault(); if (!form.reportValidity()) return;
   const button = form.querySelector('button'); button.disabled = true;

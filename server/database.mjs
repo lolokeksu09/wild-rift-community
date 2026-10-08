@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 14) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 15) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -217,6 +217,23 @@ export function openDatabase(path) {
     CREATE UNIQUE INDEX event_reminder_unique ON event_notifications(user_id,event_id) WHERE kind='reminder';
     CREATE INDEX event_notifications_user ON event_notifications(user_id,seen,id);
     PRAGMA user_version=14;
+    COMMIT;`);
+  if(version < 15) db.exec(`BEGIN IMMEDIATE;
+    CREATE TABLE post_drafts(club_id TEXT NOT NULL,user_id TEXT NOT NULL,title TEXT NOT NULL DEFAULT '',body TEXT NOT NULL DEFAULT '',
+      image_id TEXT REFERENCES media(id),version INTEGER NOT NULL CHECK(version>0),updated_at INTEGER NOT NULL,
+      PRIMARY KEY(club_id,user_id),FOREIGN KEY(club_id,user_id) REFERENCES memberships(club_id,user_id) ON DELETE CASCADE) STRICT;
+    CREATE UNIQUE INDEX draft_image ON post_drafts(image_id) WHERE image_id IS NOT NULL;
+    CREATE TRIGGER draft_image_deleted AFTER DELETE ON post_drafts WHEN OLD.image_id IS NOT NULL BEGIN
+      DELETE FROM media WHERE id=OLD.image_id AND NOT EXISTS(SELECT 1 FROM post_drafts WHERE image_id=OLD.image_id)
+      AND NOT EXISTS(SELECT 1 FROM posts WHERE image_id=OLD.image_id) AND NOT EXISTS(SELECT 1 FROM clubs WHERE cover_id=OLD.image_id)
+      AND NOT EXISTS(SELECT 1 FROM users WHERE avatar_id=OLD.image_id OR cover_id=OLD.image_id);
+    END;
+    CREATE TRIGGER draft_image_replaced AFTER UPDATE OF image_id ON post_drafts WHEN OLD.image_id IS NOT NULL AND OLD.image_id IS NOT NEW.image_id BEGIN
+      DELETE FROM media WHERE id=OLD.image_id AND NOT EXISTS(SELECT 1 FROM post_drafts WHERE image_id=OLD.image_id)
+      AND NOT EXISTS(SELECT 1 FROM posts WHERE image_id=OLD.image_id) AND NOT EXISTS(SELECT 1 FROM clubs WHERE cover_id=OLD.image_id)
+      AND NOT EXISTS(SELECT 1 FROM users WHERE avatar_id=OLD.image_id OR cover_id=OLD.image_id);
+    END;
+    PRAGMA user_version=15;
     COMMIT;`);
   return db;
 }
