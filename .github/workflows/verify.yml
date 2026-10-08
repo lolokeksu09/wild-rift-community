@@ -47,7 +47,7 @@ jobs:
             else
               node browser-events.mjs
             fi
-          elif printf '%s\n' "$changed" | grep -q '^server/post-management.mjs$'; then
+          elif printf '%s\n' "$changed" | grep -qE '^(server/post-management.mjs|server/public/post-management.js|server/tests/post-management.test.mjs)$'; then
             cd tests
             node browser-post-management.mjs
             node browser-drafts.mjs
