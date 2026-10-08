@@ -18,27 +18,60 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 3
+      - name: Select verification scope
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        shell: bash
+        run: |
+          runtime=true
+          if [[ "$EVENT_NAME" != workflow_dispatch && "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] &&
+             git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            changes=$(mktemp)
+            trap 'rm -f "$changes"' EXIT
+            if git diff --name-only -z "$BASE_SHA" HEAD > "$changes" && [[ -s "$changes" ]]; then
+              runtime=false
+              while IFS= read -r -d '' path; do
+                case "$path" in
+                  docs/*|README.md|AGENTS.md|PROJECT_STATE.md) ;;
+                  *) runtime=true; break ;;
+                esac
+              done < "$changes"
+            fi
+          fi
+          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24.19.0'
           cache: npm
           cache-dependency-path: tests/package-lock.json
-      - run: npm ci
-      - run: npm ci --prefix tests
+      - name: Check documentation
+        if: steps.scope.outputs.runtime == 'false'
+        run: npm run check:docs
+      - if: steps.scope.outputs.runtime == 'true'
+        run: npm ci
+      - if: steps.scope.outputs.runtime == 'true'
+        run: npm ci --prefix tests
       - name: Check operator scripts
+        if: steps.scope.outputs.runtime == 'true'
         run: bash -n deploy/install.sh deploy/offsite-backup.sh deploy/smoke-image.sh
-      - run: npm run verify
+      - if: steps.scope.outputs.runtime == 'true'
+        run: npm run verify
       - name: Verify packaged image before publication
+        if: steps.scope.outputs.runtime == 'true'
         run: |
           docker build -t community-check:${{ github.sha }} .
           bash deploy/smoke-image.sh community-check:${{ github.sha }}
       - name: Install Chromium for layout checks
+        if: steps.scope.outputs.runtime == 'true'
         run: npx --prefix tests playwright install --with-deps chromium
       - name: Check browser layouts
+        if: steps.scope.outputs.runtime == 'true'
         run: |
           npm run test:browser --prefix tests
       - name: Save interface screenshots
-        if: always()
+        if: always() && steps.scope.outputs.runtime == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: community-ui
