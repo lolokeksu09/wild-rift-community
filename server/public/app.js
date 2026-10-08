@@ -46,6 +46,7 @@ function applyRoute(route){
  if(view==='player'){selectedPlayer=route.id;playerReturnView='members';}
 }
 function routePath(){
+ if(view==='notfound')return location.pathname;
  if(view==='club')return '/clubs/'+encodeURIComponent(selectedClub);
  if(view==='post'||view==='editPost')return '/posts/'+selectedPost;
  if(view==='player')return '/players/'+encodeURIComponent(selectedPlayer);
@@ -61,6 +62,20 @@ async function beforeRouteChange(){
 }
 function syncRoute(push=true){
  if(view==='invite')return;const path=routePath();if(path!==location.pathname+location.search){if(push)history.pushState(null,'',path);else history.replaceState(null,'',path);}
+}
+let metadataRequest=0;
+async function updatePageMetadata(){
+ const version=++metadataRequest,path=location.pathname;
+ try{
+  const meta=await api('/api/page-metadata?path='+encodeURIComponent(path));
+  if(version!==metadataRequest||path!==location.pathname)return;
+  document.title=meta.title+' — Wild Rift Community';
+  for(const [selector,value,attribute] of [
+   ['meta[name="description"]',meta.description,'content'],['meta[name="robots"]',meta.index?'index,follow':'noindex,nofollow','content'],
+   ['meta[property="og:title"]',document.title,'content'],['meta[property="og:description"]',meta.description,'content'],
+   ['meta[property="og:url"]',meta.url,'content'],['meta[property="og:type"]',meta.type||'website','content'],['link[rel="canonical"]',meta.url,'href']
+  ])document.querySelector(selector)?.setAttribute(attribute,value);
+ }catch{}
 }
 function memberCard(m){
  const labels={baron:'Барон',jungle:'Лес',mid:'Центр',dragon:'Дракон',support:'Поддержка'};
@@ -162,6 +177,7 @@ function postHTML(p) {
 async function render(options={}) {
   const nextRoute=routePath(),routeChanged=renderedRoute!==null&&renderedRoute!==nextRoute;
   syncRoute(options.history!==false);
+  updatePageMetadata();
   composerController?.destroy();composerController=null;
   mediaUI.cleanup();
   chatController?.destroy(); chatController = null;
@@ -169,6 +185,10 @@ async function render(options={}) {
   const activeNav={discover:'discover',clubs:'home',members:'people',club:'home',player:'people',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',drafts:'account',saved:'account',notifications:'notifications',post:'discover',editPost:'discover',search:'discover',guides:'discover',invite:'home'}[view];
   for(const button of document.querySelectorAll('.primary-nav button, #reports, #notifications')){if(button.id===activeNav)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
   $('#main').setAttribute('aria-busy','true');
+  if(view==='notfound'){
+    $('#main').innerHTML='<section class="panel"><h1>Страница не найдена</h1><p>Проверь ссылку или вернись на главную.</p><button class="btn quiet" data-nav="discover">На главную</button></section>';
+    $('#main').setAttribute('aria-busy','false');renderedRoute=nextRoute;return;
+  }
   $('#main').innerHTML='<div class=loading-state role=status>Загружаем сообщество…<div class=skeleton-page aria-hidden=true><div></div><div></div><div></div></div></div>';
   try {
     const session = await api('/api/me');
@@ -445,8 +465,8 @@ document.addEventListener('submit', async event => {
   } catch (e) { formError(form, e); }
   finally { button.disabled = false; }
 });
-if(!inviteToken){applyRoute(parseRoute(location.pathname));const returnPath=new URLSearchParams(location.search).get('return');const target=returnPath&&parseRoute(returnPath);if(view==='account'&&target?.view==='club')authReturn=target;}
-window.addEventListener('popstate',async()=>{const version=requestVersion;if(!await beforeRouteChange()){syncRoute(false);return;}if(version!==requestVersion)return;applyRoute(parseRoute(location.pathname)||{view:'discover'});render({history:false});});
+if(!inviteToken){applyRoute(parseRoute(location.pathname)||{view:'notfound'});const returnPath=new URLSearchParams(location.search).get('return');const target=returnPath&&parseRoute(returnPath);if(view==='account'&&target?.view==='club')authReturn=target;}
+window.addEventListener('popstate',async()=>{const version=requestVersion;if(!await beforeRouteChange()){syncRoute(false);return;}if(version!==requestVersion)return;applyRoute(parseRoute(location.pathname)||{view:'notfound'});render({history:false});});
 document.addEventListener('click',async event=>{const a=event.target.closest('a[data-route]');if(!a||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;const target=parseRoute(new URL(a.href).pathname);if(!target)return;event.preventDefault();const version=requestVersion;if(!await beforeRouteChange()||version!==requestVersion)return;applyRoute(target);render();});
 render({history:false});
 
