@@ -36,7 +36,9 @@ trap rollback ERR
 if test -d data; then
   cp -a data "$backup/data"
   if test -f data/community.sqlite; then
-    docker run --rm --network none -v "$root/data:/data:ro" "$image" node --input-type=module -e "import {DatabaseSync} from 'node:sqlite'; const d=new DatabaseSync('/data/community.sqlite',{readOnly:true}); if(d.prepare('PRAGMA user_version').get().user_version!==10) throw Error('Explicit migration required'); d.close();" </dev/null
+    # Read a disposable copy: a cold WAL database may need writable SHM sidecars.
+    # The backup and live database remain mounted read-only or unmounted.
+    docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$backup/data:/backup:ro" "$image" node --input-type=module -e "import {cpSync} from 'node:fs'; import {DatabaseSync} from 'node:sqlite'; cpSync('/backup','/tmp/check',{recursive:true}); const d=new DatabaseSync('/tmp/check/community.sqlite',{readOnly:true}); if(d.prepare('PRAGMA user_version').get().user_version!==10) throw Error('Explicit migration required'); d.close();" </dev/null
   fi
 else
   install -d -m 700 -o 1000 -g 1000 data
