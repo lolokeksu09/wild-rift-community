@@ -90,6 +90,6 @@ test('v1 migration preserves existing records and v10 opens repeatedly',()=>{
   db.prepare('INSERT INTO clubs VALUES(?,?,?,?,?,?)').run('club1','user1','Старый клуб','Описание','open',1);
   db.prepare('INSERT INTO memberships VALUES(?,?,?)').run('club1','user1','member');
   db.prepare('INSERT INTO posts(club_id,author_id,title,body,created_at) VALUES(?,?,?,?,?)').run('club1','user1','Заголовок','Старый текст',1);db.close();
-  for(let i=0;i<2;i++){db=openDatabase(file);assert.equal(db.prepare('PRAGMA user_version').get().user_version,10);assert.equal(db.prepare('SELECT body FROM posts').get().body,'Старый текст');assert.equal(db.prepare('SELECT count(*) AS n FROM users').get().n,1);assert.equal(db.prepare('SELECT count(*) AS n FROM messages').get().n,0);db.close();db=null;}
+  for(let i=0;i<2;i++){db=openDatabase(file);assert.equal(db.prepare('PRAGMA user_version').get().user_version,11);assert.equal(db.prepare('SELECT body FROM posts').get().body,'Старый текст');assert.equal(db.prepare('SELECT count(*) AS n FROM users').get().n,1);assert.equal(db.prepare('SELECT count(*) AS n FROM messages').get().n,0);db.close();db=null;}
  }finally{if(db?.isOpen)db.close();rmSync(dir,{recursive:true,force:true});}
 });
