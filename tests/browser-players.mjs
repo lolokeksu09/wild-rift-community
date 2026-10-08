@@ -18,13 +18,14 @@ try{
   await page.locator('#lfg').click();await page.locator('[data-lfg-tab=players]').click();await page.locator('[data-player-filter]').waitFor();
   await page.locator('[data-player-filter] [name=q]').fill(String(width));await page.locator('[data-player-filter] button[type=submit]').click();
   await page.waitForFunction(()=>document.querySelector('[data-players-list]')?.getAttribute('aria-busy')==='false');assert.equal(await page.locator('[data-player-card]').count(),2);
+  await page.locator('.advanced-filters summary').click();
   for(const [key,value] of Object.entries({rank:'МАСТЕР',region:'ЕВРОПА',language:'РУССКИЙ'}))await page.locator(`[data-player-filter] [name=${key}]`).fill(value);
   await page.locator('[data-player-filter] [name=role]').selectOption('mid');await page.locator('[data-player-filter] [name=microphone]').selectOption('yes');await page.locator('[data-player-filter] button[type=submit]').click();
   await page.waitForFunction(()=>document.querySelector('[data-players-list]')?.getAttribute('aria-busy')==='false');assert.equal(await page.locator('[data-player-card]').count(),1);assert.equal(await page.locator('#main img[src=x]').count(),0);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}: player search overflow`);
   await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:`ui-screenshots/players-${width}.png`,fullPage:true});
   await page.locator('[data-player-card] [data-player]').click();await page.getByRole('heading',{name:'Профиль игрока'}).waitFor();assert.equal(await page.locator('.game-card').getByText('Hidden#ABC',{exact:true}).count(),0);
-  await page.locator('.back-link[data-nav=lfg]').click();await page.locator('[data-player-card]').waitFor();assert.equal(await page.locator('[data-player-filter] [name=rank]').inputValue(),'МАСТЕР');
+  await page.locator('.back-link[data-nav=lfg]').click();await page.locator('[data-player-card]').waitFor();assert.equal(await page.locator('[data-player-filter] [name=rank]').inputValue(),'МАСТЕР');assert((await page.locator('[data-applied-filters]').textContent()).includes('МАСТЕР'));
   await page.locator('[data-player-card] [data-contact]').click();await page.locator('[data-request]').waitFor();assert.equal(await page.locator('[data-request] [name=handle]').inputValue(),'mate'+width);
   const before=await page.evaluate(async()=>await (await fetch('/api/direct')).json());assert.equal(before.conversations.length,0,'Selecting player must not send a message');
   await page.locator('[data-request] [name=body]').fill('Давай сыграем вместе');await page.locator('[data-request] button').click();await page.locator(`[data-block="${candidate.id}"]`).waitFor();
