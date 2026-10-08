@@ -27,3 +27,11 @@ jobs:
         run: npx --prefix tests playwright install --with-deps chromium
       - name: Check browser layouts
         run: npm run test:browser --prefix tests
+      - name: Save interface screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: community-ui
+          path: tests/ui-screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
