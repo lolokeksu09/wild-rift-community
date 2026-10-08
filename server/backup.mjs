@@ -3,7 +3,6 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream, mkdtempSync, rmSync, linkSync } from 'node:fs';
 import { open, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
 import { pipeline } from 'node:stream/promises';
 
 const magic = Buffer.from('WRBACK01');
@@ -25,7 +24,8 @@ export async function createBackup(sourcePath, destination, key) {
   if (!Buffer.isBuffer(key) || key.length !== 32) throw Error('Invalid backup key.');
   // Open read-only: never create a missing source or migrate a live database.
   const source = new DatabaseSync(resolve(sourcePath), { readOnly: true, timeout: 3000 });
-  const temporary = mkdtempSync(join(tmpdir(), 'wr-encrypted-backup-'));
+  // Stage beside the destination on disk: a container /tmp is tmpfs and counts against its memory limit.
+  const temporary = mkdtempSync(join(dirname(resolve(destination)), '.wr-encrypted-backup-'));
   let ownsOutput = false;
   try {
     const snapshot = join(temporary, 'snapshot.sqlite');
