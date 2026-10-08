@@ -5,6 +5,9 @@ import {postManagementRoutes} from './post-management.mjs';
 import {draftRoutes} from './drafts.mjs';
 import {homeRoutes} from './home.mjs';
 import {previewRoutes} from './preview.mjs';
+import {communityMemberRoutes} from './community-members.mjs';
+import {clubSummary} from './club-summary.mjs';
+import {isDemo} from './demo.mjs';
 import {eventRoutes} from './events.mjs';
 import {clubRoutes,clubRole,audit as clubAudit} from './clubs.mjs';
 import { discussionRoutes, postExtras, attemptId, mentions, unblocked } from './discussions.mjs';
@@ -115,7 +118,8 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       const url = new URL(req.url, expectedOrigin);
       const path = url.pathname, method = req.method;
       if (!path.startsWith('/api/')) {
-        const asset = assets.get(path);
+        const pageRoute=/^\/(?:clubs(?:\/[\w-]{1,80})?|posts\/\d{1,16}|players(?:\/[\w-]{1,80})?|guides|teams|events|account|messages|notifications|reports|saved|drafts|search|rules)\/?$/.test(path);
+        const asset = assets.get(path)||(pageRoute?assets.get('/'):null);
         if (method !== 'GET' || !asset) fail(404, 'Страница не найдена.');
         res.writeHead(200, { 'Content-Type': asset[1] });
         res.end(readFileSync(new URL(`./public/${asset[0]}`, import.meta.url))); return;
@@ -209,7 +213,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           } else {
             account = sql('SELECT * FROM users WHERE handle=?', handle);
             const valid = await passwordMatches(password, account?.password || dummyPassword);
-            if (!valid || !account || sql('SELECT password FROM users WHERE id=?', account.id)?.password !== account.password) fail(401, 'Неверный логин или пароль.');
+            if (!valid || !account || isDemo(account) || sql('SELECT password FROM users WHERE id=?', account.id)?.password !== account.password) fail(401, 'Неверный логин или пароль.');
           }
           send(path === '/api/register' ? 201 : 200, newSession(account, user, res));
         } finally { activeAuth--; }
@@ -272,6 +276,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFor})) return;
       if (discussionRoutes({db,user,path,method,body,url,send,now,postFor})) return;
       if (playerRoutes({db,user,path,method,url,send})) return;
+      if (communityMemberRoutes({db,user,path,method,url,send})) return;
       if (draftRoutes({db,user,path,method,body,send,now,clubFor})) return;
       if (homeRoutes({db,user,path,method,send,now})) return;
       if (previewRoutes({db,user,path,method,send,now})) return;
@@ -293,7 +298,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (method === 'GET' && path === '/api/clubs') {
         send(200, { clubs: rows(`SELECT c.*, m.status AS membership,
           (SELECT count(*) FROM memberships WHERE club_id=c.id AND status='member') AS members
-          FROM clubs c LEFT JOIN memberships m ON m.club_id=c.id AND m.user_id=? ORDER BY c.created_at DESC,c.id DESC LIMIT 100`, user?.id || '').map(c=>({...c,tags:JSON.parse(c.tags),myRole:clubRole(db,c,user)})) }); return;
+          FROM clubs c LEFT JOIN memberships m ON m.club_id=c.id AND m.user_id=? ORDER BY c.created_at DESC,c.id DESC LIMIT 100`, user?.id || '').map(c=>({...c,...clubSummary(db,c,user),tags:JSON.parse(c.tags),myRole:clubRole(db,c,user)})) }); return;
       }
       if (method === 'POST' && path === '/api/clubs') {
         const name = text(body.name, 'Название', 2, 80), description = text(body.description, 'Описание', 0, 1000);

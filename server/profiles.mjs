@@ -1,4 +1,5 @@
 import { fail, text } from './security.mjs';
+import {isDemo} from './demo.mjs';
 export const roles = ['baron','jungle','mid','dragon','support'];
 export function profileFields(body, old = {}) {
   const result = {...old};
@@ -23,10 +24,10 @@ export function profileFields(body, old = {}) {
   return result;
 }
 export function gameProfile(user, own=false) {
-  const p=JSON.parse(user.game_profile||'{}');
+  const {demoBot,...p}=JSON.parse(user.game_profile||'{}');
   return {...p,riotId: own || p.riotVisible ? p.riotId||'' : '',rankVerified:false};
 }
 export function profileView(user, own=false) {
-  return {id:user.id,handle:user.handle,name:user.name,bio:user.bio,gameProfile:gameProfile(user,own),profileVisible:user.profile_visible===1,
+  return {id:user.id,handle:user.handle,name:user.name,bio:user.bio,isBot:isDemo(user),gameProfile:gameProfile(user,own),profileVisible:user.profile_visible===1,
     avatarId:user.avatar_id||null,coverId:user.cover_id||null};
 }

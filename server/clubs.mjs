@@ -2,6 +2,7 @@ import {imageAttached} from './media.mjs';
 import {randomUUID,createHmac} from 'node:crypto';
 import {fail,text,digest} from './security.mjs';
 import {transaction} from './database.mjs';
+import {clubSummary} from './club-summary.mjs';
 import {unblocked,postExtras,attemptId} from './discussions.mjs';
 
 export function clubRole(db,club,user){
@@ -20,7 +21,7 @@ function number(value,min,max,label){if(!Number.isSafeInteger(value)||value<min|
 function before(url){const v=url.searchParams.get('before');if(v!==null&&(!/^\d+$/.test(v)||!Number.isSafeInteger(Number(v))))fail(422,'Некорректный курсор.');return v===null?Number.MAX_SAFE_INTEGER:Number(v);}
 function inviteToken(user,id,clientId){return createHmac('sha256',user.csrf).update('club-invite\0'+id+'\0'+clientId).digest('hex');}
 function publicClub(db,club,user){
- return {...club,tags:JSON.parse(club.tags),membership:user?db.prepare('SELECT status FROM memberships WHERE club_id=? AND user_id=?').get(club.id,user.id)?.status||null:null,myRole:clubRole(db,club,user),members:db.prepare("SELECT count(*) n FROM memberships WHERE club_id=? AND status='member'").get(club.id).n};
+ return {...club,...clubSummary(db,{...club,membership:user?db.prepare('SELECT status FROM memberships WHERE club_id=? AND user_id=?').get(club.id,user.id)?.status:null},user),tags:JSON.parse(club.tags),membership:user?db.prepare('SELECT status FROM memberships WHERE club_id=? AND user_id=?').get(club.id,user.id)?.status||null:null,myRole:clubRole(db,club,user),members:db.prepare("SELECT count(*) n FROM memberships WHERE club_id=? AND status='member'").get(club.id).n};
 }
 export function clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFor}){
  const removePost=path.match(/^\/api\/clubs\/([\w-]+)\/posts\/(\d+)$/);
@@ -74,7 +75,7 @@ export function clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFo
   if(method!=='GET')fail(405,'Метод не поддерживается.');clubFor(id,user,true);
   const staff=['owner','moderator'].includes(clubRole(db,club,user)),after=url.searchParams.get('after')||'';
   if(after&&!/^[a-z0-9_]{3,24}$/.test(after))fail(422,'Некорректный курсор.');
-  const records=db.prepare(`SELECT u.id,u.handle,u.name,m.status,CASE WHEN u.id=:owner THEN 'owner' WHEN cm.user_id IS NOT NULL AND m.status='member' THEN 'moderator' ELSE 'member' END AS role FROM memberships m JOIN users u ON u.id=m.user_id LEFT JOIN club_moderators cm ON cm.club_id=m.club_id AND cm.user_id=m.user_id WHERE m.club_id=:club AND u.handle>:after ${staff?'':"AND m.status='member'"} ORDER BY u.handle LIMIT 101`).all({owner:club.owner_id,club:id,after});
+  const records=db.prepare(`SELECT u.id,u.handle,u.name,json_extract(u.game_profile,'$.demoBot')='community-v1' AS isBot,m.status,CASE WHEN u.id=:owner THEN 'owner' WHEN cm.user_id IS NOT NULL AND m.status='member' THEN 'moderator' ELSE 'member' END AS role FROM memberships m JOIN users u ON u.id=m.user_id LEFT JOIN club_moderators cm ON cm.club_id=m.club_id AND cm.user_id=m.user_id WHERE m.club_id=:club AND u.handle>:after ${staff?'':"AND m.status='member'"} ORDER BY u.handle LIMIT 101`).all({owner:club.owner_id,club:id,after});
   send(200,{members:records.slice(0,100),next:records.length>100?records[99].handle:null});return true;
  }
  if(action==='transfer'&&['accept','cancel'].includes(extra))return transferRoute({db,user,club,extra,method,body,send,now});
