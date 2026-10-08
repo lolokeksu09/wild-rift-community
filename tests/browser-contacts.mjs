@@ -17,3 +17,4 @@ try{for(const width of [360,390,768,1440]){
  assert.equal(await p.locator('[name=body]').inputValue(),'Текст сохранится после отказа');assert.equal(await p.locator('[name=handle]').inputValue(),'peer'+width+'_2');assert.match(await p.locator('[data-contact-budget]').textContent(),/осталось 2 из 3/);assert.equal(await p.locator('[data-request] button').isEnabled(),true);
  assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);await c.close();console.log(`PASS ${width}px: live contact budget and preserved request after 429`);
 }}finally{await browser.close();await app.close();rmSync(dir,{recursive:true,force:true});}
+

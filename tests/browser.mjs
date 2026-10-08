@@ -31,7 +31,7 @@ try {
       assert.deepEqual(errors, [], `${width}: browser errors`);
       console.log(`PASS ${width}px: ${label}, no horizontal overflow or overlapping navigation`);
     }
-    await page.goto(origin);
+    await page.goto(origin+'/feed');
     await layout('guest home');
     mkdirSync('ui-screenshots',{recursive:true});
     await page.screenshot({path:`ui-screenshots/home-${width}.png`,fullPage:true});
@@ -111,7 +111,7 @@ try {
         }
         await layout('saved player profile');
         const guest=await context.browser().newContext({viewport:{width,height:900}});
-        const other=await guest.newPage();await other.goto(origin);await other.locator('.author-link').first().click();
+        const other=await guest.newPage();await other.goto(origin+'/feed');await other.locator('.author-link').first().click();
         await other.getByRole('heading',{name:'Профиль игрока'}).waitFor();
         assert.equal(await other.locator('.game-card').getByText('Player#ABC',{exact:true}).count(),0);
         await other.screenshot({path:`ui-screenshots/public-profile-${width}.png`,fullPage:true});await guest.close();
@@ -124,3 +124,4 @@ try {
   if (browser) await browser.close();
   await app.close();
 }
+
