@@ -9,6 +9,11 @@ test('tournament bracket advances every team count, enforces ownership and freez
    const t=req('/api/tournaments',payload);assert.equal(t.status,200);assert.equal(req('/api/tournaments',payload).id,t.id);assert.equal(req('/api/tournaments',{...payload,title:'Other'}).status,409);
    const path='/api/tournaments/'+t.id;assert.equal(req(path+'/start').status,409);
    for(let i=1;i<=count;i++){assert.equal(req(path+'/join',{name:'Team '+i},'u'+i).status,200);assert.equal(req(path+'/join',{name:'Team '+i},'u'+i).status,200);}
+   assert.equal(req(path+'/start').status,409);
+   for(let i=1;i<=count;i++)for(let j=0;j<4;j++){
+    const uid='player'+i+'_'+j;db.prepare('INSERT INTO users(id,handle,name,password,created_at,profile_visible) VALUES(?,?,?,?,0,1)').run(uid,uid,'Player','unused');
+    assert.equal(req(path+'/invite',{handle:uid},'u'+i).status,200);assert.equal(req(path+'/accept',{},uid).status,200);
+   }
    assert.equal(req(path+'/start',{},'u1').status,403);assert.equal(req(path+'/start').status,200);assert.equal(req(path+'/start').status,200);
    assert.equal(req(path+'/leave',{},'u1').status,409);assert.equal(req(path+'/join',{name:'Late'},'u17').status,409);
    let results=0;

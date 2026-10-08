@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 23) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 24) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -358,6 +358,20 @@ export function openDatabase(path) {
       PRIMARY KEY(tournament_id,round,slot)
     ) STRICT;
     PRAGMA user_version=23;
+  `));
+  if(version < 24) transaction(db,()=>db.exec(`
+    ALTER TABLE tournament_teams ADD COLUMN roster_required INTEGER NOT NULL DEFAULT 0 CHECK(roster_required IN (0,1));
+    CREATE TABLE tournament_roster (
+      tournament_id INTEGER NOT NULL REFERENCES tournaments(id),
+      team_id INTEGER NOT NULL REFERENCES tournament_teams(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      status TEXT NOT NULL CHECK(status IN ('pending','accepted','declined')),
+      PRIMARY KEY(tournament_id,user_id)
+    ) STRICT;
+    CREATE INDEX tournament_roster_team ON tournament_roster(team_id,status);
+    INSERT INTO tournament_roster(tournament_id,team_id,user_id,status)
+      SELECT tournament_id,id,captain_id,'accepted' FROM tournament_teams;
+    PRAGMA user_version=24;
   `));
   return db;
 }
