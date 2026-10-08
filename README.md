@@ -10,7 +10,7 @@
 1. Прочитать [ТЗ](docs/SPEC.md) и [план](docs/ROADMAP.md).
 2. Открыть `docs/prototype.html` в браузере: это кликабельный эскиз, а не работающее приложение.
 3. Зафиксировать решения из [DECISIONS.md](docs/DECISIONS.md).
-4. Перенести задачи из [BACKLOG.md](docs/BACKLOG.md) в GitHub Issues.
+4. Выбрать следующую задачу в [GitHub Issues](https://github.com/lolokeksu09/wild-rift-community/issues).
 5. Реализовать один сквозной сценарий по плану, затем провести закрытый пилот.
 
 ## Документация
