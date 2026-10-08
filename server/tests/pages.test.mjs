@@ -59,3 +59,14 @@ test('replacement patterns in stored text stay literal in server HTML',async t=>
   if(text)assert(html.includes(`<meta name="description" content="${escapeHTML(text)}">`),path);
  }
 });
+test('guest search and sitemap are rate limited per reader',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'wr-pages-rate-')),app=await createApp({databasePath:join(dir,'db.sqlite')});
+ const origin=await app.listen();t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
+ const statuses=async(path,n,headers={})=>{const out=[];for(let i=0;i<n;i++)out.push((await fetch(origin+path,{headers})).status);return out;};
+ const search=await statuses('/api/posts/search?q=test',121);assert.deepEqual([search.filter(s=>s===200).length,search.at(-1)],[120,429]);
+ assert.equal((await fetch(origin+'/api/clubs')).status,200,'catalog without a query stays unlimited');
+ assert.equal((await fetch(origin+'/api/clubs?q=x')).status,429);
+ const r=await fetch(origin+'/api/register',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json','X-Community-Request':'1'},body:JSON.stringify({handle:'reader',name:'Reader',password:'Rate-limit-password-1'})});
+ assert.equal((await fetch(origin+'/api/posts/search?q=test',{headers:{Cookie:r.headers.get('set-cookie').split(';')[0]}})).status,200,'accounts have their own budget');
+ const map=await statuses('/sitemap.xml',11);assert.deepEqual([map.filter(s=>s===200).length,map.at(-1)],[10,429]);
+});
