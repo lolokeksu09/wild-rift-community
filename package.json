@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node server/start.mjs",
-    "test": "node --test server/tests/*.test.mjs"
+    "test": "node --test server/tests/*.test.mjs",
+    "verify": "npm test && npm test --prefix tests && npm run test:server-ui --prefix tests && npm run test:chat-ui --prefix tests && npm run test:direct-ui --prefix tests && npm run test:moderation-ui --prefix tests && npm run test:lfg-ui --prefix tests"
   }
 }
