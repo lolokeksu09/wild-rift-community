@@ -13,6 +13,6 @@ try{browser=await chromium.launch();for(const width of [320,360,390,768,1440]){
  assert.equal(await page.locator('.launch-orbit').evaluate(el=>getComputedStyle(el).animationName),'none');
  await page.screenshot({path:`ui-screenshots/launch-${width}.png`,fullPage:true});
  await page.locator('[data-auth-mode=register]').click();await page.locator('#register input').first().waitFor();await page.waitForFunction(()=>document.activeElement?.closest('#register'));assert.equal(new URL(page.url()).pathname,'/account');
- await page.goBack();await page.locator('.launch').waitFor();await page.locator('[data-nav=clubs]').click();await page.waitForURL('**/clubs');await page.waitForFunction(()=>!document.body.classList.contains('launch-mode'));
+ await page.goBack();await page.locator('.launch').waitFor();await page.locator('.launch [data-nav=clubs]').click();await page.waitForURL('**/clubs');await page.waitForFunction(()=>!document.body.classList.contains('launch-mode'));
  await page.goto(origin+'/feed');await page.locator('.welcome-hero').waitFor();assert.deepEqual(errors,[]);await context.close();console.log(`PASS ${width}px: welcome layout, motion, auth, clubs and direct feed`);
 }}finally{await browser?.close();await app.close();}
