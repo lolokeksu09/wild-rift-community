@@ -93,6 +93,9 @@ if test -n "${DEMO_OWNER_HANDLE:-}" && ! test -f "$root/demo-owner-assigned-v1";
   mv "$root/data/$ownership_copy" "$backup/$ownership_copy"
   owner_assigned=true
 fi
+if test -n "${DEMO_OWNER_HANDLE:-}"; then
+  docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$root/data:/data" "$image" node server/demo-ownership-cli.mjs /data/community.sqlite "$DEMO_OWNER_HANDLE" --check </dev/null
+fi
 cat "$bundle/compose.yaml" > compose.yaml
 # Leave Caddy serving maintenance during app startup.
 touch .env
