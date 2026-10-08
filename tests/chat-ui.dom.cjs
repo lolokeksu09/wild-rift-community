@@ -12,6 +12,12 @@ const {JSDOM,VirtualConsole}=require('jsdom');const assert=require('node:assert/
   const root=d.querySelector('#root');controller=w.createClubChat({root,clubId:club,userId:member.id,api});
   async function until(fn){for(let i=0;i<600;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Timeout: '+root.textContent);}
   await until(()=>root.textContent.includes('Подключено'));
+  // Leaving the chat preserves an unsent draft, never submitting it on mount.
+  const draft='Несохранённое <img src=x onerror=alert(1)>\nПродолжение';
+  d.querySelector('[name=body]').value=draft;d.querySelector('[name=body]').dispatchEvent(new w.Event('input',{bubbles:true}));controller.destroy();
+  controller=w.createClubChat({root,clubId:club,userId:member.id,api});
+  assert.equal(d.querySelector('[name=body]').value,'','Draft is not restored before the viewer check');
+  await until(()=>root.textContent.includes('Подключено'));assert.equal(d.querySelector('[name=body]').value,draft);assert.equal((await member.api(route)).messages.length,0);assert.equal(root.querySelectorAll('img').length,0);
   // Another sender's message arrives between reading and sending: no cursor gap.
   await owner.api(route,'POST',{clientId:'owner-intervening-0001',body:'Сообщение другого участника'});
   d.querySelector('[name=body]').value='<img src=x onerror=alert(1)> Тест';d.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
@@ -28,10 +34,15 @@ const {JSDOM,VirtualConsole}=require('jsdom');const assert=require('node:assert/
   assert.equal((await member.api(route)).messages.length,1);
   await member.api('/api/blocks','DELETE',{userId:owner.id});d.querySelector('[data-chat-refresh]').click();await until(()=>d.querySelectorAll('[data-message-id]').length===2);
   // Membership revocation clears rendered history and pending data.
-  await owner.api(`/api/clubs/${club}/ban`,'POST',{userId:member.id});d.querySelector('[data-chat-refresh]').click();await until(()=>root.textContent.includes('Чат недоступен'));assert.equal(d.querySelectorAll('[data-message-id]').length,0);
+  d.querySelector('[name=body]').value='Черновик до отзыва';d.querySelector('[name=body]').dispatchEvent(new w.Event('input',{bubbles:true}));
+  await owner.api(`/api/clubs/${club}/ban`,'POST',{userId:member.id});d.querySelector('[data-chat-refresh]').click();await until(()=>root.textContent.includes('Чат недоступен'));assert.equal(d.querySelectorAll('[data-message-id]').length,0);assert.equal(w.sessionStorage.getItem(`wr-chat-draft:${member.id}:${club}`),null);
   controller.destroy();
+  // A stale mount must not restore a private draft for a different viewer.
+  w.sessionStorage.setItem(`wr-chat-draft:${member.id}:${club}`,'Приватный черновик');
+  controller=w.createClubChat({root,clubId:club,userId:member.id,api:owner.api.bind(owner)});
+  await until(()=>root.textContent.includes('Чат недоступен'));assert.equal(d.querySelector('[name=body]'),null);assert.equal(w.sessionStorage.getItem(`wr-chat-draft:${member.id}:${club}`),null);controller.destroy();
   // A late response from a previously mounted club must not populate the next page.
-  let release;const delayed=new Promise(resolve=>release=resolve);controller=w.createClubChat({root,clubId:club,userId:member.id,api:()=>delayed});controller.destroy();root.textContent='Другая страница';release({viewerId:member.id,messages:[{id:900,sender_id:member.id,body:'stale',sender_name:'old',created_at:1}],hasMore:false});await new Promise(r=>setTimeout(r,20));assert.equal(root.textContent,'Другая страница');
+  let release;const delayed=new Promise(resolve=>release=resolve);controller=w.createClubChat({root,clubId:club,userId:member.id,api:()=>delayed});assert.equal(d.querySelector('[name=body]').disabled,true,'Do not allow sending before membership is checked');controller.destroy();root.textContent='Другая страница';release({viewerId:member.id,messages:[{id:900,sender_id:member.id,body:'stale',sender_name:'old',created_at:1}],hasMore:false});await new Promise(r=>setTimeout(r,20));assert.equal(root.textContent,'Другая страница');
   // An older page arriving after a block must never restore blocked content.
   controller.destroy();let releaseOld;let calls=0;
   controller=w.createClubChat({root,clubId:club,userId:member.id,api:async(p,method)=>{
@@ -43,6 +54,19 @@ const {JSDOM,VirtualConsole}=require('jsdom');const assert=require('node:assert/
   }});
   await until(()=>d.querySelector('[data-chat-block]'));d.querySelector('[data-chat-older]').click();await until(()=>releaseOld);d.querySelector('[data-chat-block]').click();await until(()=>calls>=3);
   releaseOld({viewerId:member.id,blockVersion:1,messages:[{id:1,sender_id:owner.id,body:'stale secret',sender_name:'owner',created_at:1}],hasMore:false});await new Promise(r=>setTimeout(r,20));assert(!root.textContent.includes('stale secret'));assert(!root.textContent.includes('hidden later'));
-  assert.deepEqual(errors,[]);console.log('PASS: chat UI lost-response retry creates no duplicate; intervening message not skipped; HTML escaped; ban clears history; destroyed controller ignores late response. DOM only.');
+  controller.destroy();
+  // An explicitly read-only mount cannot be re-enabled by a later API response.
+  const history=[{id:1,sender_id:owner.id,body:'Первый день',sender_name:'owner',created_at:Date.UTC(2026,9,7,12)},{id:2,sender_id:member.id,body:'Второй день',sender_name:'member',created_at:Date.UTC(2026,9,8,12)}];
+  let readOnlyPosts=0;
+  w.sessionStorage.setItem(`wr-chat-draft:${member.id}:readonly`,'Черновик закрытого чата');
+  controller=w.createClubChat({root,clubId:'readonly',userId:member.id,api:async(_p,method)=>{if(method==='POST')readOnlyPosts++;return {viewerId:member.id,canSend:true,messages:history,hasMore:false};},readOnly:true});
+  await until(()=>root.textContent.includes('только для чтения'));assert.equal(d.querySelector('[name=body]').disabled,true);assert.equal(d.querySelector('[name=body]').value,'');assert.equal(d.querySelectorAll('.chat-day').length,2);
+  d.querySelector('[name=body]').value='Нельзя отправить';d.querySelector('[data-chat-form]').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));assert.equal(readOnlyPosts,0);controller.destroy();
+  // A write restriction (403) does not remove readable history or silently retry.
+  let restrictedPosts=0;
+  controller=w.createClubChat({root,clubId:'restricted',userId:member.id,api:async(_p,method)=>{if(method==='POST'){restrictedPosts++;const error=new Error('Создание контента ограничено до завтра.');error.status=403;throw error;}return {viewerId:member.id,messages:history,hasMore:false};}});
+  await until(()=>root.textContent.includes('Подключено'));d.querySelector('[name=body]').value='Сохранить попытку';d.querySelector('[data-chat-form]').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+  await until(()=>root.textContent.includes('Создание контента ограничено'));assert.equal(d.querySelectorAll('[data-message-id]').length,2);assert.equal(restrictedPosts,1);assert(d.querySelector('[data-chat-retry]'));assert(w.sessionStorage.getItem(`wr-chat-pending:${member.id}:restricted`));
+  assert.deepEqual(errors,[]);console.log('PASS: chat UI lost-response retry creates no duplicate; intervening message not skipped; HTML escaped; ban clears history; destroyed controller ignores late response; day boundaries, read-only state and write restriction preserve history. DOM only.');
  }finally{controller?.destroy();dom?.window.close();await app.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

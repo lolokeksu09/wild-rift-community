@@ -7,7 +7,7 @@ try{for(const width of [360,390,768,1440]){
  try{
   const call=async(context,path,method='GET',data)=>{const r=await context.request.fetch(origin+path,{method,headers:{Origin:origin,'X-Community-Request':'1'},...(data?{data}:{})});return {status:r.status(),...await r.json()};};
   await call(c,'/api/register','POST',{handle:'account_ui',name:'Игрок',password:oldPassword});await call(other,'/api/login','POST',{handle:'account_ui',password:oldPassword});
-  await p.goto(origin+'/account');await p.locator('#changePassword').waitFor();assert.equal(await p.locator('[data-session-row]').count(),2);
+  await p.goto(origin+'/account');await p.locator('[data-account-section=security]').click();await p.locator('[data-account-section=editor]').click();await p.locator('#changePassword').waitFor();assert.equal(await p.locator('[data-session-row]').count(),2);
   await p.locator('#profile [name=bio]').fill('Несохранённое описание');p.once('dialog',d=>d.accept());await p.locator('[data-current-session="0"]').click();await p.waitForFunction(()=>document.querySelectorAll('[data-session-row]').length===1);assert.equal(await p.locator('#profile [name=bio]').inputValue(),'Несохранённое описание');assert.equal((await call(other,'/api/me')).user,null);
   await call(other,'/api/login','POST',{handle:'account_ui',password:oldPassword});
   await p.locator('#changePassword [name=currentPassword]').fill(oldPassword);await p.locator('#changePassword [name=newPassword]').fill(newPassword);await p.locator('#changePassword [name=repeatPassword]').fill('Mismatched-password-000');await p.locator('#changePassword button').click();assert.match(await p.locator('#changePassword .error').textContent(),/не совпадают/);

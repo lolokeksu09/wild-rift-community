@@ -3,6 +3,7 @@
 window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/clubs/${clubId}/messages`, title = 'Чат клуба', readEndpoint = null, readOnly = false }) {
   const encode = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const storageKey = `wr-chat-pending:${userId}:${clubId}`;
+  const draftKey = `wr-chat-draft:${userId}:${clubId}`;
   let active = true, timer, polling = false, cursor = 0, oldest = null, hasOlder = false, initial = true;
   const messages = new Map(), pending = new Map(), requests = new Set();
   async function request(path, method = 'GET', body) {
@@ -17,11 +18,27 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
       if (item && typeof item.clientId === 'string' && /^[A-Za-z0-9_-]{16,80}$/.test(item.clientId) && typeof item.body === 'string' && item.body.trim().length > 0 && item.body.length <= 2000) pending.set(item.clientId, { clientId:item.clientId, body:item.body, status:'Не подтверждено. Можно повторить.' });
     }
   } catch { /* Storage may be unavailable; in-memory retries still work. */ }
-  let loadedLast = 0, blockVersion = null, canSend = !readOnly;
+  let loadedLast = 0, blockVersion = null, canSend = false, draftLoaded = false;
   const clubChat = endpoint.startsWith('/api/clubs/') || endpoint.startsWith('/api/lfg/') || endpoint.startsWith('/api/events/');
   const canReport = !endpoint.startsWith('/api/lfg/') && !endpoint.startsWith('/api/events/');
-  root.innerHTML = `<div class="row between wrap"><h3>${encode(title)}</h3><button type="button" class="btn quiet" data-chat-refresh>Обновить</button></div>${readEndpoint?'<button type="button" class="btn quiet" data-chat-read>Отметить загруженное прочитанным</button>':''}<p class="note" data-chat-status role="status">Подключение…</p><button type="button" class="btn quiet hidden" data-chat-older>Ранние сообщения</button><div class="server-chat-log" data-chat-log role="log" aria-label="Сообщения"></div><div data-chat-pending></div><form data-chat-form><label class="field">Сообщение<textarea name="body" required maxlength="2000" rows="2" placeholder="Напиши сообщение…"></textarea></label><p class="error" data-chat-error role="alert"></p><button class="btn primary">Отправить</button></form>`;
+  root.classList.add('editorial-chat');root.classList.remove('chat-unavailable');
+  root.innerHTML = `<header class="chat-heading"><h3>${encode(title)}</h3><details class="chat-tools"><summary>Действия</summary><button type="button" class="btn quiet" data-chat-refresh>Обновить</button>${readEndpoint?'<button type="button" class="btn quiet" data-chat-read disabled>Отметить загруженное прочитанным</button>':''}</details></header><p class="note" data-chat-status role="status">Подключение…</p><button type="button" class="btn quiet hidden" data-chat-older>Ранние сообщения</button><div class="server-chat-log" data-chat-log role="log" aria-label="Сообщения" aria-live="polite" aria-relevant="additions text"></div><div class="chat-outbox" data-chat-pending aria-label="Неподтверждённые сообщения"></div><form class="chat-composer" data-chat-form><label class="field"><span class="sr-only">Сообщение</span><textarea name="body" required maxlength="2000" rows="2" placeholder="Напиши сообщение…" ${readOnly?'disabled':''}></textarea></label><button class="btn primary" ${readOnly?'disabled':''}>Отправить</button><p class="error" data-chat-error role="alert"></p></form>`;
   const find = selector => root.querySelector(selector);
+  const draftNote = document.createElement('small');
+  draftNote.className='chat-draft-status';draftNote.setAttribute('role','status');draftNote.hidden=true;
+  find('[data-chat-form]').append(draftNote);
+  function draftStatus(text) { if(active){draftNote.textContent=text;draftNote.hidden=!text;} }
+  function saveDraft() {
+    try {
+      const body=find('[data-chat-form] textarea').value;
+      if(body)sessionStorage.setItem(draftKey,body.slice(0,2000));else sessionStorage.removeItem(draftKey);
+      draftStatus(body?'Черновик сохранён в этой вкладке':'');
+    } catch { draftStatus('Черновик не сохранён. Не закрывай страницу.'); }
+  }
+  function clearDraft() {
+    try { sessionStorage.removeItem(draftKey);draftStatus(''); }
+    catch { draftStatus('Не удалось очистить сохранённый черновик.'); }
+  }
   const status = text => { if (active) find('[data-chat-status]').textContent = text; };
   function persist() {
     try { if (pending.size) sessionStorage.setItem(storageKey,JSON.stringify([...pending.values()].map(({clientId,body})=>({clientId,body})))); else sessionStorage.removeItem(storageKey); }
@@ -29,7 +46,7 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
   }
   function drawPending() {
     if (!active) return;
-    find('[data-chat-pending]').innerHTML = [...pending.values()].map(m=>`<div class="chat-pending"><p class="content">${encode(m.body)}</p><small>${encode(m.status)}</small><div class="row wrap"><button type="button" class="btn quiet" data-chat-retry="${m.clientId}" ${m.busy||!canSend?'disabled':''}>Повторить</button><button type="button" class="btn quiet" data-chat-discard="${m.clientId}" ${m.busy?'disabled':''}>Убрать из очереди</button></div></div>`).join('');
+    find('[data-chat-pending]').innerHTML = [...pending.values()].map(m=>`<div class="chat-pending"><small>${encode(m.status)}</small><p class="content">${encode(m.body)}</p><div class="row wrap"><button type="button" class="btn quiet" data-chat-retry="${m.clientId}" ${m.busy||!canSend?'disabled':''}>Повторить</button><button type="button" class="btn quiet" data-chat-discard="${m.clientId}" ${m.busy?'disabled':''}>Убрать из очереди</button></div></div>`).join('');
   }
   function merge(list) {
     for (const m of list) {
@@ -39,23 +56,36 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
     persist();
     if (!active) return;
     const log=find('[data-chat-log]');
-    if (!list.length && log.childNodes.length) { drawPending(); return; }
+    if (!list.length && messages.size && log.childNodes.length) { drawPending(); return; }
     const nearEnd=log.scrollHeight-log.scrollTop-log.clientHeight<50;
-    log.innerHTML=[...messages.values()].sort((a,b)=>a.id-b.id).map(m=>`<div class="bubble ${m.sender_id===userId?'self':''}" data-message-id="${m.id}"><small>${encode(m.sender_name)} · ${encode(new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}))}</small><span>${encode(m.body)}</span>${m.sender_id!==userId&&canReport?`<button type="button" class="btn quiet" data-report-message="${m.id}">Пожаловаться</button>${clubChat?`<button type="button" class="btn quiet" data-chat-block="${encode(m.sender_id)}">Блокировать игрока</button>`:''}`:''}</div>`).join('') || '<p class="muted">Начни разговор — сообщений пока нет.</p>';
+    const openMenus=new Set([...log.querySelectorAll('.chat-message-tools[open]')].map(el=>el.closest('[data-message-id]').dataset.messageId));
+    let day='';
+    log.innerHTML=[...messages.values()].sort((a,b)=>a.id-b.id).map(m=>{
+      const date=new Date(m.created_at),key=date.toDateString();
+      const divider=key!==day?`<p class="chat-day">${encode(date.toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'}))}</p>`:'';day=key;
+      return `${divider}<div class="bubble ${m.sender_id===userId?'self':''}" data-message-id="${m.id}"><small>${encode(m.sender_name)} · <time datetime="${encode(date.toISOString())}">${encode(date.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}))}</time></small><span>${encode(m.body)}</span>${m.sender_id!==userId&&canReport?`<details class="chat-message-tools" ${openMenus.has(String(m.id))?'open':''}><summary>Действия<span class="sr-only"> с сообщением ${m.id}</span></summary><button type="button" class="btn quiet" data-report-message="${m.id}">Пожаловаться</button>${clubChat?`<button type="button" class="btn quiet" data-chat-block="${encode(m.sender_id)}">Блокировать игрока</button>`:''}</details>`:''}</div>`;
+    }).join('') || `<div class="chat-empty"><h4>${canSend?'Первое слово за тобой':'История разговора'}</h4><p class="muted">${canSend?'Сообщений пока нет. Поздоровайся и договорись об игре.':'Сообщений пока нет. Отправка в этом чате закрыта.'}</p></div>`;
+    if(readEndpoint)find('[data-chat-read]').disabled=!loadedLast;
     if(nearEnd) log.scrollTop=log.scrollHeight;
     drawPending();
   }
   function revoke() {
     if (!active) return;
     active=false;clearTimeout(timer);for(const c of requests)c.abort();pending.clear();messages.clear();
-    try { sessionStorage.removeItem(storageKey); } catch {}
-    root.innerHTML='<h3>Чат недоступен</h3><p class="note">Сеанс или членство изменились. Обнови страницу клуба.</p>';
+    try { sessionStorage.removeItem(storageKey);sessionStorage.removeItem(draftKey); } catch {}
+    root.classList.add('chat-unavailable');root.innerHTML='<h3>Чат недоступен</h3><p class="note">Сеанс или членство изменились. Обнови страницу.</p>';
   }
-  function resetHistory(){messages.clear();cursor=0;oldest=null;hasOlder=false;initial=true;loadedLast=0;find('[data-chat-log]').textContent='Обновление истории…';find('[data-chat-older]').classList.add('hidden');}
+  function resetHistory(){messages.clear();cursor=0;oldest=null;hasOlder=false;initial=true;loadedLast=0;if(readEndpoint)find('[data-chat-read]').disabled=true;find('[data-chat-log]').textContent='Обновление истории…';find('[data-chat-older]').classList.add('hidden');}
   function allowed(data) {
     if(data.viewerId!==userId){revoke();return false;}
-    if(typeof data.canSend==='boolean')canSend=data.canSend;
+    canSend=!readOnly&&data.canSend!==false;
     for(const el of root.querySelectorAll('[data-chat-form] textarea,[data-chat-form] button'))el.disabled=!canSend;
+    // Restore private text only after the current viewer and write access agree.
+    if(canSend&&!draftLoaded){
+      draftLoaded=true;
+      try{const body=sessionStorage.getItem(draftKey);if(body&&body.length<=2000){find('[data-chat-form] textarea').value=body;draftStatus('Черновик восстановлен');}}
+      catch{draftStatus('Черновик не сохраняется в этой вкладке.');}
+    }
     if(clubChat&&Number.isSafeInteger(data.blockVersion)){
       if(blockVersion!==null&&data.blockVersion<blockVersion)return false;
       if(blockVersion!==null&&data.blockVersion!==blockVersion){blockVersion=data.blockVersion;resetHistory();return false;}
@@ -77,7 +107,7 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
       merge(data.messages);
       if(data.messages.length)cursor=Math.max(cursor,data.messages.at(-1).id);
       more=!initial&&data.hasMore;initial=false;
-      status('Подключено · новые сообщения проверяются каждые 2 секунды');
+      status(canSend?'Подключено · сообщения обновляются автоматически':'Подключено · история доступна только для чтения');
     }catch(error){if(active)handleError(error);}
     finally{polling=false;if(active)timer=setTimeout(poll,more?50:2000);}
   }
@@ -92,8 +122,9 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
       merge([data.message]);
     }catch(error){
       if(!active)return;
-      if([401,403,404].includes(error.status)){revoke();return;}
-      item.busy=false;item.status=error.status===409?error.message:'Отправка не подтверждена. Повтори с тем же идентификатором.';drawPending();
+      if([401,404].includes(error.status)){revoke();return;}
+      item.busy=false;item.status=[403,409,422,429].includes(error.status)?error.message:'Отправка не подтверждена. Можно повторить без нового сообщения.';drawPending();
+      if(error.status===403)poll();
     }
   }
   async function older() {
@@ -113,9 +144,10 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
     if(!e.target.matches('[data-chat-form]'))return;e.preventDefault();
     const input=e.target.elements.body,body=input.value.trim();if(!body||!active||!canSend)return;
     if(pending.size>=20){find('[data-chat-error]').textContent='Сначала отправь или убери сообщения из очереди.';return;}
-    const clientId=crypto.randomUUID();pending.set(clientId,{clientId,body,status:'Ожидает отправки'});persist();input.value='';drawPending();send(clientId);
+    const clientId=crypto.randomUUID();pending.set(clientId,{clientId,body,status:'Ожидает отправки'});persist();input.value='';clearDraft();drawPending();send(clientId);
   };
+  const onInput=e=>{if(active&&canSend&&e.target.matches('[data-chat-form] textarea'))saveDraft();};
   for(const el of root.querySelectorAll('[data-chat-form] textarea,[data-chat-form] button'))el.disabled=!canSend;
-  root.addEventListener('click',onClick);root.addEventListener('submit',onSubmit);drawPending();poll();
-  return { destroy(){active=false;clearTimeout(timer);for(const c of requests)c.abort();root.removeEventListener('click',onClick);root.removeEventListener('submit',onSubmit);} };
+  root.addEventListener('click',onClick);root.addEventListener('submit',onSubmit);root.addEventListener('input',onInput);drawPending();poll();
+  return { destroy(){active=false;clearTimeout(timer);for(const c of requests)c.abort();root.removeEventListener('click',onClick);root.removeEventListener('submit',onSubmit);root.removeEventListener('input',onInput);} };
 };

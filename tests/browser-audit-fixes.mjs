@@ -16,7 +16,7 @@ try{
   };
   const me=await api('/api/register','POST',{handle:'audit_'+width,name:'Проверка',password:'Audit-browser-password-123'});
   const club=await api('/api/clubs','POST',{name:'Проверка '+width,description:'',access:'open'});
-  await page.goto(origin+'/account');await page.locator('#profile').waitFor();
+  await page.goto(origin+'/account');await page.locator('#profile').waitFor({state:'attached'});await page.locator('[data-account-section=editor]').click();
   const dialogResult=async(accept,click)=>{
    const dialog=page.waitForEvent('dialog');const action=click();const d=await dialog;assert.equal(d.type(),'confirm');await (accept?d.accept():d.dismiss());await action;
   };
@@ -26,7 +26,7 @@ try{
   await page.evaluate(()=>history.pushState(null,'','/account?check=1'));
   await dialogResult(false,()=>page.evaluate(()=>history.back()));assert.equal(new URL(page.url()).pathname,'/account');assert.equal(await page.locator('#profile [name=bio]').inputValue(),'Не терять описание');
   await page.locator('#profile button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#profile [name=bio]')?.defaultValue==='Не терять описание');
-  await page.locator('#people').click();await page.locator('#communityMembers').waitFor();await page.locator('#account').click();await page.locator('#profile').waitFor();
+  await page.locator('#people').click();await page.locator('#communityMembers').waitFor();await page.locator('#account').click();await page.locator('#profile').waitFor({state:'attached'});await page.locator('[data-account-section=editor]').click();
   await page.locator('#profile [name=profileVisible]').check();await dialogResult(false,()=>page.locator('.top-search').click());assert(await page.locator('#profile [name=profileVisible]').isChecked());
   await page.locator('#profile [name=profileVisible]').uncheck();
   await page.locator('#profile [name=avatarFile]').setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64')});

@@ -29,6 +29,8 @@ import { token, digest, passwordHash, passwordMatches, fail, HttpError, text, pa
 
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
+  ['/role-icons-mask.svg',['role-icons-mask.svg','image/svg+xml']],
+  ['/role-icons.jpg',['role-icons.jpg','image/jpeg']],
   ['/favicon.svg',['favicon.svg','image/svg+xml']],
   ['/post-management.js',['post-management.js','text/javascript; charset=utf-8']],
   ['/polls.js',['polls.js','text/javascript; charset=utf-8']],
@@ -38,6 +40,10 @@ const assets = new Map([
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
   ['/launch.css', ['launch.css', 'text/css; charset=utf-8']],
   ['/premium.css', ['premium.css', 'text/css; charset=utf-8']],
+  ['/community-cover.webp', ['community-cover.webp', 'image/webp']],
+  ['/profile-cover.webp', ['profile-cover.webp', 'image/webp']],
+  ['/events-cover.webp', ['events-cover.webp', 'image/webp']],
+  ['/editorial.css', ['editorial.css', 'text/css; charset=utf-8']],
   ['/events.js', ['events.js','text/javascript; charset=utf-8']],
   ['/clubs.js', ['clubs.js','text/javascript; charset=utf-8']],
   ['/discussions.js', ['discussions.js', 'text/javascript; charset=utf-8']],
