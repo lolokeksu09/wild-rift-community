@@ -24,6 +24,9 @@ try {
    await p.goto(origin+'/feed');await p.locator('.feed-entry').waitFor();assert.equal(await p.locator('#notifications').isVisible(),false);assert.equal(await p.locator('#reports').isVisible(),false);
    assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
    assert.equal(await p.locator('.discovery-club').count(),3);
+   // A phone should expose a real conversation without scrolling past club promotion.
+   if(width<700){const author=await p.locator('.feed-entry .post-author').first().boundingBox();assert(author&&author.y>=0&&author.y+author.height<844,'Conversation author must be visible on the initial phone viewport');}
+   else {await p.locator('.hero-conversation').click();await p.locator('.post-title').waitFor();assert.match(new URL(p.url()).pathname,/^\/posts\/\d+$/);await p.goto(origin+'/feed');await p.locator('.feed-entry').waitFor();}
    await p.screenshot({path:`ui-screenshots/premium-home-${width}.png`,fullPage:true});
    await p.locator('.community-paths [data-nav=guides]').click();await p.locator('[data-guide-filters]').waitFor();assert.equal(await p.locator('.guide-more-filters').getAttribute('open'),null);await p.getByRole('heading',{name:'Здесь будет опыт сообщества'}).waitFor();assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
    await p.locator('#events').click();await p.getByRole('heading',{name:'Вечер ARAM с компанией'}).waitFor();assert.equal(await p.locator('#login').count(),0);
@@ -35,4 +38,3 @@ try {
  }
  assert.deepEqual(errors,[]);await owner.close();
 }finally{await browser.close();await app.close();}
-
