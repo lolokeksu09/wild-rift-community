@@ -1,3 +1,4 @@
+import {isDemo} from './demo.mjs';
 import {pollResults} from './polls.mjs';
 import { fail, text } from './security.mjs';
 import { transaction } from './database.mjs';
@@ -6,7 +7,7 @@ export function unblocked(alias='p') {
 }
 export function postExtras(db,posts,user,now=Date.now) {
   const viewer=user?.id||'';
-  return posts.map(p=>({...p,guide:db.prepare('SELECT topic,champion,game_version,summary FROM guides WHERE post_id=?').get(p.id)||null,poll:pollResults(db,p,user,now),reactions:db.prepare(`SELECT r.kind,count(*) AS count FROM post_reactions r WHERE r.post_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=? AND b.target_id=r.user_id) OR (b.target_id=? AND b.blocker_id=r.user_id)) GROUP BY r.kind`).all(p.id,viewer,viewer),myReaction:user?db.prepare('SELECT kind FROM post_reactions WHERE post_id=? AND user_id=?').get(p.id,viewer)?.kind||null:null,saved:user?Boolean(db.prepare('SELECT 1 FROM saved_posts WHERE post_id=? AND user_id=?').get(p.id,viewer)):false}));
+  return posts.map(p=>({...p,isBot:isDemo(db.prepare('SELECT game_profile FROM users WHERE id=?').get(p.author_id)),guide:db.prepare('SELECT topic,champion,game_version,summary FROM guides WHERE post_id=?').get(p.id)||null,poll:pollResults(db,p,user,now),reactions:db.prepare(`SELECT r.kind,count(*) AS count FROM post_reactions r WHERE r.post_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=? AND b.target_id=r.user_id) OR (b.target_id=? AND b.blocker_id=r.user_id)) GROUP BY r.kind`).all(p.id,viewer,viewer),myReaction:user?db.prepare('SELECT kind FROM post_reactions WHERE post_id=? AND user_id=?').get(p.id,viewer)?.kind||null:null,saved:user?Boolean(db.prepare('SELECT 1 FROM saved_posts WHERE post_id=? AND user_id=?').get(p.id,viewer)):false}));
 }
 export function attemptId(body) {
   if(body.clientId==null)return null; // Legacy clients; current UI always supplies an ID.
@@ -64,7 +65,7 @@ export function discussionRoutes({db,user,path,method,body,url,send,now,postFor}
     send(200,{saved:method==='PUT'});return true;
   }
   if(method==='GET'){
-    const comments=db.prepare(`SELECT cm.id,cm.author_id,cm.body,cm.created_at,cm.parent_id,u.name AS author_name,parent.body AS parent_body,pu.name AS parent_author_name FROM comments cm JOIN users u ON u.id=cm.author_id LEFT JOIN comments parent ON parent.id=cm.parent_id LEFT JOIN users pu ON pu.id=parent.author_id WHERE cm.post_id=:post AND cm.id<:before AND ${unblocked('cm')} AND (parent.id IS NULL OR ${unblocked('parent')}) ORDER BY cm.id DESC LIMIT 51`).all({post:id,viewer,before:cursor(url,'before',Number.MAX_SAFE_INTEGER)});
+    const comments=db.prepare(`SELECT cm.id,cm.author_id,cm.body,cm.created_at,cm.parent_id,u.name AS author_name,json_extract(u.game_profile,'$.demoBot')='community-v1' AS isBot,parent.body AS parent_body,pu.name AS parent_author_name FROM comments cm JOIN users u ON u.id=cm.author_id LEFT JOIN comments parent ON parent.id=cm.parent_id LEFT JOIN users pu ON pu.id=parent.author_id WHERE cm.post_id=:post AND cm.id<:before AND ${unblocked('cm')} AND (parent.id IS NULL OR ${unblocked('parent')}) ORDER BY cm.id DESC LIMIT 51`).all({post:id,viewer,before:cursor(url,'before',Number.MAX_SAFE_INTEGER)});
     send(200,{viewerId:user?.id||null,comments:comments.slice(0,50).reverse(),next:comments.length>50?comments[49].id:null});return true;
   }
   if(method!=='POST')fail(405,'Метод не поддерживается.');
