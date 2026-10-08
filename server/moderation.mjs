@@ -12,7 +12,8 @@ export function moderationRoutes({db,user,path,method,body,url,send,now,moderato
  };
  if(path==='/api/reports'&&method==='POST'){
   const kind=body.kind,id=body.targetId??body.messageId,reason=text(body.reason,'Причина',3,1000);
-  if(!['direct','club','post','comment','profile'].includes(kind)||(kind==='profile'?typeof id!=='string'||!id||id.length>80:!Number.isSafeInteger(id)||id<1))fail(422,'Некорректный объект жалобы.');
+  const textual=['profile','club_page'].includes(kind);
+  if(!['direct','club','post','comment','profile','lfg','event','club_page'].includes(kind)||(textual?typeof id!=='string'||!id||id.length>80:!Number.isSafeInteger(id)||id<1))fail(422,'Некорректный объект жалобы.');
   let message;
   if(kind==='direct')message=get(`SELECT m.* FROM direct_messages m JOIN direct_conversations c ON c.id=m.conversation_id WHERE m.id=? AND (c.user_low=? OR c.user_high=?)`,id,user.id,user.id);
   else if(kind==='club')message=get(`SELECT m.* FROM messages m JOIN memberships s ON s.club_id=m.club_id WHERE m.id=? AND s.user_id=? AND s.status='member'`,id,user.id);
@@ -20,6 +21,16 @@ export function moderationRoutes({db,user,path,method,body,url,send,now,moderato
    const p=postFor(id,user,false,true);message={sender_id:p.author_id,body:p.title+'\n'+p.body};
   }else if(kind==='comment'){
    const c=get('SELECT * FROM comments WHERE id=?',id);if(c){postFor(c.post_id,user,false,true);message={sender_id:c.author_id,body:c.body};}
+  }else if(kind==='lfg'){
+   // An announcement is reportable while open to anyone, or to people who took part in it.
+   const g=get('SELECT * FROM lfg_groups WHERE id=?',id);
+   if(g&&((!g.closed&&g.expires_at>now())||get('SELECT 1 FROM lfg_members WHERE group_id=? AND user_id=?',id,user.id)))message={sender_id:g.owner_id,body:g.title+'\n'+g.description};
+  }else if(kind==='event'){
+   const e=get('SELECT * FROM game_events WHERE id=?',id);
+   if(e&&(!e.cancelled||get('SELECT 1 FROM event_slots WHERE event_id=? AND user_id=?',id,user.id)))message={sender_id:e.owner_id,body:e.title+'\n'+e.description};
+  }else if(kind==='club_page'){
+   const c=get('SELECT * FROM clubs WHERE id=?',id),m=c&&get('SELECT status FROM memberships WHERE club_id=? AND user_id=?',id,user.id);
+   if(c&&m?.status!=='banned'&&(c.access==='open'||m?.status==='member'))message={sender_id:c.owner_id,body:c.name+'\n'+c.description};
   }else{
    const p=get('SELECT * FROM users WHERE id=? AND profile_visible=1',id);
    if(p)message={sender_id:p.id,body:profileSnapshot(p)};
@@ -29,7 +40,7 @@ export function moderationRoutes({db,user,path,method,body,url,send,now,moderato
   const result=transaction(db,()=>{
    const old=get('SELECT id FROM reports WHERE reporter_id=? AND kind=? AND target_id=?',user.id,kind,String(id));
    if(old)return {id:old.id,replayed:true};
-   const r=run(`INSERT INTO reports(reporter_id,kind,message_id,target_id,sender_id,snapshot,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`,user.id,kind,kind==='profile'?null:id,String(id),message.sender_id,message.body,reason,now());return {id:Number(r.lastInsertRowid),replayed:false};
+   const r=run(`INSERT INTO reports(reporter_id,kind,message_id,target_id,sender_id,snapshot,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`,user.id,kind,textual?null:id,String(id),message.sender_id,message.body,reason,now());return {id:Number(r.lastInsertRowid),replayed:false};
   });send(result.replayed?200:201,result);return true;
  }
  const appealRoute=path.match(/^\/api\/reports\/(\d+)\/appeal(\/read)?$/);

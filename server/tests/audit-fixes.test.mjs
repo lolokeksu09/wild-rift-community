@@ -116,7 +116,7 @@ test('19 to 20 preserves legacy report IDs, decisions, appeals, audit and sequen
    PRAGMA user_version=19;COMMIT;`);
   db.close();db=openDatabase(file);
   for(let i=0;i<2;i++){
-   assert.equal(db.prepare('PRAGMA user_version').get().user_version,20);assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
+   assert.equal(db.prepare('PRAGMA user_version').get().user_version,21);assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
    const r=db.prepare('SELECT * FROM reports WHERE id=7').get();assert.equal(r.target_id,'9');assert.equal(r.snapshot,'Original message');assert.equal(r.decision_seen,1);
    assert.equal(db.prepare('SELECT reason FROM report_appeals').get().reason,'Original appeal');assert.equal(db.prepare('SELECT note FROM moderation_audit').get().note,'Original audit');assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
    db.close();db=openDatabase(file);
@@ -235,4 +235,52 @@ test('authors delete own posts after leaving but not while banned; stale unattac
  const day=86400000,orphan=image('orphan',0),avatar=image('avatar',0);db.prepare('UPDATE users SET avatar_id=? WHERE id=?').run(avatar,'u');
  image('fresh',day-1);assert(db.prepare('SELECT 1 FROM media WHERE id=?').get(orphan),'younger than a day stays');
  image('later',day+1);assert(!db.prepare('SELECT 1 FROM media WHERE id=?').get(orphan));assert(db.prepare('SELECT 1 FROM media WHERE id=?').get(avatar),'attached images stay');
+});
+
+test('20 to 21 keeps reports, appeals, audit and sequence and accepts the new kinds',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'wr-report-kinds-')),file=join(dir,'db.sqlite');
+ try{
+  let db=openDatabase(file);
+  for(const id of ['a','b'])db.prepare('INSERT INTO users(id,handle,name,password,created_at) VALUES(?,?,?,?,0)').run(id,id,id,'x');
+  // Rebuild the pre-21 table (kinds without lfg/event/club_page) and stamp schema 20.
+  db.exec(`PRAGMA foreign_keys=OFF;BEGIN;CREATE TABLE reports_old(id INTEGER PRIMARY KEY AUTOINCREMENT,reporter_id TEXT NOT NULL REFERENCES users(id),kind TEXT NOT NULL CHECK(kind IN ('direct','club','post','comment','profile')),message_id INTEGER,target_id TEXT NOT NULL,sender_id TEXT NOT NULL REFERENCES users(id),snapshot TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','upheld','dismissed')),decision_note TEXT NOT NULL DEFAULT '',moderator_id TEXT REFERENCES users(id),created_at INTEGER NOT NULL,decision_seen INTEGER NOT NULL DEFAULT 0 CHECK(decision_seen IN (0,1)),UNIQUE(reporter_id,kind,target_id)) STRICT;DROP TABLE reports;ALTER TABLE reports_old RENAME TO reports;PRAGMA user_version=20;COMMIT;PRAGMA foreign_keys=ON;`);
+  db.prepare("INSERT INTO reports(id,reporter_id,kind,message_id,target_id,sender_id,snapshot,reason,status,created_at) VALUES(7,'a','post',5,'5','b','s','r','upheld',1)").run();
+  db.prepare("INSERT INTO report_appeals(report_id,reason,created_at) VALUES(7,'appeal',2)").run();
+  db.prepare("INSERT INTO moderation_audit(report_id,actor_id,decision,note,created_at) VALUES(7,'b','upheld','note',3)").run();
+  db.close();
+  db=openDatabase(file);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version,21);
+  assert.equal(db.prepare('SELECT status,target_id FROM reports WHERE id=7').get().status,'upheld');
+  assert.equal(db.prepare('SELECT count(*) n FROM report_appeals WHERE report_id=7').get().n,1);
+  assert.equal(db.prepare('SELECT count(*) n FROM moderation_audit WHERE report_id=7').get().n,1);
+  assert.equal(db.prepare('PRAGMA foreign_key_check').all().length,0);
+  for(const kind of ['lfg','event','club_page'])db.prepare("INSERT INTO reports(reporter_id,kind,target_id,sender_id,snapshot,reason,created_at) VALUES('a',?,'1','b','s','r',1)").run(kind);
+  assert(db.prepare("SELECT min(id) m FROM reports WHERE kind='lfg'").get().m>7,'sequence continues after the old maximum');
+  assert.throws(()=>db.prepare("INSERT INTO reports(reporter_id,kind,target_id,sender_id,snapshot,reason,created_at) VALUES('a','user','1','b','s','r',1)").run());
+  db.close();
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+test('reports on group announcements, events and club pages enforce access and feed sanctions',async t=>{
+ const f=await fixture(t),[owner,reporter,mod,outsider]=f.clients;
+ await f.restart([mod.id]);
+ const club=(await owner.call('/api/clubs','POST',{name:'Спам клуб',description:'Купи аккаунты',access:'open'})).id;
+ const closed=(await owner.call('/api/clubs','POST',{name:'Закрытый',description:'Тайна',access:'request'})).id;
+ const group=(await owner.call('/api/lfg','POST',{title:'Продам буст',mode:'ranked',region:'eu',language:'ru',role:'any',rank:'',voice:'optional',description:'Пиши в личку',capacity:3,durationHours:8,clientId:'report-group-0000001'})).id;
+ const event=(await owner.call('/api/events','POST',{title:'Раздача',description:'Ссылка',mode:'normal',region:'eu',language:'ru',timezone:'UTC',startsAt:Date.now()+3600000,durationHours:2,roles:['mid','jungle'],ownerRole:'mid',clientId:'report-event-0000001'})).id;
+ const file=async(kind,targetId,who=reporter)=>who.call('/api/reports','POST',{kind,targetId,reason:'Нарушение правил'});
+ for(const [kind,id] of [['club_page',club],['lfg',group],['event',event]])assert.equal((await file(kind,id)).status,201,kind);
+ assert.equal((await file('club_page',club)).status,200,'repeat returns the same report');
+ assert.equal((await file('club_page',closed)).status,404,'a closed club page is not reportable by outsiders');
+ assert.equal((await file('club_page',club,owner)).status,404,'own objects are not reportable');
+ assert.equal((await file('lfg',group+99)).status,404);
+ assert.equal((await file('event','1')).status,422,'events take numeric ids');
+ assert.equal((await file('club_page',7)).status,422,'club pages take string ids');
+ assert.equal((await owner.call('/api/lfg/'+group+'/close','POST',{})).status,200);
+ assert.equal((await file('lfg',group,outsider)).status,404,'a closed announcement is hidden from non-participants');
+ const queue=(await mod.call('/api/moderation/reports')).reports.filter(r=>['club_page','lfg','event'].includes(r.kind));
+ assert.equal(queue.length,3);assert(queue.every(r=>r.sender_id===owner.id&&r.snapshot.length>3));
+ assert.equal((await mod.call(`/api/moderation/reports/${queue[0].id}/decision`,'POST',{decision:'upheld',note:'Подтверждено'})).status,200);
+ assert.equal((await mod.call(`/api/moderation/reports/${queue[0].id}/action`,'POST',{action:'remove-post',note:'Нельзя'})).status,422,'no removal action exists for these kinds yet');
+ assert.equal((await owner.call('/api/me')).sanction.level,'warning');
 });

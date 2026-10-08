@@ -11,7 +11,7 @@ if(flag==='--apply'&&existsSync(resolve(copy)))throw Error('Backup destination m
 const db=new DatabaseSync(path,{readOnly:flag!=='--apply'});
 try{
  db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=3000;');
- if(db.prepare('PRAGMA user_version').get().user_version!==20)throw Error('Run with the published schema-20 release after its cold migration.');
+ if(db.prepare('PRAGMA user_version').get().user_version!==21)throw Error('Run with the published schema-21 release after its cold migration.');
  const plan=demoOwnershipPlan(db,handle);
  if(flag!=='--apply'){
   const verified=plan.clubs.every(c=>!c.changed&&db.prepare('SELECT status FROM memberships WHERE club_id=? AND user_id=?').get(c.id,plan.target.id)?.status==='member');
