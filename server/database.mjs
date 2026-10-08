@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 2) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 3) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -57,6 +57,23 @@ export function openDatabase(path) {
     ) STRICT;
     CREATE INDEX messages_club ON messages(club_id,id);
     PRAGMA user_version=2;
+    COMMIT;`);
+  if (version < 3) db.exec(`BEGIN IMMEDIATE;
+    ALTER TABLE users ADD COLUMN dm_requests INTEGER NOT NULL DEFAULT 1 CHECK(dm_requests IN (0,1));
+    CREATE TABLE direct_conversations (
+      id TEXT PRIMARY KEY, user_low TEXT NOT NULL REFERENCES users(id), user_high TEXT NOT NULL REFERENCES users(id),
+      requester_id TEXT NOT NULL REFERENCES users(id), status TEXT NOT NULL CHECK(status IN ('pending','accepted','rejected')),
+      created_at INTEGER NOT NULL, UNIQUE(user_low,user_high), CHECK(user_low<user_high)
+    ) STRICT;
+    CREATE TABLE direct_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL REFERENCES direct_conversations(id),
+      sender_id TEXT NOT NULL REFERENCES users(id), client_id TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL,
+      UNIQUE(conversation_id,sender_id,client_id)
+    ) STRICT;
+    CREATE INDEX direct_history ON direct_messages(conversation_id,id);
+    CREATE TABLE blocks (blocker_id TEXT NOT NULL REFERENCES users(id), target_id TEXT NOT NULL REFERENCES users(id),
+      PRIMARY KEY(blocker_id,target_id), CHECK(blocker_id<>target_id)) STRICT;
+    PRAGMA user_version=3;
     COMMIT;`);
   return db;
 }

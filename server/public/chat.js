@@ -1,6 +1,6 @@
 'use strict';
 // One controller per mounted club. It never trusts a previous membership check.
-window.createClubChat = function ({ root, clubId, userId, api }) {
+window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/clubs/${clubId}/messages`, title = 'Чат клуба' }) {
   const encode = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const storageKey = `wr-chat-pending:${userId}:${clubId}`;
   let active = true, timer, polling = false, cursor = 0, oldest = null, hasOlder = false, initial = true;
@@ -17,7 +17,7 @@ window.createClubChat = function ({ root, clubId, userId, api }) {
       if (item && typeof item.clientId === 'string' && /^[A-Za-z0-9_-]{16,80}$/.test(item.clientId) && typeof item.body === 'string' && item.body.trim().length > 0 && item.body.length <= 2000) pending.set(item.clientId, { clientId:item.clientId, body:item.body, status:'Не подтверждено. Можно повторить.' });
     }
   } catch { /* Storage may be unavailable; in-memory retries still work. */ }
-  root.innerHTML = `<div class="row between wrap"><h3>Чат клуба</h3><button type="button" class="btn quiet" data-chat-refresh>Обновить</button></div><p class="note" data-chat-status role="status">Подключение…</p><button type="button" class="btn quiet hidden" data-chat-older>Ранние сообщения</button><div class="server-chat-log" data-chat-log role="log" aria-label="Сообщения клуба"></div><div data-chat-pending></div><form data-chat-form><label class="field">Сообщение<textarea name="body" required maxlength="2000" rows="2" placeholder="Напиши участникам клуба…"></textarea></label><p class="error" data-chat-error role="alert"></p><button class="btn primary">Отправить</button></form>`;
+  root.innerHTML = `<div class="row between wrap"><h3>${encode(title)}</h3><button type="button" class="btn quiet" data-chat-refresh>Обновить</button></div><p class="note" data-chat-status role="status">Подключение…</p><button type="button" class="btn quiet hidden" data-chat-older>Ранние сообщения</button><div class="server-chat-log" data-chat-log role="log" aria-label="Сообщения"></div><div data-chat-pending></div><form data-chat-form><label class="field">Сообщение<textarea name="body" required maxlength="2000" rows="2" placeholder="Напиши сообщение…"></textarea></label><p class="error" data-chat-error role="alert"></p><button class="btn primary">Отправить</button></form>`;
   const find = selector => root.querySelector(selector);
   const status = text => { if (active) find('[data-chat-status]').textContent = text; };
   function persist() {
@@ -57,7 +57,7 @@ window.createClubChat = function ({ root, clubId, userId, api }) {
     if (!active || polling) return;
     clearTimeout(timer);polling=true;let more=false;
     try {
-      const data=await request(`/api/clubs/${clubId}/messages${initial?'':`?after=${cursor}`}`);
+      const data=await request(`${endpoint}${initial?'':`?after=${cursor}`}`);
       if (!active || !allowed(data)) return;
       if(initial){hasOlder=data.hasMore;oldest=data.messages[0]?.id??null;find('[data-chat-older]').classList.toggle('hidden',!hasOlder);}
       merge(data.messages);
@@ -71,7 +71,7 @@ window.createClubChat = function ({ root, clubId, userId, api }) {
     const item=pending.get(clientId);if(!active||!item||item.busy)return;
     item.busy=true;item.status='Отправляется…';drawPending();
     try {
-      const data=await request(`/api/clubs/${clubId}/messages`,'POST',{clientId,body:item.body});
+      const data=await request(`${endpoint}`,'POST',{clientId,body:item.body});
       if(!active)return;
       if(data.message.sender_id!==userId){revoke();return;}
       // Do not advance the read cursor: other messages may precede this one.
@@ -86,7 +86,7 @@ window.createClubChat = function ({ root, clubId, userId, api }) {
     if(!active||!hasOlder||oldest===null)return;
     const button=find('[data-chat-older]');button.disabled=true;
     try{
-      const data=await request(`/api/clubs/${clubId}/messages?before=${oldest}`);
+      const data=await request(`${endpoint}?before=${oldest}`);
       if(!active||!allowed(data))return;
       const log=find('[data-chat-log]'),height=log.scrollHeight,top=log.scrollTop;
       merge(data.messages);oldest=data.messages[0]?.id??oldest;hasOlder=data.hasMore;
