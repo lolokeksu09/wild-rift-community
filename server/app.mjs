@@ -35,6 +35,7 @@ const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/composer.js', ['composer.js','text/javascript; charset=utf-8']],
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
+  ['/launch.css', ['launch.css', 'text/css; charset=utf-8']],
   ['/premium.css', ['premium.css', 'text/css; charset=utf-8']],
   ['/events.js', ['events.js','text/javascript; charset=utf-8']],
   ['/clubs.js', ['clubs.js','text/javascript; charset=utf-8']],
@@ -137,7 +138,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
             res.writeHead(200,{'Content-Type':path==='/robots.txt'?'text/plain; charset=utf-8':'application/xml; charset=utf-8'});res.end(method==='HEAD'?undefined:value);return;
           }
         }
-        const pageRoute=/^\/(?:clubs(?:\/[\w-]{1,80})?|posts\/\d{1,16}|players(?:\/[\w-]{1,80})?|guides|teams|events|account|messages|notifications|reports|saved|drafts|search|rules)\/?$/.test(path);
+        const pageRoute=/^\/(?:feed|clubs(?:\/[\w-]{1,80})?|posts\/\d{1,16}|players(?:\/[\w-]{1,80})?|guides|teams|events|account|messages|notifications|reports|saved|drafts|search|rules)\/?$/.test(path);
         const asset = assets.get(path)||(pageRoute?assets.get('/'):null);
         if (!['GET','HEAD'].includes(method)) fail(404, 'Страница не найдена.');
         if(!asset){
@@ -480,3 +481,4 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
     async close() { if (server.listening) await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }); db.close(); }
   };
 }
+

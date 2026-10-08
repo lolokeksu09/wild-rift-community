@@ -2,6 +2,7 @@ const brand='Wild Rift Community';
 const defaultDescription='Сообщество Wild Rift. Находи напарников, создавай клубы и обсуждай игру.';
 const sections={
  '/':['Твои люди, твой клуб',defaultDescription],
+ '/feed':['Обсуждения','Обсуждения, публикации и клубы сообщества Wild Rift.'],
  '/clubs':['Клубы','Клубы и обсуждения игроков Wild Rift. Найди сообщество по своим интересам.'],
  '/players':['Люди','Публичные профили участников сообщества Wild Rift.'],
  '/guides':['Руководства','Руководства игроков Wild Rift: роли, чемпионы и игровой опыт.'],
@@ -12,7 +13,7 @@ const sections={
  '/notifications':['Ответы',defaultDescription],'/reports':['Жалобы',defaultDescription],
  '/saved':['Сохранённое',defaultDescription],'/drafts':['Черновики',defaultDescription],'/search':['Поиск',defaultDescription]
 };
-const indexable=new Set(['/','/clubs','/players','/guides','/teams','/events','/rules']);
+const indexable=new Set(['/','/feed','/clubs','/players','/guides','/teams','/events','/rules']);
 export const escapeHTML=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const excerpt=value=>String(value||'').replace(/\s+/g,' ').trim().slice(0,180);
 export function pageMetadata(db,path,user){
@@ -57,3 +58,4 @@ export function sitemap(db,origin){
  ) ORDER BY path LIMIT ?`).all(50000-urls.length))urls.push(row.path);
  return '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+urls.map(path=>`<url><loc>${escapeHTML(origin+path)}</loc></url>`).join('')+'</urlset>';
 }
+
