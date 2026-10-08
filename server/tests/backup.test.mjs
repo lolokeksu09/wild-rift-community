@@ -36,6 +36,8 @@ test('cold backup restores an independent database with private access and new w
   assert.equal(post.status, 201);
   const path = `/api/posts/${post.body.id}`;
   assert.equal((await owner.request(path + '/comments', 'POST', { body: 'Before backup' })).status, 201);
+  assert.equal((await owner.request(path+'/reaction','PUT',{kind:'useful'})).status,200);
+  assert.equal((await owner.request(path+'/saved','PUT',{})).status,200);
   await app.close(); app = null;
   // Cold copy: no open server or SQLite connection during either copy.
   cpSync(source, backup, { recursive: true, errorOnExist: true, force: false });
@@ -45,11 +47,13 @@ test('cold backup restores an independent database with private access and new w
   try {
     assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 11);
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 12);
   } finally { db.close(); }
   app = await createApp({ databasePath: restoredPath }); origin = await app.listen();
   assert.equal((await owner.request('/api/me')).body.user.handle, 'restoreowner');
   assert.equal((await owner.request(path)).body.post.body, 'Private preserved text');
+  assert.equal((await owner.request(path)).body.post.myReaction,'useful');
+  assert.equal((await owner.request('/api/saved')).body.posts[0].id,post.body.id);
   assert.equal((await outsider.request(path)).status, 403);
   assert.equal((await owner.request(path + '/comments')).body.comments[0].body, 'Before backup');
   const fresh = client();
