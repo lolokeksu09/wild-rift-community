@@ -1,0 +1,73 @@
+name: VDS status, logs and application archive
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Read-only server operation
+        type: choice
+        required: true
+        default: snapshot
+        options: [snapshot, status, logs, archive]
+permissions: {}
+concurrency:
+  group: vds-readonly
+  cancel-in-progress: false
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read server through pinned SSH host
+        env:
+          VDS_SSH_KEY: ${{ secrets.vvd_ssh_wr }}
+          OPERATION: ${{ inputs.operation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          case "$OPERATION" in snapshot|status|logs|archive) ;; *) echo 'Unsupported operation'; exit 1 ;; esac
+          keydir=$(mktemp -d)
+          trap 'rm -rf "$keydir"' EXIT
+          out="$RUNNER_TEMP/vds-readonly"
+          mkdir -p "$out"
+          test -n "$VDS_SSH_KEY" || { echo 'Missing secret vvd_ssh_wr'; exit 1; }
+          printf '%s\n' "$VDS_SSH_KEY" > "$keydir/id_ed25519"
+          unset VDS_SSH_KEY
+          ssh-keygen -y -P '' -f "$keydir/id_ed25519" > "$keydir/actual.pub"
+          test "$(awk '{print $1, $2}' "$keydir/actual.pub")" = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPST/+oYHSmTytBFOz0CyVzwlkTXwJUlN+rFBEFKkMJK' || { echo 'Unexpected SSH key'; exit 1; }
+          printf '%s\n' '139.100.205.135 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH1pZF1lCdjez9hNRWJ+gpbwvIPvDxaiox1CYZbJ1LVX' > "$keydir/known_hosts"
+          remote=(ssh -T -i "$keydir/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$keydir/known_hosts" -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 root@139.100.205.135)
+          if [[ "$OPERATION" == snapshot || "$OPERATION" == status ]]; then
+            "${remote[@]}" 'bash -se' <<'REMOTE' | tee "$out/status.txt"
+          set -euo pipefail
+          date -u +'%Y-%m-%dT%H:%M:%SZ'
+          printf 'Deployed release: '
+          cat /opt/wild-rift-community/deployed-release
+          docker compose -f /opt/wild-rift-community/compose.yaml ps
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 --output /dev/null --write-out 'HTTPS status=%{http_code} verify=%{ssl_verify_result}\n' https://139.100.205.135/
+          REMOTE
+          fi
+          if [[ "$OPERATION" == snapshot || "$OPERATION" == logs ]]; then
+            "${remote[@]}" 'docker compose -f /opt/wild-rift-community/compose.yaml logs --no-color --tail=80 app caddy' > "$out/logs.txt"
+            test -s "$out/logs.txt"
+            echo 'Service logs saved in the artifact.'
+          fi
+          if [[ "$OPERATION" == snapshot || "$OPERATION" == archive ]]; then
+            "${remote[@]}" 'bash -se' <<'REMOTE' > "$out/wr-server-current.tar.gz"
+          set -euo pipefail
+          app=$(docker compose -f /opt/wild-rift-community/compose.yaml ps -q app)
+          test -n "$app"
+          docker exec "$app" tar -C /app -czf - server package.json package-lock.json
+          REMOTE
+            tar -tzf "$out/wr-server-current.tar.gz" > "$out/archive-files.txt"
+            (cd "$out" && sha256sum wr-server-current.tar.gz > SHA256SUMS)
+            cat "$out/SHA256SUMS"
+          fi
+      - name: Save requested server files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vds-readonly-${{ github.run_id }}
+          path: ${{ runner.temp }}/vds-readonly/
+          if-no-files-found: error
+          retention-days: 3

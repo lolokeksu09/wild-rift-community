@@ -4,6 +4,8 @@
 
 ## Выпуск
 
+Для чтения состояния сервера, служебных логов и исходников запущенного приложения используется отдельный ручной workflow [VDS status, logs and application archive](../.github/workflows/vds-readonly.yml). В Actions выбрать Run workflow, ветку `main` и операцию: `status`, `logs`, `archive` либо `snapshot` (все три). Задание не запускается при push или PR, использует существующий secret `vvd_ssh_wr` и закреплённый SSH-ключ сервера. Подробности — [ручная диагностика VDS](VDS_READONLY.md).
+
 `.github/workflows/vds-deploy.yml` работает только из main, вручную либо при изменении самого workflow. Обычный push кода не публикует его автоматически. Тесты выполняются до сборки; образ помечается SHA commit и передаётся на VDS через secret `vvd_ssh_wr`. Публичный ключ сервера закреплён, отключение проверки SSH не используется. Ключ не печатается и удаляется с runner после задания.
 
 На VDS `/opt/wild-rift-community/releases/<SHA>` содержит образ и конфигурацию выпуска. `/opt/wild-rift-community/data` содержит SQLite, принадлежит UID 1000. Контейнер работает непривилегированным пользователем, без опубликованного порта приложения и с read-only файловой системой. База хранится в отдельном каталоге. Caddy использует существующие caddy_data/caddy_config volumes и публикует 80 TCP, 443 TCP/UDP.
