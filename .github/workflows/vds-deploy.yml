@@ -1,5 +1,5 @@
 name: Deploy community to VDS
-# Release 0.31: current-password change and individual session management; schema20 unchanged.
+# Release 0.31 UI: community home refresh; SQLite schema 22.
 on:
   workflow_dispatch:
   push:
