@@ -378,7 +378,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         for(const [key,route,handler] of [
           ['direct','/api/direct/summary',directRoutes],['reports','/api/reports/summary',moderationRoutes],
           ['lfg','/api/lfg/notifications/summary',lfgRoutes],['discussions','/api/discussions/notifications/summary',discussionRoutes],
-          ['events','/api/events/notifications/summary',eventRoutes],['tournaments','/api/tournaments/invitations/summary',tournamentRoutes]
+          ['events','/api/events/notifications/summary',eventRoutes],['tournaments','/api/tournaments/invitations/summary',tournamentRoutes],['matches','/api/tournaments/notifications/summary',tournamentRoutes]
         ])handler({db,user,path:route,method,body,url,now,postFor,moderatorIds,send:(status,data)=>{if(status!==200)fail(status,'Не удалось обновить уведомления.');summaries[key]=data;}});
         send(200,{viewerId:user.id,...summaries});return;
       }

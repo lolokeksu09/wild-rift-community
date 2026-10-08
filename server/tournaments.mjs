@@ -11,6 +11,25 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
  const between=(a,b)=>get('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',a,b,b,a);
  const eligible=uid=>!['restricted','suspended'].includes(sanctionFor(db,uid,now())?.level);
  const safe=t=>({id:t.id,title:t.title,description:t.description,capacity:t.capacity,state:t.cancelled_at!==null?'cancelled':t.state,cancelled_at:t.cancelled_at,cancel_reason:t.cancel_reason,owner_id:t.owner_id,created_at:t.created_at});
+ const visibleNotification=n=>!blocked(n.owner_id)&&eligible(n.owner_id)&&n.schedule_version===n.current_version&&!!get("SELECT 1 FROM tournament_roster WHERE tournament_id=? AND user_id=? AND status='accepted' AND team_id IN (?,?)",n.tournament_id,user.id,n.team_a,n.team_b)&&!blocked(n.captain_a)&&!blocked(n.captain_b)&&eligible(n.captain_a)&&eligible(n.captain_b);
+ const inbox=()=>{
+  signed();run(`INSERT OR IGNORE INTO tournament_notifications(user_id,tournament_id,round,slot,schedule_version,kind,created_at)
+   SELECT ?,m.tournament_id,m.round,m.slot,m.schedule_version,'reminder',? FROM tournament_matches m JOIN tournaments t ON t.id=m.tournament_id
+   WHERE t.state='running' AND t.cancelled_at IS NULL AND m.winner IS NULL AND m.team_a IS NOT NULL AND m.team_b IS NOT NULL AND m.starts_at>? AND m.starts_at<=?
+   AND EXISTS(SELECT 1 FROM tournament_roster r WHERE r.tournament_id=m.tournament_id AND r.user_id=? AND r.status='accepted' AND r.team_id IN (m.team_a,m.team_b))`,user.id,now(),now(),now()+1800000,user.id);
+  return all(`SELECT n.*,t.title,t.owner_id,m.starts_at,m.schedule_version current_version,m.team_a,m.team_b,a.captain_id captain_a,b.captain_id captain_b
+   FROM tournament_notifications n JOIN tournaments t ON t.id=n.tournament_id JOIN tournament_matches m ON m.tournament_id=n.tournament_id AND m.round=n.round AND m.slot=n.slot
+   JOIN tournament_teams a ON a.id=m.team_a JOIN tournament_teams b ON b.id=m.team_b
+   WHERE n.user_id=? AND t.cancelled_at IS NULL AND (n.kind!='reminder' OR (t.state='running' AND m.winner IS NULL AND m.starts_at>?)) ORDER BY n.id DESC`,user.id,now()).filter(visibleNotification);
+ };
+ if(['/api/tournaments/notifications','/api/tournaments/notifications/summary'].includes(path)&&method==='GET'){
+  const rows=inbox(),unread=rows.filter(n=>!n.seen).length;if(path.endsWith('/summary')){send(200,{viewerId:user.id,unread});return true;}
+  const before=url?.searchParams.get('before');if(before&&!/^[1-9]\d*$/.test(before))fail(422,'Некорректная граница списка.');
+  const page=rows.filter(n=>!before||n.id<Number(before)).slice(0,51),more=page.length>50;page.splice(50);
+  send(200,{viewerId:user.id,unread,notifications:page.map(({id,tournament_id,title,round,slot,kind,starts_at,seen})=>({id,tournament_id,title,round,slot,kind,starts_at,seen})),next:more?page.at(-1).id:null});return true;
+ }
+ const read=path.match(/^\/api\/tournaments\/notifications\/(\d+)\/read$/);
+ if(read&&method==='POST'){const rows=inbox();if(!rows.some(n=>n.id===Number(read[1])))fail(404,'Уведомление недоступно.');run('UPDATE tournament_notifications SET seen=1 WHERE id=? AND user_id=?',Number(read[1]),user.id);send(200,{ok:true});return true;}
  if(['/api/tournaments/invitations','/api/tournaments/invitations/summary'].includes(path)&&method==='GET'){
   signed();const availability=new Map(),available=uid=>{if(!availability.has(uid))availability.set(uid,!blocked(uid)&&eligible(uid));return availability.get(uid);};
   const invitations=all(`SELECT t.id tournament_id,t.title,team.name team_name,team.captain_id,t.owner_id
@@ -31,7 +50,7 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
    if(get("SELECT count(*) n FROM tournaments WHERE owner_id=? AND state!='finished' AND cancelled_at IS NULL",user.id).n>=5)fail(409,'Можно организовать до пяти незавершённых турниров.');
    return Number(run('INSERT INTO tournaments(owner_id,title,description,capacity,client_id,signature,created_at) VALUES(?,?,?,?,?,?,?)',user.id,title,description,capacity,clientId,signature,now()).lastInsertRowid);});send(200,{id});return true;
  }
- const m=path.match(/^\/api\/tournaments\/(\d+)(?:\/(join|leave|start|results|invite|accept|decline|remove|member-leave|cancel))?$/);if(!m)fail(404,'Маршрут не найден.');
+ const m=path.match(/^\/api\/tournaments\/(\d+)(?:\/(join|leave|start|results|invite|accept|decline|remove|member-leave|cancel|schedule))?$/);if(!m)fail(404,'Маршрут не найден.');
  const id=Number(m[1]),t=get('SELECT * FROM tournaments WHERE id=?',id);if(!t||blocked(t.owner_id))fail(404,'Турнир недоступен.');
  if(!m[2]&&method==='GET'){
   const teams=all(`SELECT t.id,t.name,t.captain_id,t.roster_required,
@@ -41,7 +60,7 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
   const myTeam=membership?.status==='accepted'?membership.team_id:null;
   const invitation=membership?.status==='pending'&&t.state==='open'&&t.cancelled_at===null&&!blocked(teams.find(x=>x.id===membership.team_id)?.captain_id)?teams.find(x=>x.id===membership.team_id):null;
   const roster=myTeam?all(`SELECT r.user_id,r.status,u.handle FROM tournament_roster r JOIN users u ON u.id=r.user_id WHERE r.team_id=? AND r.status!='declined' ORDER BY r.user_id`,myTeam).filter(r=>!blocked(r.user_id)):[];
-  send(200,{tournament:safe(t),teams,roster,invitation,matches:all('SELECT round,slot,team_a,team_b,score_a,score_b,winner FROM tournament_matches WHERE tournament_id=? ORDER BY round,slot',id),myTeam});return true;
+  send(200,{tournament:safe(t),teams,roster,invitation,matches:all('SELECT round,slot,team_a,team_b,score_a,score_b,winner,starts_at,schedule_version FROM tournament_matches WHERE tournament_id=? ORDER BY round,slot',id),myTeam});return true;
  }
  if(method!=='POST')fail(405,'Метод не поддерживается.');signed();
  if(m[2]==='cancel'){
@@ -115,6 +134,19 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
    const byes=size-teams.length;let next=0;
    for(let slot=0;slot<size/2;slot++){const a=teams[next++].id,b=slot<byes?null:teams[next++].id;run('UPDATE tournament_matches SET team_a=?,team_b=?,winner=? WHERE tournament_id=? AND round=1 AND slot=?',a,b,b?null:a,id,slot);if(!b)run(`UPDATE tournament_matches SET ${slot%2?'team_b':'team_a'}=? WHERE tournament_id=? AND round=2 AND slot=?`,a,id,Math.floor(slot/2));}
    run("UPDATE tournaments SET state='running' WHERE id=?",id);});send(200,{ok:true});return true;
+ }
+ if(m[2]==='schedule'){
+  owner(t);const {round,slot,startsAt,expectedVersion}=body;
+  if(![round,slot,startsAt,expectedVersion].every(Number.isSafeInteger)||round<1||slot<0||expectedVersion<0||startsAt<0)fail(422,'Укажи дату и время матча.');
+  transaction(db,()=>{const match=get('SELECT * FROM tournament_matches WHERE tournament_id=? AND round=? AND slot=?',id,round,slot);
+   if(t.state!=='running'||!match?.team_a||!match.team_b||match.winner)fail(409,'Назначить время можно только готовому незавершённому матчу.');
+   if(match.starts_at===startsAt)return;
+   if(match.schedule_version!==expectedVersion)fail(409,'Время уже изменилось. Обнови турнир перед переносом.');
+   if(startsAt<=now()||startsAt>now()+366*86400000)fail(422,'Выбери будущее время в пределах года.');
+   const version=match.schedule_version+1,kind=match.starts_at===null?'scheduled':'rescheduled';
+   run('UPDATE tournament_matches SET starts_at=?,schedule_version=? WHERE tournament_id=? AND round=? AND slot=?',startsAt,version,id,round,slot);
+   for(const r of all("SELECT user_id FROM tournament_roster WHERE tournament_id=? AND status='accepted' AND team_id IN (?,?)",id,match.team_a,match.team_b))run('INSERT INTO tournament_notifications(user_id,tournament_id,round,slot,schedule_version,kind,created_at) VALUES(?,?,?,?,?,?,?)',r.user_id,id,round,slot,version,kind,now());
+  });send(200,{ok:true});return true;
  }
  if(m[2]==='results'){
   owner(t);const {round,slot,scoreA,scoreB}=body;if(![round,slot,scoreA,scoreB].every(Number.isSafeInteger)||round<1||slot<0||scoreA<0||scoreB<0||scoreA>9||scoreB>9||scoreA===scoreB)fail(422,'Введи счёт 0–9 без ничьей.');

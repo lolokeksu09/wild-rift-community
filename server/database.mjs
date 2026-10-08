@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 25) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 26) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -377,6 +377,14 @@ export function openDatabase(path) {
     ALTER TABLE tournaments ADD COLUMN cancelled_at INTEGER;
     ALTER TABLE tournaments ADD COLUMN cancel_reason TEXT NOT NULL DEFAULT '';
     PRAGMA user_version=25;
+  `));
+  if(version < 26) transaction(db,()=>db.exec(`
+    ALTER TABLE tournament_matches ADD COLUMN starts_at INTEGER;
+    ALTER TABLE tournament_matches ADD COLUMN schedule_version INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE tournament_notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL REFERENCES users(id),tournament_id INTEGER NOT NULL,round INTEGER NOT NULL,slot INTEGER NOT NULL,schedule_version INTEGER NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('scheduled','rescheduled','reminder')),created_at INTEGER NOT NULL,seen INTEGER NOT NULL DEFAULT 0 CHECK(seen IN (0,1)),FOREIGN KEY(tournament_id,round,slot) REFERENCES tournament_matches(tournament_id,round,slot)) STRICT;
+    CREATE UNIQUE INDEX tournament_notification_unique ON tournament_notifications(user_id,tournament_id,round,slot,schedule_version,kind);
+    CREATE INDEX tournament_notifications_user ON tournament_notifications(user_id,seen,id);
+    PRAGMA user_version=26;
   `));
   return db;
 }

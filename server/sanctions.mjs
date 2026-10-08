@@ -16,7 +16,7 @@ export function sanctionFor(db,userId,time){
 // Creating or changing public content, messages and uploads. Reading, leaving, blocking,
 // reporting, appeals, read markers and removing one's own content stay available.
 const RESTRICTED=[
- ['POST',/^\/api\/tournaments(?:\/(?:\d+)(?:\/(?:join|start|results|invite|accept))?)?$/],
+ ['POST',/^\/api\/tournaments(?:\/(?:\d+)(?:\/(?:join|start|results|invite|accept|schedule))?)?$/],
  ['POST',/^\/api\/clubs$/],['POST',/^\/api\/clubs\/[\w-]+\/(posts|polls|guides|messages|draft\/publish)$/],
  ['PATCH',/^\/api\/clubs\/[\w-]+\/(settings|cover)$/],['PATCH',/^\/api\/posts\/\d+(\/guide)?$/],
  ['POST',/^\/api\/posts\/\d+\/comments$/],['POST',/^\/api\/direct(\/[\w-]+\/messages)?$/],

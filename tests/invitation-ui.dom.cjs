@@ -1,7 +1,7 @@
 const {JSDOM,VirtualConsole}=require('jsdom'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
-const {pathToFileURL}=require('node:url');
+const {pathToFileURL}=require('node:url');const os=require('node:os');
 (async()=>{
- const {createApp}=await import(pathToFileURL(path.join(__dirname,'../server/app.mjs')).href),app=await createApp(),origin=await app.listen();let dom;
+ const {createApp}=await import(pathToFileURL(path.join(__dirname,'../server/app.mjs')).href),temp=fs.mkdtempSync(path.join(os.tmpdir(),'wr-notice-ui-')),databasePath=path.join(temp,'db.sqlite'),app=await createApp({databasePath}),origin=await app.listen();let dom;
  const client=()=>({cookie:'',csrf:'',async req(url,method='GET',body){const r=await fetch(origin+url,{method,headers:{Cookie:this.cookie,Origin:origin,'Content-Type':'application/json','X-Community-Request':'1','X-CSRF-Token':this.csrf},body:body?JSON.stringify(body):undefined}),data=await r.json();if(r.headers.get('set-cookie'))this.cookie=r.headers.get('set-cookie').split(';')[0];if(data.csrf)this.csrf=data.csrf;assert.equal(r.ok,true,JSON.stringify(data));return data;}});
  try{
   const owner=client(),captain=client(),player=client();for(const [c,handle] of [[owner,'ui_notice_owner'],[captain,'ui_notice_captain'],[player,'ui_notice_player']])await c.req('/api/register','POST',{handle,name:handle,password:'Notice-UI-test-only-123'});
@@ -18,6 +18,15 @@ const {pathToFileURL}=require('node:url');
   d.querySelector('[data-tournament-accept]').click();await until(()=>d.querySelector('[data-tournament-member-leave]'));await until(()=>d.querySelector('#notifications').title.includes('приглашений: 0'));assert.equal(d.querySelector('[data-notification-total]').hidden,true);
   const next=await invite('notice-ui-second-fixture');d.querySelector('#notifications').click();await until(()=>d.querySelector('[data-tournament-invitation="'+next+'"]'));
   await owner.req('/api/tournaments/'+next+'/cancel','POST',{reason:'Not enough players'});d.querySelector('#notifications').click();await until(()=>!d.querySelector('[data-tournament-invitation]')&&d.querySelector('#discussionEvents'));
+  const {openDatabase}=await import(pathToFileURL(path.join(__dirname,'../server/database.mjs')).href),db=openDatabase(databasePath);
+  try{const opponent=Number(db.prepare("INSERT INTO tournament_teams(tournament_id,captain_id,name) VALUES(?,(SELECT id FROM users WHERE handle='ui_notice_owner'),'Opponent')").run(id).lastInsertRowid),team=db.prepare('SELECT id FROM tournament_teams WHERE tournament_id=? AND captain_id=(SELECT id FROM users WHERE handle=?)').get(id,'ui_notice_captain').id;
+   db.prepare("UPDATE tournaments SET state='running' WHERE id=?").run(id);db.prepare('INSERT INTO tournament_matches(tournament_id,round,slot,team_a,team_b) VALUES(?,1,0,?,?)').run(id,team,opponent);
+  }finally{db.close();}
+  await owner.req('/api/tournaments/'+id+'/schedule','POST',{round:1,slot:0,startsAt:Date.now()+1200000,expectedVersion:0});
+  d.querySelector('#notifications').click();await until(()=>d.querySelectorAll('[data-match-notification]').length===2);assert.match(d.querySelector('#matchNotifications').textContent,/Матч назначен/);assert.match(d.querySelector('#matchNotifications').textContent,/30 минут/);
+  d.dispatchEvent(new w.Event('visibilitychange'));await until(()=>d.querySelector('#notifications').title.includes('о матчах: 2'));
+  d.querySelector('[data-match-read]').click();await until(()=>d.querySelectorAll('[data-match-read]').length===1);await until(()=>d.querySelector('#notifications').title.includes('о матчах: 1'));
+  d.querySelector('[data-match-notification] a').click();await until(()=>d.querySelector('[data-tournament-refresh]'));assert.equal(w.location.search,'?id='+id);assert.equal(d.querySelector('[data-tournament-schedule]'),null);
   assert.deepEqual(errors,[]);console.log('PASS invitation center with real HTTP: private list, escaped content, exact tournament deep link, consent, combined badge reset and cancelled invitation removal. DOM only.');
- }finally{dom?.window.close();await app.close();}
+ }finally{dom?.window.close();await app.close();fs.rmSync(temp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});
