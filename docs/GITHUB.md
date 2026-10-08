@@ -1,6 +1,6 @@
 # GitHub проекта
 
-> Документ ранней организации проекта. Текущие этапы Android — [ROADMAP](android/ROADMAP.md), состояние — [STATUS](android/STATUS.md). Статусы старых Issues не означают готовность APK.
+> Документ ранней организации проекта. Текущий статус сайта — [ROADMAP.md](ROADMAP.md), база оформления — [этап 24](DESIGN_BASELINE_STAGE24.md).
 
 Репозиторий: https://github.com/lolokeksu09/wild-rift-community
 Владелец: `lolokeksu09`. Видимость: Private. Основная ветка: `main`.

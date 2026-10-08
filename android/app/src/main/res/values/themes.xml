@@ -1,9 +1,0 @@
-<resources>
-    <style name="Theme.WildRiftCommunity" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:colorAccent">#dfc18b</item>
-        <item name="android:windowBackground">#0c0e12</item>
-    </style>
-</resources>

@@ -7,11 +7,11 @@ const files = readdirSync(root).filter(name => name.endsWith('.md')).map(name =>
 function collect(directory) {
   for (const entry of readdirSync(directory, {withFileTypes: true})) {
     const path = resolve(directory, entry.name);
-    if (entry.isDirectory() && !["build", ".gradle", ".kotlin", ".idea", "node_modules"].includes(entry.name)) collect(path);
+    if (entry.isDirectory() && !["build", "node_modules"].includes(entry.name)) collect(path);
     else if (entry.name.endsWith('.md')) files.push(path);
   }
 }
-for (const directory of ['docs', 'android']) collect(resolve(root, directory));
+for (const directory of ['docs']) collect(resolve(root, directory));
 let checked = 0;
 const errors = [];
 for (const file of files) {

@@ -25,8 +25,6 @@ jobs:
           cache-dependency-path: tests/package-lock.json
       - run: npm ci
       - run: npm ci --prefix tests
-      - name: Verify Android account payloads against isolated server
-        run: node tools/check-android-account-contract.mjs
       - name: Check operator scripts
         run: bash -n deploy/install.sh deploy/offsite-backup.sh deploy/smoke-image.sh
       - run: npm run verify
