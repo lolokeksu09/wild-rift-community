@@ -30,3 +30,12 @@ tests/ui-screenshots/
 *.aab
 *.jks
 *.keystore
+
+# Temporary release workspaces and archives; runtime image assets stay tracked
+/design-stage*-release/
+/termux-release/
+/generated_images/
+/ui-screenshots/
+*.zip
+*.tar.gz
+*.sqlite-journal

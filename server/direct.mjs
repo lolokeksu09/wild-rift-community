@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { fail, text } from './security.mjs';
 import { transaction } from './database.mjs';
+import {isDemo} from './demo.mjs';
 import {contactBudget,contactPolicy} from './contact-budget.mjs';
 
 export function directRoutes({db,user,path,method,body,url,send,now,contactLimits=contactPolicy()}) {
@@ -51,7 +52,11 @@ export function directRoutes({db,user,path,method,body,url,send,now,contactLimit
     const raw=url.searchParams.get('after');let cursor=null;
     if(raw!==null){try{cursor=JSON.parse(Buffer.from(raw,'base64url').toString('utf8'));}catch{fail(422,'Некорректный курсор.');}
       if(!Array.isArray(cursor)||cursor.length!==2||!Number.isSafeInteger(cursor[0])||cursor[0]<0||typeof cursor[1]!=='string'||cursor[1].length>80)fail(422,'Некорректный курсор.');}
-    const rows=all(`SELECT c.*,u.id AS peer_id,u.name AS peer_name,u.handle AS peer_handle,
+    const rows=all(`SELECT c.*,u.id AS peer_id,u.name AS peer_name,u.handle AS peer_handle,u.game_profile AS peer_game_profile,
+      CASE WHEN u.profile_visible=1 THEN u.avatar_id ELSE NULL END AS peer_avatar_id,
+      CASE WHEN c.status='accepted' THEN (SELECT body FROM direct_messages WHERE conversation_id=c.id ORDER BY id DESC LIMIT 1) ELSE NULL END AS last_body,
+      CASE WHEN c.status='accepted' THEN (SELECT created_at FROM direct_messages WHERE conversation_id=c.id ORDER BY id DESC LIMIT 1) ELSE NULL END AS last_created_at,
+      CASE WHEN c.status='accepted' THEN (SELECT sender_id FROM direct_messages WHERE conversation_id=c.id ORDER BY id DESC LIMIT 1) ELSE NULL END AS last_sender_id,
       (SELECT body FROM direct_messages WHERE conversation_id=c.id ORDER BY id LIMIT 1) AS first_body,
       (SELECT id FROM direct_messages WHERE conversation_id=c.id ORDER BY id LIMIT 1) AS first_message_id,
       CASE WHEN c.status='accepted' THEN (SELECT count(*) FROM direct_messages dm WHERE dm.conversation_id=c.id AND dm.sender_id<>?
@@ -61,7 +66,7 @@ export function directRoutes({db,user,path,method,body,url,send,now,contactLimit
       (SELECT 1 FROM blocks b WHERE (b.blocker_id=c.user_low AND b.target_id=c.user_high) OR (b.blocker_id=c.user_high AND b.target_id=c.user_low))
       ${cursor?'AND (c.created_at<? OR (c.created_at=? AND c.id>?))':''}
       ORDER BY c.created_at DESC,c.id ASC LIMIT 51`,user.id,user.id,user.id,user.id,user.id,...(cursor?[cursor[0],cursor[0],cursor[1]]:[]));
-    const conversations=rows.slice(0,50),last=conversations.at(-1);let summary;
+    const conversations=rows.slice(0,50).map(({peer_game_profile,...c})=>({...c,peer_is_bot:isDemo({game_profile:peer_game_profile})})),last=conversations.at(-1);let summary;
     directRoutes({db,user,path:'/api/direct/summary',method:'GET',body,url,now,send:(_status,data)=>{summary=data;}});
     send(200,{...summary,contactBudget:contactBudget(db,user,now(),contactLimits),conversations,next:rows.length>50?Buffer.from(JSON.stringify([last.created_at,last.id])).toString('base64url'):null});return true;
   }

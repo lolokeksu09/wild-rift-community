@@ -36,15 +36,15 @@ try {
     mkdirSync('ui-screenshots',{recursive:true});
     await page.screenshot({path:`ui-screenshots/home-${width}.png`,fullPage:true});
     await page.locator('#account').click();
-    await page.locator('#register').waitFor();
+    await page.locator('#register').waitFor({state:'attached'});await page.locator('[data-auth-switch=register]').click();
     await layout('registration');
     await page.locator('#register [name=name]').fill('ОченьДлинноеИмяИгрокаБезПробелов1234567890');
     await page.locator('#register [name=handle]').fill(`browser${width}`);
     await page.locator('#register [name=password]').fill('Browser-test-only-123456');
     await page.locator('#register button').click();
-    await page.locator('#createClub').waitFor();
+    await page.locator('#createClub').waitFor({state:'attached'});
     await layout('signed-in clubs');
-    await page.locator('#createClub [name=name]').fill('Ночная смена');
+    await page.locator('[data-club-create-open]').click();await page.locator('#createClub [name=name]').fill('Ночная смена');
     await page.locator('#createClub [name=description]').fill('Играем вечером, обсуждаем матчи и помогаем друг другу. Спокойная компания для совместных игр.');
     await page.locator('#createClub button').click();
     await page.locator('[data-club-tab=posts]').waitFor();
@@ -75,12 +75,12 @@ try {
     assert((await page.locator('[data-club-card]:visible').count())>0);
     await layout('club cards');
     await page.screenshot({path:`ui-screenshots/clubs-${width}.png`,fullPage:true});
-    for (const [id, heading] of [['account', 'Аккаунт'], ['direct', 'Сообщения'], ['reports', 'Жалобы']]) {
+    for (const [id, heading] of [['account', 'Аккаунт'], ['direct', 'Чаты'], ['reports', 'Жалобы']]) {
       await page.locator(`#${id}`).click();
       await page.locator('#main h1').filter({ hasText: heading }).waitFor();
       assert.equal(await page.locator(`#${id}`).getAttribute('aria-current'), 'page');
       await layout(id);
-      if(id==='account'){
+      if(id==='account'){await page.locator('[data-account-section=editor]').click();
         await page.locator('#profile [name=rank]').fill('Мастер');
         await page.locator('#profile [name=region]').fill('Европа');
         await page.locator('#profile [name=language]').fill('Русский');
