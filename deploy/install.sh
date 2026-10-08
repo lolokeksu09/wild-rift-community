@@ -65,11 +65,11 @@ if test -d data; then
   had_data=true
   if test -f data/community.sqlite; then
     # Check/migrate an isolated copy first. WAL can require writable SHM sidecars.
-    schema=$(docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$backup/data:/backup:ro" "$image" node --input-type=module -e "import {cpSync} from 'node:fs'; import {DatabaseSync} from 'node:sqlite'; import {openDatabase} from './server/database.mjs'; cpSync('/backup','/tmp/check',{recursive:true}); const old=new DatabaseSync('/tmp/check/community.sqlite',{readOnly:true}); const v=old.prepare('PRAGMA user_version').get().user_version; old.close(); if(![10,11,12,13,14,15,16,17,18,19,20].includes(v))throw Error('Unsupported deployment migration'); const d=openDatabase('/tmp/check/community.sqlite'); if(d.prepare('PRAGMA integrity_check').get().integrity_check!=='ok'||d.prepare('PRAGMA foreign_key_check').all().length)throw Error('Invalid migrated backup'); d.close(); console.log(v);" </dev/null)
-    [[ "$schema" == 10 || "$schema" == 11 || "$schema" == 12 || "$schema" == 13 || "$schema" == 14 || "$schema" == 15 || "$schema" == 16 || "$schema" == 17 || "$schema" == 18 || "$schema" == 19 || "$schema" == 20 ]]
-    if [[ "$schema" != 20 ]]; then
+    schema=$(docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$backup/data:/backup:ro" "$image" node --input-type=module -e "import {cpSync} from 'node:fs'; import {DatabaseSync} from 'node:sqlite'; import {openDatabase} from './server/database.mjs'; cpSync('/backup','/tmp/check',{recursive:true}); const old=new DatabaseSync('/tmp/check/community.sqlite',{readOnly:true}); const v=old.prepare('PRAGMA user_version').get().user_version; old.close(); if(![10,11,12,13,14,15,16,17,18,19,20,21].includes(v))throw Error('Unsupported deployment migration'); const d=openDatabase('/tmp/check/community.sqlite'); if(d.prepare('PRAGMA integrity_check').get().integrity_check!=='ok'||d.prepare('PRAGMA foreign_key_check').all().length)throw Error('Invalid migrated backup'); d.close(); console.log(v);" </dev/null)
+    [[ "$schema" == 10 || "$schema" == 11 || "$schema" == 12 || "$schema" == 13 || "$schema" == 14 || "$schema" == 15 || "$schema" == 16 || "$schema" == 17 || "$schema" == 18 || "$schema" == 19 || "$schema" == 20 || "$schema" == 21 ]]
+    if [[ "$schema" != 21 ]]; then
       migration=true
-      docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$root/data:/data" "$image" node --input-type=module -e "import {openDatabase} from './server/database.mjs'; const d=openDatabase('/data/community.sqlite'); if(d.prepare('PRAGMA user_version').get().user_version!==20||d.prepare('PRAGMA integrity_check').get().integrity_check!=='ok'||d.prepare('PRAGMA foreign_key_check').all().length)throw Error('Migration check failed'); d.close();" </dev/null
+      docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$root/data:/data" "$image" node --input-type=module -e "import {openDatabase} from './server/database.mjs'; const d=openDatabase('/data/community.sqlite'); if(d.prepare('PRAGMA user_version').get().user_version!==21||d.prepare('PRAGMA integrity_check').get().integrity_check!=='ok'||d.prepare('PRAGMA foreign_key_check').all().length)throw Error('Migration check failed'); d.close();" </dev/null
     fi
   fi
 else
@@ -84,17 +84,17 @@ if [[ "${SEED_DEMO_COMMUNITY:-0}" == 1 ]] && ! test -f "$root/demo-seeded-v1"; t
 fi
 if test -n "${DEMO_OWNER_HANDLE:-}" && ! test -f "$root/demo-owner-assigned-v1"; then
   [[ "$DEMO_OWNER_HANDLE" =~ ^[a-zA-Z0-9_]{3,24}$ ]]
-  test -f "$root/data/community.sqlite" && "$had_data"
+  test -f "$root/data/community.sqlite"
+  "$had_data"
   # Validate on a migrated isolated cold copy before changing live ownership.
   docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$backup/data:/backup:ro" "$image" node --input-type=module -e "import {cpSync} from 'node:fs';import {openDatabase} from './server/database.mjs';import {demoOwnershipPlan} from './server/demo-ownership.mjs';cpSync('/backup','/tmp/check',{recursive:true});const d=openDatabase('/tmp/check/community.sqlite');try{const p=demoOwnershipPlan(d,process.argv[1]);console.log(JSON.stringify({owner:p.target.handle,clubs:p.clubs.length}));}finally{d.close();}" "$DEMO_OWNER_HANDLE" </dev/null
   migration=true
   ownership_copy="before-demo-ownership-$(date -u +%Y%m%dT%H%M%S%N).sqlite"
   docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$root/data:/data" "$image" node server/demo-ownership-cli.mjs /data/community.sqlite "$DEMO_OWNER_HANDLE" --apply "/data/$ownership_copy" </dev/null
   mv "$root/data/$ownership_copy" "$backup/$ownership_copy"
-  owner_assigned=true
-fi
-if test -n "${DEMO_OWNER_HANDLE:-}"; then
+  # Verify only the release that assigns ownership; the owner may transfer clubs later.
   docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev -v "$root/data:/data" "$image" node server/demo-ownership-cli.mjs /data/community.sqlite "$DEMO_OWNER_HANDLE" --check </dev/null
+  owner_assigned=true
 fi
 cat "$bundle/compose.yaml" > compose.yaml
 # Leave Caddy serving maintenance during app startup.
