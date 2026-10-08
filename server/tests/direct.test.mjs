@@ -81,6 +81,6 @@ test('v2 migration preserves club messages and adds request defaults',async()=>{
    CREATE TABLE messages(id INTEGER PRIMARY KEY AUTOINCREMENT,club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,sender_id TEXT NOT NULL REFERENCES users(id),client_id TEXT NOT NULL,body TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(club_id,sender_id,client_id)) STRICT;
    CREATE INDEX messages_club ON messages(club_id,id);
    INSERT INTO messages(club_id,sender_id,client_id,body,created_at) VALUES('c','u','old-message','Keep me',1);PRAGMA user_version=2;`);db.close();
-  db=openDatabase(file);assert.equal(db.prepare('SELECT body FROM messages').get().body,'Keep me');assert.equal(db.prepare('SELECT dm_requests FROM users').get().dm_requests,1);assert.equal(db.prepare('PRAGMA user_version').get().user_version,21);
+  db=openDatabase(file);assert.equal(db.prepare('SELECT body FROM messages').get().body,'Keep me');assert.equal(db.prepare('SELECT dm_requests FROM users').get().dm_requests,1);assert.equal(db.prepare('PRAGMA user_version').get().user_version,22);
  }finally{db?.close();rmSync(dir,{recursive:true,force:true});}
 });

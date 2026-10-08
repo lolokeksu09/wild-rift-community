@@ -2,6 +2,7 @@ import {fail,text} from './security.mjs';
 import {transaction} from './database.mjs';
 import {imageAttached} from './media.mjs';
 import {sanctionFor} from './sanctions.mjs';
+import {removeClub,closeGroup,cancelEvent,REMOVED} from './removals.mjs';
 export function moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds,postFor}){
  if(!path.startsWith('/api/reports')&&!path.startsWith('/api/moderation'))return false;
  if(!user)fail(401,'Войди в аккаунт.');
@@ -85,7 +86,7 @@ export function moderationRoutes({db,user,path,method,body,url,send,now,moderato
    if(!r)fail(404,'Жалоба не найдена.');
    if([r.reporter_id,r.sender_id].includes(user.id))fail(403,'Нужно независимое рассмотрение.');
    if((a?.status||r.status)!=='upheld')fail(409,'Нужно окончательное решение о подтверждённом нарушении.');
-   const action={post:'remove-post',comment:'remove-comment',profile:'hide-profile'}[r.kind];
+   const action={post:'remove-post',comment:'remove-comment',profile:'hide-profile',club_page:'remove-club',lfg:'close-group',event:'cancel-event',club:'remove-chat-message'}[r.kind];
    if(!action||body.action!==action)fail(422,'Действие недоступно для этой жалобы.');
    const old=get('SELECT * FROM moderation_actions WHERE report_id=?',id);
    if(old){if(old.actor_id===user.id&&old.action===action&&old.note===note)return;fail(409,'Действие уже выполнено.');}
@@ -100,6 +101,20 @@ export function moderationRoutes({db,user,path,method,body,url,send,now,moderato
     // Keep replies, but remove references to the deleted parent and its context.
     run('UPDATE comments SET parent_id=NULL WHERE parent_id=?',Number(r.target_id));
     run('DELETE FROM comments WHERE id=?',Number(r.target_id));
+   }else if(r.kind==='club_page'){
+    const c=get('SELECT * FROM clubs WHERE id=?',r.target_id);
+    if(c&&c.name+'\n'+c.description!==r.snapshot)fail(409,'Клуб изменился после жалобы. Проверь актуальное описание через управление клубом.');
+    if(c)removeClub(db,c.id);
+   }else if(r.kind==='lfg'){
+    const g=get('SELECT * FROM lfg_groups WHERE id=?',Number(r.target_id));
+    if(g&&g.title!==REMOVED){if(g.title+'\n'+g.description!==r.snapshot)fail(409,'Объявление изменилось после жалобы.');closeGroup(db,g.id,now());}
+   }else if(r.kind==='event'){
+    const e=get('SELECT * FROM game_events WHERE id=?',Number(r.target_id));
+    if(e&&e.title!==REMOVED){if(e.title+'\n'+e.description!==r.snapshot)fail(409,'Событие изменилось после жалобы.');cancelEvent(db,e.id,now());}
+   }else if(r.kind==='club'){
+    const m=get('SELECT body FROM messages WHERE id=?',Number(r.target_id));
+    if(m&&m.body!==r.snapshot)fail(409,'Сообщение изменилось после жалобы.');
+    run('DELETE FROM messages WHERE id=?',Number(r.target_id));
    }else{
     const p=get('SELECT * FROM users WHERE id=?',r.target_id);
     if(p?.profile_visible&&profileSnapshot(p)!==r.snapshot)fail(409,'Профиль изменился после жалобы. Проверь актуальное описание.');
