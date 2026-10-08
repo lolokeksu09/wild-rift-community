@@ -2,7 +2,8 @@
 const $ = s => document.querySelector(s);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const mediaUI=window.WRProfiles;
-let selectedPlayer=null;
+let selectedPlayer=null,playerReturnView='discover',directDraftHandle='';
+let lfgState={};
 let chatController = null;
 let user = null, csrf = null, clubs = [], selectedClub = null, view = 'discover', requestVersion = 0, pendingDelete = null;
 async function api(path, method = 'GET', body, options = {}) {
@@ -51,6 +52,7 @@ async function render() {
   try {
     const session = await api('/api/me');
     if (version !== requestVersion) return;
+    if(user?.id!==session.user?.id){lfgState={};directDraftHandle='';}
     user = session.user; csrf = session.csrf;
     const result = await api('/api/clubs');
     if (version !== requestVersion) return;
@@ -59,7 +61,7 @@ async function render() {
     $('#account').dataset.handle=user?.handle||'';
     $('#account').title=user?user.name:'Вход и регистрация';
     if(view==='discover'){const feed=await api('/api/feed');if(version!==requestVersion)return;$('#main').innerHTML=discoverPage(feed);return;}
-    if(view==='lfg'){$('#main').innerHTML=user?'<section id=lfgRoot></section>':auth();if(user)chatController=window.createLfg({root:$('#lfgRoot'),user,api});return;}
+    if(view==='lfg'){$('#main').innerHTML=user?'<section id=lfgRoot></section>':auth();if(user)chatController=window.createLfg({root:$('#lfgRoot'),user,api,state:lfgState});return;}
     if (view === 'reports') {
       if(!user){$('#main').innerHTML=auth();return;}
       const mine=await api('/api/reports');
@@ -68,8 +70,8 @@ async function render() {
       $('#main').innerHTML=`<h1>Жалобы</h1><p class="note">Решение по жалобе не удаляет сообщение и не блокирует аккаунт автоматически.</p><h2>Мои обращения</h2><div id=ownReports>${mine.reports.map(ownReportCard).join('')||'<p>Обращений нет.</p>'}</div>${mine.next?`<button class="btn quiet" data-own-reports-more="${mine.next}">Ранее</button>`:''}${queue?`<h2>Очередь модерации</h2><div id="reportQueue">${queue.reports.map(reportCard).join('')}</div>${queue.next?`<button class="btn quiet" data-reports-more="${queue.next}">Ранее</button>`:''}`:''}`;
       return;
     }
-    if (view === 'direct') { $('#main').innerHTML = user ? '<section id=directRoot></section>' : auth(); if(user) chatController = window.createDirectInbox({root:$('#directRoot'),user,api}); return; }
-    if(view==='player'){const data=await api('/api/profiles/'+selectedPlayer);if(version!==requestVersion)return;$('#main').innerHTML=`<button class="back-link" data-nav="discover">← К обсуждениям</button><h1>Профиль игрока</h1>${mediaUI.showcase(data.profile)}`;return;}
+    if (view === 'direct') { $('#main').innerHTML = user ? '<section id=directRoot></section>' : auth(); if(user){chatController = window.createDirectInbox({root:$('#directRoot'),user,api,initialHandle:directDraftHandle});directDraftHandle='';} return; }
+    if(view==='player'){const data=await api('/api/profiles/'+selectedPlayer);if(version!==requestVersion)return;$('#main').innerHTML=`<button class="back-link" data-nav="${playerReturnView}">← ${playerReturnView==='lfg'?'К поиску напарников':'К обсуждениям'}</button><h1>Профиль игрока</h1>${mediaUI.showcase(data.profile)}`;return;}
     if (view === 'account') { $('#main').innerHTML = user ? profile() : auth(); return; }
     if (view === 'club') {
       const club = clubs.find(c => c.id === selectedClub);
@@ -104,7 +106,8 @@ $('#confirmDelete').onclick = async () => { if (!pendingDelete) return; const id
 document.addEventListener('click', async event => {
   const b = event.target.closest('button'); if (!b) return;
   try {
-    if(b.dataset.player){selectedPlayer=b.dataset.player;view='player';await render();return;}
+    if(b.dataset.contact){directDraftHandle=b.dataset.contact;view='direct';await render();return;}
+    if(b.dataset.player){playerReturnView=view==='lfg'?'lfg':'discover';selectedPlayer=b.dataset.player;view='player';await render();return;}
     if(b.dataset.clearImage){await api('/api/me','PATCH',{[b.dataset.clearImage]:null});await render();return;}
     if(b.hasAttribute('data-clear-club-cover')){await api(`/api/clubs/${selectedClub}/cover`,'PATCH',{coverId:null});await render();return;}
     if(b.dataset.nav){view=b.dataset.nav;await render();return;}
@@ -116,7 +119,7 @@ document.addEventListener('click', async event => {
     if(b.dataset.reportsMore){b.disabled=true;const result=await api('/api/moderation/reports?before='+b.dataset.reportsMore);if(!b.isConnected)return;$('#reportQueue').insertAdjacentHTML('beforeend',result.reports.map(reportCard).join(''));if(result.next){b.dataset.reportsMore=result.next;b.disabled=false;}else b.remove();}
     if (b.id === 'retry') return render();
     if (b.dataset.open) { selectedClub = b.dataset.open; view = 'club'; await render(); }
-    if (b.dataset.logout) { await api(b.dataset.logout, 'POST', {}); try { const prefix = `wr-chat-pending:${user.id}:`; for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key); } catch {} user = csrf = null; view = 'account'; await render(); }
+    if (b.dataset.logout) { await api(b.dataset.logout, 'POST', {}); try { const prefix = `wr-chat-pending:${user.id}:`; for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key); } catch {} user = csrf = null;lfgState={};directDraftHandle=''; view = 'account'; await render(); }
     if (b.dataset.membership) { b.disabled = true; await api(`/api/clubs/${selectedClub}/${b.dataset.membership}`, 'POST', {}); await render(); }
     if (b.dataset.decision) { b.disabled = true; await api(`/api/clubs/${selectedClub}/decision`, 'POST', { userId: b.dataset.user, decision: b.dataset.decision }); await render(); }
     if (b.dataset.ban && confirm('Участник потеряет доступ к содержимому клуба и не сможет вступить снова. Продолжить?')) { await api(`/api/clubs/${selectedClub}/ban`, 'POST', { userId: b.dataset.ban }); await render(); }
