@@ -1,3 +1,4 @@
+import {postManagementRoutes} from './post-management.mjs';
 import {draftRoutes} from './drafts.mjs';
 import {homeRoutes} from './home.mjs';
 import {eventRoutes} from './events.mjs';
@@ -18,6 +19,7 @@ import { token, digest, passwordHash, passwordMatches, fail, HttpError, text, pa
 
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
+  ['/post-management.js',['post-management.js','text/javascript; charset=utf-8']],
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/composer.js', ['composer.js','text/javascript; charset=utf-8']],
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
@@ -216,6 +218,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         transaction(db,()=>{if(cover!==club.cover_id)clubAudit(db,user,club.id,club.id,'cover',now);run('UPDATE clubs SET cover_id=? WHERE id=?',cover,club.id);if(club.cover_id && club.cover_id!==cover && !imageAttached(db,club.cover_id))run('DELETE FROM media WHERE id=?',club.cover_id);});
         send(200,{ok:true});return;
       }
+      if(postManagementRoutes({db,user,path,method,body,url,send,now,postFor,clubFor}))return;
       if (clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFor})) return;
       if (discussionRoutes({db,user,path,method,body,url,send,now,postFor})) return;
       if (playerRoutes({db,user,path,method,url,send})) return;
