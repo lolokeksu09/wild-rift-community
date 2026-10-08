@@ -1,6 +1,6 @@
 'use strict';
 // One controller per mounted club. It never trusts a previous membership check.
-window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/clubs/${clubId}/messages`, title = 'Чат клуба', readEndpoint = null }) {
+window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/clubs/${clubId}/messages`, title = 'Чат клуба', readEndpoint = null, readOnly = false }) {
   const encode = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const storageKey = `wr-chat-pending:${userId}:${clubId}`;
   let active = true, timer, polling = false, cursor = 0, oldest = null, hasOlder = false, initial = true;
@@ -17,8 +17,9 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
       if (item && typeof item.clientId === 'string' && /^[A-Za-z0-9_-]{16,80}$/.test(item.clientId) && typeof item.body === 'string' && item.body.trim().length > 0 && item.body.length <= 2000) pending.set(item.clientId, { clientId:item.clientId, body:item.body, status:'Не подтверждено. Можно повторить.' });
     }
   } catch { /* Storage may be unavailable; in-memory retries still work. */ }
-  let loadedLast = 0, blockVersion = null;
-  const clubChat = endpoint.startsWith('/api/clubs/');
+  let loadedLast = 0, blockVersion = null, canSend = !readOnly;
+  const clubChat = endpoint.startsWith('/api/clubs/') || endpoint.startsWith('/api/lfg/');
+  const canReport = !endpoint.startsWith('/api/lfg/');
   root.innerHTML = `<div class="row between wrap"><h3>${encode(title)}</h3><button type="button" class="btn quiet" data-chat-refresh>Обновить</button></div>${readEndpoint?'<button type="button" class="btn quiet" data-chat-read>Отметить загруженное прочитанным</button>':''}<p class="note" data-chat-status role="status">Подключение…</p><button type="button" class="btn quiet hidden" data-chat-older>Ранние сообщения</button><div class="server-chat-log" data-chat-log role="log" aria-label="Сообщения"></div><div data-chat-pending></div><form data-chat-form><label class="field">Сообщение<textarea name="body" required maxlength="2000" rows="2" placeholder="Напиши сообщение…"></textarea></label><p class="error" data-chat-error role="alert"></p><button class="btn primary">Отправить</button></form>`;
   const find = selector => root.querySelector(selector);
   const status = text => { if (active) find('[data-chat-status]').textContent = text; };
@@ -28,7 +29,7 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
   }
   function drawPending() {
     if (!active) return;
-    find('[data-chat-pending]').innerHTML = [...pending.values()].map(m=>`<div class="chat-pending"><p class="content">${encode(m.body)}</p><small>${encode(m.status)}</small><div class="row wrap"><button type="button" class="btn quiet" data-chat-retry="${m.clientId}" ${m.busy?'disabled':''}>Повторить</button><button type="button" class="btn quiet" data-chat-discard="${m.clientId}" ${m.busy?'disabled':''}>Убрать из очереди</button></div></div>`).join('');
+    find('[data-chat-pending]').innerHTML = [...pending.values()].map(m=>`<div class="chat-pending"><p class="content">${encode(m.body)}</p><small>${encode(m.status)}</small><div class="row wrap"><button type="button" class="btn quiet" data-chat-retry="${m.clientId}" ${m.busy||!canSend?'disabled':''}>Повторить</button><button type="button" class="btn quiet" data-chat-discard="${m.clientId}" ${m.busy?'disabled':''}>Убрать из очереди</button></div></div>`).join('');
   }
   function merge(list) {
     for (const m of list) {
@@ -40,7 +41,7 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
     const log=find('[data-chat-log]');
     if (!list.length && log.childNodes.length) { drawPending(); return; }
     const nearEnd=log.scrollHeight-log.scrollTop-log.clientHeight<50;
-    log.innerHTML=[...messages.values()].sort((a,b)=>a.id-b.id).map(m=>`<div class="bubble ${m.sender_id===userId?'self':''}" data-message-id="${m.id}"><small>${encode(m.sender_name)} · ${encode(new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}))}</small><span>${encode(m.body)}</span>${m.sender_id!==userId?`<button type="button" class="btn quiet" data-report-message="${m.id}">Пожаловаться</button>${clubChat?`<button type="button" class="btn quiet" data-chat-block="${encode(m.sender_id)}">Блокировать игрока</button>`:''}`:''}</div>`).join('') || '<p class="muted">Начни разговор — сообщений пока нет.</p>';
+    log.innerHTML=[...messages.values()].sort((a,b)=>a.id-b.id).map(m=>`<div class="bubble ${m.sender_id===userId?'self':''}" data-message-id="${m.id}"><small>${encode(m.sender_name)} · ${encode(new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}))}</small><span>${encode(m.body)}</span>${m.sender_id!==userId&&canReport?`<button type="button" class="btn quiet" data-report-message="${m.id}">Пожаловаться</button>${clubChat?`<button type="button" class="btn quiet" data-chat-block="${encode(m.sender_id)}">Блокировать игрока</button>`:''}`:''}</div>`).join('') || '<p class="muted">Начни разговор — сообщений пока нет.</p>';
     if(nearEnd) log.scrollTop=log.scrollHeight;
     drawPending();
   }
@@ -53,6 +54,8 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
   function resetHistory(){messages.clear();cursor=0;oldest=null;hasOlder=false;initial=true;loadedLast=0;find('[data-chat-log]').textContent='Обновление истории…';find('[data-chat-older]').classList.add('hidden');}
   function allowed(data) {
     if(data.viewerId!==userId){revoke();return false;}
+    if(typeof data.canSend==='boolean')canSend=data.canSend;
+    for(const el of root.querySelectorAll('[data-chat-form] textarea,[data-chat-form] button'))el.disabled=!canSend;
     if(clubChat&&Number.isSafeInteger(data.blockVersion)){
       if(blockVersion!==null&&data.blockVersion<blockVersion)return false;
       if(blockVersion!==null&&data.blockVersion!==blockVersion){blockVersion=data.blockVersion;resetHistory();return false;}
@@ -79,7 +82,7 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
     finally{polling=false;if(active)timer=setTimeout(poll,more?50:2000);}
   }
   async function send(clientId) {
-    const item=pending.get(clientId);if(!active||!item||item.busy)return;
+    const item=pending.get(clientId);if(!active||!canSend||!item||item.busy)return;
     item.busy=true;item.status='Отправляется…';drawPending();
     try {
       const data=await request(`${endpoint}`,'POST',{clientId,body:item.body});
@@ -90,7 +93,7 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
     }catch(error){
       if(!active)return;
       if([401,403,404].includes(error.status)){revoke();return;}
-      item.busy=false;item.status=error.status===409?'Конфликт идентификатора. Удали запись из очереди и создай новую.':'Отправка не подтверждена. Повтори с тем же идентификатором.';drawPending();
+      item.busy=false;item.status=error.status===409?error.message:'Отправка не подтверждена. Повтори с тем же идентификатором.';drawPending();
     }
   }
   async function older() {
@@ -108,10 +111,11 @@ window.createClubChat = function ({ root, clubId, userId, api, endpoint = `/api/
   const onClick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.chatBlock&&confirm('Скрыть сообщения этого игрока во всех общих чатах и закрыть личную переписку? Участником клуба он останется.')){b.disabled=true;try{const result=await request('/api/blocks','POST',{userId:b.dataset.chatBlock});if(active){blockVersion=Math.max(blockVersion??0,result.blockVersion);resetHistory();poll();}}catch(error){if(active)status(error.message);}finally{b.disabled=false;}}if(b.dataset.reportMessage){const reason=prompt('Причина жалобы. Текст этого сообщения и пояснение будут переданы модератору сервиса.');if(reason&&reason.trim().length>=3){b.disabled=true;try{await request('/api/reports','POST',{kind:endpoint.startsWith('/api/direct/')?'direct':'club',messageId:Number(b.dataset.reportMessage),reason});if(active)status('Жалоба отправлена. Статус доступен в разделе «Жалобы».');}catch(error){if(active)status(error.message);}finally{b.disabled=false;}}}if(b.hasAttribute('data-chat-read')&&readEndpoint&&loadedLast){b.disabled=true;try{await request(readEndpoint,'POST',{lastId:loadedLast});if(active)status('Загруженные сообщения отмечены прочитанными');}catch(error){if(active)handleError(error);}finally{b.disabled=false;}}if(b.hasAttribute('data-chat-refresh'))poll();if(b.hasAttribute('data-chat-older'))older();if(b.dataset.chatRetry)send(b.dataset.chatRetry);if(b.dataset.chatDiscard&&confirm('Убрать локальную попытку? Если сообщение уже дошло до сервера, оно останется в истории.')){pending.delete(b.dataset.chatDiscard);persist();drawPending();}};
   const onSubmit=e=>{
     if(!e.target.matches('[data-chat-form]'))return;e.preventDefault();
-    const input=e.target.elements.body,body=input.value.trim();if(!body||!active)return;
+    const input=e.target.elements.body,body=input.value.trim();if(!body||!active||!canSend)return;
     if(pending.size>=20){find('[data-chat-error]').textContent='Сначала отправь или убери сообщения из очереди.';return;}
     const clientId=crypto.randomUUID();pending.set(clientId,{clientId,body,status:'Ожидает отправки'});persist();input.value='';drawPending();send(clientId);
   };
+  for(const el of root.querySelectorAll('[data-chat-form] textarea,[data-chat-form] button'))el.disabled=!canSend;
   root.addEventListener('click',onClick);root.addEventListener('submit',onSubmit);drawPending();poll();
   return { destroy(){active=false;clearTimeout(timer);for(const c of requests)c.abort();root.removeEventListener('click',onClick);root.removeEventListener('submit',onSubmit);} };
 };

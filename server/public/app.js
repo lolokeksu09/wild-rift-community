@@ -37,6 +37,7 @@ async function render() {
     if (version !== requestVersion) return;
     clubs = result.clubs;
     $('#account').textContent = user ? user.name : 'Вход';
+    if(view==='lfg'){$('#main').innerHTML=user?'<section id=lfgRoot></section>':auth();if(user)chatController=window.createLfg({root:$('#lfgRoot'),user,api});return;}
     if (view === 'reports') {
       if(!user){$('#main').innerHTML=auth();return;}
       const mine=await api('/api/reports');
@@ -69,6 +70,7 @@ async function comments(id) {
   const club = clubs.find(c => c.id === selectedClub);
   el.innerHTML = comments.map(c => `<div class="comment"><small>${esc(c.author_name)}</small><p class="content">${esc(c.body)}</p></div>`).join('') + (club?.membership === 'member' ? `<form data-comment-form="${id}"><label class="field">Комментарий<textarea name="body" maxlength="1000" required></textarea></label>${errorLine}<button class="btn primary">Ответить</button></form>` : '<p class="note">Для ответа нужно вступить в клуб.</p>');
 }
+$('#lfg').onclick=()=>{view='lfg';render();};
 $('#reports').onclick=()=>{view='reports';render();};
 $('#direct').onclick = () => { view = 'direct'; render(); };
 $('#home').onclick = () => { view = 'clubs'; render(); };
