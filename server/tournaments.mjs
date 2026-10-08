@@ -2,7 +2,7 @@ import {sanctionFor} from './sanctions.mjs';
 import {isDemo} from './demo.mjs';
 import {fail,text} from './security.mjs';
 import {transaction} from './database.mjs';
-export function tournamentRoutes({db,user,path,method,body,send,now}) {
+export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
  if(!/^\/api\/tournaments(?:\/|$)/.test(path))return false;
  const get=(s,...a)=>db.prepare(s).get(...a),all=(s,...a)=>db.prepare(s).all(...a),run=(s,...a)=>db.prepare(s).run(...a);
  const signed=()=>{if(!user)fail(401,'Сначала войди в аккаунт.');};
@@ -11,6 +11,17 @@ export function tournamentRoutes({db,user,path,method,body,send,now}) {
  const between=(a,b)=>get('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',a,b,b,a);
  const eligible=uid=>!['restricted','suspended'].includes(sanctionFor(db,uid,now())?.level);
  const safe=t=>({id:t.id,title:t.title,description:t.description,capacity:t.capacity,state:t.cancelled_at!==null?'cancelled':t.state,cancelled_at:t.cancelled_at,cancel_reason:t.cancel_reason,owner_id:t.owner_id,created_at:t.created_at});
+ if(['/api/tournaments/invitations','/api/tournaments/invitations/summary'].includes(path)&&method==='GET'){
+  signed();const availability=new Map(),available=uid=>{if(!availability.has(uid))availability.set(uid,!blocked(uid)&&eligible(uid));return availability.get(uid);};
+  const invitations=all(`SELECT t.id tournament_id,t.title,team.name team_name,team.captain_id,t.owner_id
+    FROM tournament_roster r JOIN tournament_teams team ON team.id=r.team_id AND team.tournament_id=r.tournament_id
+    JOIN tournaments t ON t.id=r.tournament_id
+    WHERE r.user_id=? AND r.status='pending' AND t.state='open' AND t.cancelled_at IS NULL ORDER BY t.id DESC`,user.id).filter(x=>available(x.captain_id)&&available(x.owner_id));
+  if(path.endsWith('/summary')){send(200,{viewerId:user.id,pending:invitations.length});return true;}
+  const before=url?.searchParams.get('before');if(before!==undefined&&before!==null&&(!/^[1-9]\d*$/.test(before)||!Number.isSafeInteger(Number(before))))fail(422,'Некорректная граница списка.');
+  const page=invitations.filter(x=>!before||x.tournament_id<Number(before)).slice(0,51),more=page.length>50;page.splice(50);
+  send(200,{viewerId:user.id,pending:invitations.length,invitations:page.map(({tournament_id,title,team_name})=>({tournament_id,title,team_name})),next:more?page.at(-1).tournament_id:null});return true;
+ }
  if(path==='/api/tournaments'&&method==='GET'){send(200,{tournaments:all('SELECT * FROM tournaments ORDER BY id DESC LIMIT 50').filter(t=>!blocked(t.owner_id)).map(t=>({...safe(t),teamCount:get('SELECT count(*) n FROM tournament_teams WHERE tournament_id=?',t.id).n,invited:!!(t.cancelled_at===null&&user&&get("SELECT 1 FROM tournament_roster WHERE tournament_id=? AND user_id=? AND status='pending'",t.id,user.id))}))});return true;}
  if(path==='/api/tournaments'&&method==='POST'){
   signed();const title=text(body.title,'Название',3,80),description=text(body.description??'','Описание',0,1000),capacity=body.capacity,clientId=text(body.clientId,'Идентификатор',16,80);

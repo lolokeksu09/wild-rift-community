@@ -16,6 +16,7 @@ let welcomeController=null;
 const postManagement=window.WRPostManagement;let searchState={query:'',club:''};
 const discussionUI=window.WRDiscussions;
 const clubUI=window.WRClubs;
+let selectedTournamentId=null;
 let clubTab='posts',clubPins=new Set(),postReturnView='notifications';
 let inviteToken=/^#invite=([a-f0-9]{64})$/.exec(location.hash)?.[1]||null;
 if(inviteToken)history.replaceState(null,'',location.pathname);
@@ -44,13 +45,14 @@ function plural(n,one,few,many){const x=Math.abs(n)%100,y=x%10;return n+' '+(x>=
 function memberCount(c){const bots=c.bots??clubs.find(x=>x.id===c.id)?.bots??0;return plural(c.members,'участник','участника','участников')+(bots?' · '+plural(bots,'бот','бота','ботов'):'');}
 function parseRoute(path,search=''){
  const routes={'/':'welcome','/feed':'discover','/clubs':'clubs','/players':'members','/guides':'guides','/teams':'lfg','/events':'events','/tournaments':'tournaments','/account':'account','/messages':'direct','/notifications':'notifications','/reports':'reports','/saved':'saved','/drafts':'drafts','/search':'search','/rules':'rules'};
- const clean=path==='/'?path:path.replace(/\/$/,'');if(routes[clean]){const tab=new URLSearchParams(search).get('tab');return {view:routes[clean],...(routes[clean]==='discover'?{homeTab:['conversations','play'].includes(tab)?tab:'overview'}:{})};}
+ const clean=path==='/'?path:path.replace(/\/$/,'');if(routes[clean]){const tab=new URLSearchParams(search).get('tab');return {view:routes[clean],...(routes[clean]==='tournaments'?{tournamentId:(()=>{const id=Number(new URLSearchParams(search).get('id'));return Number.isSafeInteger(id)&&id>0?id:null;})()}:{}),...(routes[clean]==='discover'?{homeTab:['conversations','play'].includes(tab)?tab:'overview'}:{})};}
  const m=/^\/(clubs|posts|players)\/([\w-]{1,80})$/.exec(clean);
  if(!m||(m[1]==='posts'&&!/^\d{1,16}$/.test(m[2])))return null;
  return {view:{clubs:'club',posts:'post',players:'player'}[m[1]],id:m[2]};
 }
 function applyRoute(route){
  if(!route)return;view=route.view;
+ if(view==='tournaments')selectedTournamentId=route.tournamentId||null;
  if(view==='discover')homeTab=route.homeTab||'overview';
  if(view==='club'){selectedClub=route.id;clubTab='posts';}
  if(view==='post'){selectedPost=Number(route.id);selectedComment=null;postReturnView='discover';}
@@ -63,6 +65,7 @@ function routePath(){
  if(view==='player')return '/players/'+encodeURIComponent(selectedPlayer);
  const paths={welcome:'/',discover:'/feed',clubs:'/clubs',members:'/players',guides:'/guides',lfg:'/teams',events:'/events',tournaments:'/tournaments',account:'/account',direct:'/messages',notifications:'/notifications',reports:'/reports',saved:'/saved',drafts:'/drafts',search:'/search',rules:'/rules'};
  let path=paths[view]||'/';
+ if(view==='tournaments'&&selectedTournamentId)path+='?id='+selectedTournamentId;
  if(view==='discover'&&homeTab!=='overview')path+='?tab='+homeTab;
  if(view==='account'&&authReturn?.view==='club')path+='?return='+encodeURIComponent('/clubs/'+authReturn.id);
  return path;
@@ -325,7 +328,7 @@ async function render(options={}) {
   const activeNav={discover:'discover',clubs:'home',members:'people',club:'home',player:'people',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',tournaments:'events',drafts:'account',saved:'account',notifications:'notifications',post:'discover',editPost:'discover',search:'discover',guides:'discover',invite:'home'}[view];
   for(const button of document.querySelectorAll('.primary-nav button, #reports, #notifications')){if(button.id===activeNav)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
   for(const button of document.querySelectorAll('.section-menu [data-nav]')){if(button.dataset.nav===view)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
-  const secondaryTitle={members:'Люди',player:'Люди',events:'События',tournaments:'Турниры',guides:'Руководства',saved:'Сохранённое',drafts:'Черновики',notifications:'Ответы',reports:'Жалобы',rules:'Правила'}[view];
+  const secondaryTitle={members:'Люди',player:'Люди',events:'События',tournaments:'Турниры',guides:'Руководства',saved:'Сохранённое',drafts:'Черновики',notifications:'Уведомления',reports:'Жалобы',rules:'Правила'}[view];
   const menuLabel=$('[data-section-menu-label]');if(menuLabel)menuLabel.textContent=secondaryTitle||'Ещё';
   if(menu){menu.dataset.sectionActive=secondaryTitle?'true':'false';menu.querySelector('summary').setAttribute('aria-label',secondaryTitle?secondaryTitle+' · открыть остальные разделы':'Открыть остальные разделы');}
   $('#main').setAttribute('aria-busy','true');
@@ -350,7 +353,7 @@ async function render(options={}) {
     $('#account').textContent = 'Профиль';
     $('#account').setAttribute('aria-label',user?'Профиль':'Профиль · вход и регистрация');
     document.body.classList.toggle('guest',!user);
-    $('#notifications').hidden=!user;$('#reports').hidden=!user;
+    $('#notifications').hidden=!user;$('#reports').hidden=!user;if(!user)notificationBadge();
     $('#guestJoin').hidden=!!user;
     const quick=document.querySelector('#quickCreate');if(quick){quick.hidden=!user;const mine=clubs.find(c=>c.id===selectedClub&&c.membership==='member')||clubs.find(c=>c.membership==='member');delete quick.dataset.homeCompose;delete quick.dataset.nav;if(mine)quick.dataset.homeCompose=mine.id;else quick.dataset.nav='clubs';}
     $('#account').dataset.handle=user?.handle||'';
@@ -371,8 +374,8 @@ async function render(options={}) {
     }
     if(view==='notifications'){
       if(!user){$('#main').innerHTML=auth();return;}
-      const data=await api('/api/discussions/notifications');if(version!==requestVersion||data.viewerId!==user.id)return;
-      $('#main').innerHTML=`<div class="pagehead"><div><span class="tiny-label">РАЗГОВОР ПРОДОЛЖАЕТСЯ</span><h1>Ответы и упоминания</h1><p class="muted">События в доступных обсуждениях.</p></div></div><div id="discussionEvents">${data.notifications.map(discussionUI.notification).join('')||'<div class="empty-state"><h3>Пока тихо</h3><p>Здесь появятся ответы на твои комментарии и упоминания через @логин.</p></div>'}</div>${data.next?`<button class="btn quiet" data-discussion-more="${data.next}">Ранее</button>`:''}`;return;
+      const [data,invites]=await Promise.all([api('/api/discussions/notifications'),api('/api/tournaments/invitations').then(data=>({data})).catch(error=>({error}))]);if(version!==requestVersion||data.viewerId!==user?.id||invites.data&&invites.data.viewerId!==user?.id)return;
+      $('#main').innerHTML=`<div class="pagehead"><div><span class="tiny-label">РАЗГОВОР ПРОДОЛЖАЕТСЯ</span><h1>Уведомления</h1><p class="muted">Приглашения в команды, ответы и упоминания.</p></div></div>${invites.data?.invitations.length?`<section aria-label="Приглашения в турниры"><h2>Приглашения в турниры</h2><p class="note">Счётчик сохраняется, пока ты не ответишь или приглашение не закроется.</p><div id="tournamentInvitations">${invites.data.invitations.map(tournamentInvitationCard).join('')}</div>${invites.data.next?`<button class="btn quiet" data-tournament-invitation-more="${invites.data.next}">Ранее приглашён</button>`:''}</section>`:''}${invites.error?'<p class="error" role="alert">Не удалось загрузить турнирные приглашения. Обнови страницу, чтобы повторить.</p>':''}<h2>Ответы и упоминания</h2><div id="discussionEvents">${data.notifications.map(discussionUI.notification).join('')||'<div class="empty-state"><h3>Пока тихо</h3><p>Здесь появятся ответы на твои комментарии и упоминания через @логин.</p></div>'}</div>${data.next?`<button class="btn quiet" data-discussion-more="${data.next}">Ранее</button>`:''}`;return;
     }
     if(view==='members'){
       const data=await api('/api/community-members?'+new URLSearchParams(memberState));if(version!==requestVersion||data.viewerId!==(user?.id||null))return;
@@ -403,7 +406,7 @@ async function render(options={}) {
       $('#main').innerHTML=discoverPage(feed,home?.data,home?.error,people,preview?.data,preview?.error);return;
     }
     if(!user&&['events','lfg'].includes(view)){const data=await api('/api/community-preview');if(version!==requestVersion)return;$('#main').innerHTML=playNavigation(view)+announcementPreview(data,view);return;}
-    if(view==='tournaments'){$('#main').innerHTML=playNavigation('tournaments')+'<section id=tournamentsRoot></section>';chatController=window.createTournaments({root:$('#tournamentsRoot'),user,api});return;}
+    if(view==='tournaments'){$('#main').innerHTML=playNavigation('tournaments')+'<section id=tournamentsRoot></section>';chatController=window.createTournaments({root:$('#tournamentsRoot'),user,api,initialId:selectedTournamentId,onSelect:id=>{selectedTournamentId=id;},onChange:()=>{badgeSignature='';pollBadges();}});return;}
     if(view==='events'){$('#main').innerHTML=user?playNavigation('events')+'<section id=eventsRoot></section>':auth();if(user)chatController=window.createEvents({root:$('#eventsRoot'),user,api,state:eventState});return;}
     if(view==='lfg'){$('#main').innerHTML=user?playNavigation('lfg')+'<section id=lfgRoot></section>':auth();if(user)chatController=window.createLfg({root:$('#lfgRoot'),user,api,state:lfgState});return;}
     if (view === 'reports') {
@@ -544,6 +547,7 @@ document.addEventListener('click', async event => {
     if(b.dataset.cancelReply){const form=$(`[data-comment-form="${b.dataset.cancelReply}"]`);delete form.dataset.parentId;form.querySelector('.reply-target').classList.add('hidden');return;}
     if(b.dataset.commentsMore){b.disabled=true;const id=b.dataset.commentsMore,version=requestVersion;const data=await api(`/api/posts/${id}/comments?before=${b.dataset.after}`);if(version!==requestVersion||!b.isConnected)return;const member=Boolean($(`[data-comment-form="${id}"]`));$(`[data-comment-list="${id}"]`).insertAdjacentHTML('afterbegin',data.comments.map(c=>discussionUI.comment({...c,post_id:id},member,user,data)).join(''));if(data.next){b.dataset.after=data.next;b.disabled=false;}else b.remove();return;}
     if(b.dataset.savedMore){b.disabled=true;const data=await api('/api/saved?before='+b.dataset.savedMore);if(!b.isConnected||data.viewerId!==user?.id)return;$('#savedPosts').insertAdjacentHTML('beforeend',data.posts.map(feedCard).join(''));if(data.next){b.dataset.savedMore=data.next;b.disabled=false;}else b.remove();return;}
+    if(b.dataset.tournamentInvitationMore){b.disabled=true;try{const d=await api('/api/tournaments/invitations?before='+b.dataset.tournamentInvitationMore);if(!b.isConnected||d.viewerId!==user?.id)return;$('#tournamentInvitations').insertAdjacentHTML('beforeend',d.invitations.map(tournamentInvitationCard).join(''));if(d.next){b.dataset.tournamentInvitationMore=d.next;b.disabled=false;}else b.remove();}catch(e){if(b.isConnected){b.disabled=false;notify(e.message);}}return;}
     if(b.dataset.discussionMore){b.disabled=true;const data=await api('/api/discussions/notifications?before='+b.dataset.discussionMore);if(!b.isConnected||data.viewerId!==user?.id)return;$('#discussionEvents').insertAdjacentHTML('beforeend',data.notifications.map(discussionUI.notification).join(''));if(data.next){b.dataset.discussionMore=data.next;b.disabled=false;}else b.remove();return;}
     if(b.dataset.discussionRead){b.disabled=true;await api(`/api/discussions/notifications/${b.dataset.discussionRead}/read`,'POST',{});await render();updateDiscussionBadge();return;}
     if(b.dataset.discussionPost){postReturnView='notifications';selectedPost=b.dataset.discussionPost;selectedComment=b.dataset.discussionComment||null;view='post';await render();return;}
@@ -722,12 +726,14 @@ async function updateLfgBadge(){
 document.addEventListener('input',event=>{if(event.target.id==='clubSearch'){clubFilter.q=event.target.value;clearTimeout(catalogTimer);catalogTimer=setTimeout(()=>applyClubFilters(),150);}});
 document.addEventListener('change',event=>{if(event.target.id==='clubSort'){clubFilter.sort=event.target.value;applyClubFilters();}});
 
+function tournamentInvitationCard(n){return `<article class="panel" data-tournament-invitation="${n.tournament_id}"><span class="pill">Приглашение в команду</span><h3>${esc(n.team_name)}</h3><p>${esc(n.title)}</p><a class="btn quiet" data-route href="/tournaments?id=${encodeURIComponent(n.tournament_id)}">Посмотреть приглашение</a></article>`;}
+function notificationBadge(replies=0,pending=0){const total=replies+pending,button=$('#notifications');button.textContent='Уведомления'+(total?' · '+total:'');button.title=`Непрочитанных ответов: ${replies}; ожидающих приглашений: ${pending}`;const badge=$('[data-notification-total]');if(badge){badge.hidden=!user||!total;badge.textContent=total>99?'99+':String(total);badge.setAttribute('aria-label',button.title);}}
 let discussionBadgeBusy=false;
 async function updateDiscussionBadge(){
- if(discussionBadgeBusy)return;const id=user?.id;if(!id){$('#notifications').textContent='Ответы';return;}
+ if(discussionBadgeBusy)return;const id=user?.id;if(!id){notificationBadge();return;}
  discussionBadgeBusy=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
- try{const data=await api('/api/discussions/notifications/summary','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;$('#notifications').textContent=data.viewerId===id?`Ответы${data.unread?' · '+data.unread:''}`:'Ответы · обнови сеанс';}
- catch{if(user?.id===id)$('#notifications').textContent='Ответы · нет связи';}
+ try{const data=await api('/api/notifications/summary','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;if(data.viewerId===id)notificationBadge(data.discussions.unread,data.tournaments?.pending||0);else $('#notifications').textContent='Уведомления · обнови сеанс';}
+ catch{if(user?.id===id)$('#notifications').textContent='Уведомления · нет связи';}
  finally{clearTimeout(timer);discussionBadgeBusy=false;}
 }
 async function updateEventBadge(){const button=$('#events'),id=user?.id;if(!button)return;if(!id){button.textContent='События';return;}try{const data=await api('/api/events/notifications/summary');if(user?.id===id)button.textContent='События'+(data.unread?' · '+data.unread:'');}catch{}}
@@ -739,12 +745,12 @@ async function pollBadges(){
  try{
   const d=await api('/api/notifications/summary','GET',undefined,{signal:controller.signal});
   if(user?.id!==id||d.viewerId!==id)return;
-  const signature=JSON.stringify([d.direct.unread,d.direct.requests,d.reports.unread,d.lfg.unread,d.discussions.unread,d.events.unread]);
+  const signature=JSON.stringify([d.direct.unread,d.direct.requests,d.reports.unread,d.lfg.unread,d.discussions.unread,d.events.unread,d.tournaments?.pending||0]);
   badgeInterval=signature===badgeSignature?Math.min(badgeInterval*2,30000):5000;badgeSignature=signature;
   navBadge('direct','Чаты',`непрочитанных: ${d.direct.unread}, запросов: ${d.direct.requests}`,d.direct.unread+d.direct.requests);
   $('#reports').textContent='Жалобы'+(d.reports.unread?' · решений: '+d.reports.unread:'');
   navBadge('lfg','Найти',`уведомлений: ${d.lfg.unread}`,d.lfg.unread);
-  $('#notifications').textContent='Ответы'+(d.discussions.unread?' · '+d.discussions.unread:'');
+  notificationBadge(d.discussions.unread,d.tournaments?.pending||0);
   $('#events').textContent='События'+(d.events.unread?' · '+d.events.unread:'');
  }catch{badgeInterval=Math.min(badgeInterval*2,60000);}
  finally{clearTimeout(deadline);badgePolling=false;badgeTimer=setTimeout(pollBadges,badgeInterval);}

@@ -378,7 +378,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         for(const [key,route,handler] of [
           ['direct','/api/direct/summary',directRoutes],['reports','/api/reports/summary',moderationRoutes],
           ['lfg','/api/lfg/notifications/summary',lfgRoutes],['discussions','/api/discussions/notifications/summary',discussionRoutes],
-          ['events','/api/events/notifications/summary',eventRoutes]
+          ['events','/api/events/notifications/summary',eventRoutes],['tournaments','/api/tournaments/invitations/summary',tournamentRoutes]
         ])handler({db,user,path:route,method,body,url,now,postFor,moderatorIds,send:(status,data)=>{if(status!==200)fail(status,'Не удалось обновить уведомления.');summaries[key]=data;}});
         send(200,{viewerId:user.id,...summaries});return;
       }
@@ -392,7 +392,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (draftRoutes({db,user,path,method,body,send,now,clubFor})) return;
       if (homeRoutes({db,user,path,method,send,now})) return;
       if (previewRoutes({db,user,path,method,send,now})) return;
-      if (tournamentRoutes({db,user,path,method,body,send,now})) return;
+      if (tournamentRoutes({db,user,path,method,body,send,now,url})) return;
       if (eventRoutes({db,user,path,method,body,url,send,now})) return;
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
       if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds,postFor})) return;
