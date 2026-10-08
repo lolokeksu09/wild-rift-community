@@ -101,7 +101,7 @@ async function render() {
     if(view==='search'){
       const club=clubs.find(c=>c.id===searchState.club),params=new URLSearchParams({q:searchState.query});if(searchState.club)params.set('club',searchState.club);
       const data=searchState.query?await api('/api/posts/search?'+params):null;if(version!==requestVersion||data&&data.viewerId!==(user?.id||null))return;
-      $('#main').innerHTML=`<button class="back-link" data-nav="discover">← На главную</button><div class="pagehead"><h1>Найди обсуждение</h1></div>${postManagement.searchForm(searchState.query,club)}<p role="status">${data?data.posts.length?'Найденные обсуждения, от новых к старым.':'Ничего не найдено. Попробуй другую фразу.':'Введи фразу для поиска.'}</p><div id="searchPosts">${data?.posts.map(feedCard).join('')||''}</div>${data?.next?`<button class="btn quiet wide" data-search-more="${data.next}">Ещё результаты</button>`:''}`;return;
+      $('#main').innerHTML=`<button class="back-link" data-nav="discover">← На главную</button><div class="pagehead"><h1>Найди обсуждение</h1></div>${postManagement.searchForm(searchState.query,club,clubs.filter(c=>c.membership!=='banned'&&(c.access==='open'||c.membership==='member')))}<p role="status">${data?data.posts.length?'Найденные обсуждения, от новых к старым.':'Ничего не найдено. Попробуй другую фразу.':'Введи фразу для поиска.'}</p><div id="searchPosts">${data?.posts.map(feedCard).join('')||''}</div>${data?.next?`<button class="btn quiet wide" data-search-more="${data.next}">Ещё результаты</button>`:''}`;return;
     }
     if(view==='editPost'){
       const data=await api('/api/posts/'+selectedPost);if(version!==requestVersion)return;
