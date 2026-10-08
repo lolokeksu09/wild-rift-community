@@ -1,5 +1,5 @@
 name: Deploy community to VDS
-# Release 0.24: recovery codes and encrypted backup tools; cold migration 18 → 19.
+# Release 0.24: recovery codes and encrypted backup tools; cold migration 18 → 19, packaged-image preflight.
 on:
   workflow_dispatch:
   push:
