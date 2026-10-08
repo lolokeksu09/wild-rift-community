@@ -4,13 +4,20 @@ import {chromium} from 'playwright';
 import {createApp} from '../server/app.mjs';
 mkdirSync('ui-screenshots',{recursive:true});
 const app=await createApp(),origin=await app.listen();let browser;
-try{browser=await chromium.launch();for(const width of [320,360,390,768,1440]){
+try{browser=await chromium.launch();for(const width of [320,360,390,680,768,1440]){
  const context=await browser.newContext({viewport:{width,height:844},reducedMotion:'reduce',hasTouch:true}),page=await context.newPage(),errors=[],requests=[];
  page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push(r.url()));
  assert.equal((await page.goto(origin)).status(),200);await page.locator('.launch').waitFor();await page.waitForFunction(()=>document.querySelector('#main').getAttribute('aria-busy')==='false');
  assert.equal(await page.locator('.sidebar').isVisible(),false);assert.equal(await page.locator('.topbar').isVisible(),false);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.equal(requests.some(url=>url.includes('/api/clubs')),false);
  assert.equal(await page.locator('[data-launch-card]').count(),4);
+ if(width<=700){
+  assert.equal(await page.locator('.launch-card').evaluate(el=>getComputedStyle(el).display),'flex');
+  assert((await page.locator('.launch-art').first().boundingBox()).height<=121);
+  assert((await page.locator('.launch-card').first().boundingBox()).height<380);
+  assert((await page.locator('.launch-entry').boundingBox()).y<600);
+ }
+
  assert.match(await page.locator('[data-launch-card="0"]').textContent(),/сообщество игроков Wild Rift/i);
  assert.equal(await page.locator('.launch-track').evaluate(el=>getComputedStyle(el).scrollSnapType),'x mandatory');
  assert.equal(await page.locator('.launch-track').evaluate(el=>getComputedStyle(el).scrollBehavior),'auto');

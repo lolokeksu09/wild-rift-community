@@ -65,7 +65,7 @@ body.launch-mode { background:var(--bg); }
 .launch-footer { display:flex; justify-content:space-between; align-items:center; gap:12px; border-top:1px solid var(--line); padding-top:12px; color:var(--muted); font-size:10px; }
 .launch-footer button { background:none; border:0; color:var(--muted); min-height:44px; font-size:11px; }
 .launch button:focus-visible,.launch a:focus-visible,.launch-track:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
-@media(max-width:650px) {
+@media(max-width:700px) {
  .launch { --launch-gutter:18px; padding-top:max(16px,env(safe-area-inset-top)); }
  .launch-status { display:none; }
  .launch-intro { margin-top:18px; font-size:11px; }

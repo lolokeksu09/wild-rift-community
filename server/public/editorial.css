@@ -1108,3 +1108,28 @@ body:not(.launch-mode) .editorial-cover h1 { font-weight:700; font-size:clamp(64
  .reaction-row button { gap:4px; padding:9px 7px; font-size:11px; min-height:49px; }
  .reaction-icon { width:16px; height:16px; }
 }
+
+/* Stage 25: compact phone introduction, using the community's mobile scale. */
+@media(max-width:700px) {
+ .launch { --launch-gutter:16px; padding-top:max(12px,env(safe-area-inset-top)); }
+ .launch-intro { margin-top:12px; margin-bottom:12px; font-size:11px; }
+ .launch-swipe-hint { font-size:10px; }
+ .launch-art { height:120px; }
+ .launch-copy { padding:16px; }
+ .launch .launch-copy h1,.launch .launch-copy h2 { font-size:28px; line-height:1.08; margin:10px 0; }
+ .launch-description { font-size:13px; line-height:1.5; }
+ .launch-card-number { margin-top:10px; }
+ .launch-controls { margin-top:8px; }
+ .launch-entry { padding-top:12px; padding-bottom:12px; }
+ .launch-greeting { font-size:13px; margin-bottom:10px; }
+ .launch-primary,.launch-secondary { padding:10px 14px; font-size:13px!important; }
+ .launch-footer { padding-top:8px; font-size:10px; }
+ .launch-club-sheet strong { font-size:20px; margin:5px 0; }
+ .launch-club-sheet-back { height:110px; }
+ .launch-join-word { font-size:28px; }
+ .launch-join-symbol { width:32px; height:32px; font-size:22px; left:16px; top:16px; }
+ .launch-team-board { padding:10px; }
+ .launch-role-map { margin:4px 0; }
+ .launch-role-map span { padding:4px 0; }
+ .launch-board-foot { padding-top:4px; }
+}
