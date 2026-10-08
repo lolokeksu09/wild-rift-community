@@ -38,7 +38,9 @@ jobs:
           # On a follow-up that only fixes a new browser test/CI, existing browser
           # scenarios already passed on its parent and application code is unchanged.
           changed=$(git diff-tree --no-commit-id --name-only -r "$CHECK_HEAD")
-          if test -n "$changed" && ! printf '%s\n' "$changed" | grep -qvE '^(tests/browser-(events|home|drafts|post-management|polls|guides).mjs|.github/workflows/verify.yml)$'; then
+          if printf '%s\n' "$changed" | grep -q '^.github/workflows/verify.yml$'; then
+            npm run test:browser --prefix tests
+          elif test -n "$changed" && ! printf '%s\n' "$changed" | grep -qvE '^(tests/browser-(events|home|drafts|post-management|polls|guides).mjs|.github/workflows/verify.yml)$'; then
             cd tests
             if printf '%s\n' "$changed" | grep -q 'tests/browser-guides.mjs'; then
               node browser-guides.mjs
@@ -53,6 +55,8 @@ jobs:
             else
               node browser-events.mjs
             fi
+          elif printf '%s\n' "$changed" | grep -qE '^(server/(app|database|security|recovery|backup|backup-cli).mjs|server/public/app.js|tests/browser-recovery.mjs)$'; then
+            npm run test:browser --prefix tests
           elif printf '%s\n' "$changed" | grep -qE '^(server/guides.mjs|server/public/guides.js|server/tests/guides.test.mjs)$'; then
             cd tests
             node browser-guides.mjs
