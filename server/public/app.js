@@ -103,6 +103,8 @@ function auth() {
 function recoverySettings(remaining) {
   return `<section class="panel"><h2>Восстановление доступа</h2><p class="note">Осталось резервных кодов: <span data-recovery-count>${remaining}</span>. Каждый код заменяет забытый пароль один раз. Сохрани их отдельно от пароля и никому не передавай.</p><form id="recoveryCodes"><label class="field">Текущий пароль<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="current-password"></label><p class="note">Новый набор отменяет все прежние коды. Коды показываются только один раз; сохрани их до ухода с этой страницы. Если ответ потерялся, создай новый набор.</p>${errorLine}<button class="btn primary">Создать новый набор</button><div data-recovery-result></div></form></section>`;
 }
+function sessionCard(s){return `<article class="comment" data-session-row="${esc(s.id)}"><strong>${s.current?'Текущий сеанс':'Другой сеанс'}</strong><p class="note">Действует до ${esc(new Date(s.expiresAt).toLocaleString('ru-RU'))}</p><button class="btn quiet" data-revoke-session="${esc(s.id)}" data-current-session="${s.current?'1':'0'}">Завершить ${s.current?'этот':'сеанс'}</button></article>`;}
+function accountSecurity(data){return `<section class="panel"><h2>Сменить пароль</h2><form id="changePassword"><p class="note">Все прежние сеансы и резервные коды будут отозваны. Этот браузер получит новый сеанс. После смены создай новые резервные коды.</p><label class="field">Текущий пароль<input name="currentPassword" type="password" required minlength="12" maxlength="128" autocomplete="current-password"></label><label class="field">Новый пароль<input name="newPassword" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label><label class="field">Повтори новый пароль<input name="repeatPassword" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label>${errorLine}<button class="btn primary">Сменить пароль</button></form></section><section class="panel"><h2>Активные сеансы</h2><p class="note">Сервис пока не сохраняет названия устройств. Завершение сеанса отзывает его доступ к аккаунту.</p><div data-session-list>${data.sessions.map(sessionCard).join('')}</div>${data.next?`<button class="btn quiet" data-session-more="${esc(data.next)}">Ещё сеансы</button>`:''}</section>`;}
 const initials = name => esc(String(name || 'WR').trim().split(/\s+/).slice(0,2).map(x=>Array.from(x)[0]).join('').toUpperCase());
 function clubCard(c) {
   const tone = [...c.id].reduce((sum,x)=>sum+x.charCodeAt(0),0)%4;
@@ -270,9 +272,10 @@ async function render(options={}) {
     if(view==='player'){const data=await api('/api/profiles/'+selectedPlayer);if(version!==requestVersion)return;$('#main').innerHTML=`<button class="back-link" data-nav="${playerReturnView}">← ${playerReturnView==='lfg'?'К поиску напарников':playerReturnView==='members'?'К участникам':'К обсуждениям'}</button><div class="section-head"><h1>Профиль игрока</h1>${shareButton('/players/'+data.profile.id,'Скопировать ссылку на профиль')}</div>${mediaUI.showcase(data.profile)}${user&&user.id!==data.profile.id?`<button type="button" class="btn quiet" data-report-object="profile" data-target-id="${esc(data.profile.id)}">Пожаловаться на профиль</button>`:''}`;return;}
     if (view === 'account') {
       if (!user) { $('#main').innerHTML = auth(); return; }
-      const viewer=user.id,data=await api('/api/recovery-codes');
+      const viewer=user.id,[data,sessions]=await Promise.all([api('/api/recovery-codes'),api('/api/sessions')]);
       if(version!==requestVersion || user?.id!==viewer)return;
-      $('#main').innerHTML = profile() + recoverySettings(data.remaining); return;
+      if(sessions.viewerId!==viewer)throw Error('Сеанс изменился. Обнови страницу.');
+      $('#main').innerHTML = profile() + accountSecurity(sessions) + recoverySettings(data.remaining); return;
     }
     if (view === 'club') {
       const detail=await api(`/api/clubs/${selectedClub}/detail`);if(version!==requestVersion)return;const club=detail.club;
@@ -410,6 +413,15 @@ document.addEventListener('click', async event => {
 });
 document.addEventListener('submit', async event => {
   const form = event.target;
+  if(form.id==='changePassword'){
+    event.preventDefault();if(!form.reportValidity())return;
+    if(form.elements.newPassword.value!==form.elements.repeatPassword.value){formError(form,{message:'Новые пароли не совпадают.'});return;}
+    if(!await beforeRouteChange())return;
+    const button=form.querySelector('button'),version=requestVersion,viewer=user?.id;button.disabled=true;
+    try{const result=await api('/api/me/password','POST',{currentPassword:form.elements.currentPassword.value,newPassword:form.elements.newPassword.value});
+      form.reset();if(version!==requestVersion||viewer!==user?.id)return;user=result.user;csrf=result.csrf;await render();notify('Пароль изменён. Старые сеансы и коды отозваны. Создай новые резервные коды.');
+    }catch(e){if(form.isConnected)formError(form,e);}finally{button.disabled=false;}return;
+  }
   if(form.hasAttribute('data-members-filter')){event.preventDefault();memberState=Object.fromEntries(new FormData(form));await render();return;}
   if(form.hasAttribute('data-guide-filters')){event.preventDefault();guideState=Object.fromEntries(new FormData(form));view='guides';await render();return;}
   if(form.dataset.guideCreate||form.dataset.guideEdit){event.preventDefault();if(!form.reportValidity())return;const version=requestVersion,viewer=user?.id;try{const d=await guideUI.save(form,api);if(version!==requestVersion||viewer!==user?.id||!form.isConnected)return;selectedPost=d.id;if(form.dataset.guideCreate)postReturnView='club';view='post';await render();notify('Руководство сохранено.');}catch{}return;}
@@ -464,6 +476,25 @@ document.addEventListener('submit', async event => {
     await render();
   } catch (e) { formError(form, e); }
   finally { button.disabled = false; }
+});
+
+document.addEventListener('click',async event=>{
+ const b=event.target.closest('[data-revoke-session],[data-session-more]');if(!b)return;
+ const version=requestVersion,viewer=user?.id;
+ if(b.dataset.revokeSession){
+   if(!confirm(b.dataset.currentSession==='1'?'Завершить текущий сеанс и выйти из аккаунта?':'Завершить выбранный сеанс?'))return;
+   if(b.dataset.currentSession==='1'&&!await beforeRouteChange())return;
+ }
+ b.disabled=true;
+ try{
+  if(b.dataset.sessionMore){const data=await api('/api/sessions?after='+encodeURIComponent(b.dataset.sessionMore));if(version!==requestVersion||viewer!==user?.id||data.viewerId!==viewer)return;
+   $('[data-session-list]').insertAdjacentHTML('beforeend',data.sessions.map(sessionCard).join(''));if(data.next)b.dataset.sessionMore=data.next;else b.remove();
+  }else{
+   const result=await api('/api/sessions/'+b.dataset.revokeSession,'DELETE',{});if(version!==requestVersion||viewer!==user?.id)return;
+   if(result.loggedOut){try{const prefix=`wr-chat-pending:${viewer}:`;for(const key of Object.keys(sessionStorage))if(key.startsWith(prefix))sessionStorage.removeItem(key);}catch{}user=csrf=null;view='account';await render();}
+   else{b.closest('[data-session-row]').remove();notify('Сеанс завершён.');}
+  }
+ }catch(e){notify(e.message);}finally{b.disabled=false;}
 });
 if(!inviteToken){applyRoute(parseRoute(location.pathname)||{view:'notfound'});const returnPath=new URLSearchParams(location.search).get('return');const target=returnPath&&parseRoute(returnPath);if(view==='account'&&target?.view==='club')authReturn=target;}
 window.addEventListener('popstate',async()=>{const version=requestVersion;if(!await beforeRouteChange()){syncRoute(false);return;}if(version!==requestVersion)return;applyRoute(parseRoute(location.pathname)||{view:'notfound'});render({history:false});});
