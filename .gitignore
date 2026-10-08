@@ -15,3 +15,9 @@ coverage/
 .DS_Store
 # Local user uploads must never enter Git
 uploads/
+
+# Local database (never publish or commit)
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
