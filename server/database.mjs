@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 22) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 23) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -338,6 +338,27 @@ export function openDatabase(path) {
     } catch(error) {db.close();throw error;}
     finally {if(db.isOpen)db.exec('PRAGMA foreign_keys=ON;');}
   }
+  if(version < 23) transaction(db,()=>db.exec(`
+    CREATE TABLE tournaments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT NOT NULL REFERENCES users(id),
+      title TEXT NOT NULL, description TEXT NOT NULL, capacity INTEGER NOT NULL CHECK(capacity IN (4,8,16)),
+      state TEXT NOT NULL DEFAULT 'open' CHECK(state IN ('open','running','finished')),
+      client_id TEXT NOT NULL, signature TEXT NOT NULL, created_at INTEGER NOT NULL,
+      UNIQUE(owner_id,client_id)
+    ) STRICT;
+    CREATE TABLE tournament_teams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, tournament_id INTEGER NOT NULL REFERENCES tournaments(id),
+      captain_id TEXT NOT NULL REFERENCES users(id), name TEXT NOT NULL,
+      UNIQUE(tournament_id,captain_id), UNIQUE(tournament_id,name)
+    ) STRICT;
+    CREATE TABLE tournament_matches (
+      tournament_id INTEGER NOT NULL REFERENCES tournaments(id), round INTEGER NOT NULL, slot INTEGER NOT NULL,
+      team_a INTEGER REFERENCES tournament_teams(id), team_b INTEGER REFERENCES tournament_teams(id),
+      score_a INTEGER, score_b INTEGER, winner INTEGER REFERENCES tournament_teams(id),
+      PRIMARY KEY(tournament_id,round,slot)
+    ) STRICT;
+    PRAGMA user_version=23;
+  `));
   return db;
 }
 export function transaction(db, fn) {

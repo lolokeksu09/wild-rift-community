@@ -1,3 +1,4 @@
+import {tournamentRoutes} from './tournaments.mjs';
 import { replaceCodes, consumeCode } from './recovery.mjs';
 import {catalogRoutes} from './catalog.mjs';
 import {pageMetadata,pageHTML,sitemap} from './pages.mjs';
@@ -49,6 +50,7 @@ const assets = new Map([
   ['/discussions.js', ['discussions.js', 'text/javascript; charset=utf-8']],
   ['/players.js', ['players.js', 'text/javascript; charset=utf-8']],
   ['/profiles.js', ['profiles.js', 'text/javascript; charset=utf-8']],
+  ['/tournaments.js', ['tournaments.js', 'text/javascript; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/lfg.js', ['lfg.js', 'text/javascript; charset=utf-8']],
   ['/direct.js', ['direct.js', 'text/javascript; charset=utf-8']],
@@ -150,7 +152,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
             res.writeHead(200,{'Content-Type':path==='/robots.txt'?'text/plain; charset=utf-8':'application/xml; charset=utf-8'});res.end(method==='HEAD'?undefined:value);return;
           }
         }
-        const pageRoute=/^\/(?:feed|clubs(?:\/[\w-]{1,80})?|posts\/\d{1,16}|players(?:\/[\w-]{1,80})?|guides|teams|events|account|messages|notifications|reports|saved|drafts|search|rules)\/?$/.test(path);
+        const pageRoute=/^\/(?:feed|clubs(?:\/[\w-]{1,80})?|posts\/\d{1,16}|players(?:\/[\w-]{1,80})?|guides|teams|events|tournaments|account|messages|notifications|reports|saved|drafts|search|rules)\/?$/.test(path);
         const asset = assets.get(path)||(pageRoute?assets.get('/'):null);
         if (!['GET','HEAD'].includes(method)) fail(404, 'Страница не найдена.');
         if(!asset){
@@ -390,6 +392,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
       if (draftRoutes({db,user,path,method,body,send,now,clubFor})) return;
       if (homeRoutes({db,user,path,method,send,now})) return;
       if (previewRoutes({db,user,path,method,send,now})) return;
+      if (tournamentRoutes({db,user,path,method,body,send,now})) return;
       if (eventRoutes({db,user,path,method,body,url,send,now})) return;
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
       if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds,postFor})) return;

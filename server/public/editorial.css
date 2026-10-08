@@ -1133,3 +1133,13 @@ body:not(.launch-mode) .editorial-cover h1 { font-weight:700; font-size:clamp(64
  .launch-role-map span { padding:4px 0; }
  .launch-board-foot { padding-top:4px; }
 }
+
+/* Tournament rounds stay within the mobile column. */
+.tournament-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:16px; }
+.tournament-bracket { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:16px; }
+.tournament-bracket>section { min-width:0; }
+.tournament-match p { overflow-wrap:anywhere; }
+.tournament-match>p { display:flex; justify-content:space-between; gap:12px; }
+.tournament-scores { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+#tournamentsRoot h1,#tournamentsRoot h2,#tournamentsRoot li { overflow-wrap:anywhere; }
+@media(max-width:700px) { .play-section-nav { flex-wrap:wrap; } .play-section-nav a { min-width:30%; font-size:18px; } .tournament-bracket { grid-template-columns:1fr; } }

@@ -43,7 +43,7 @@ function unsavedEditor(){
 function plural(n,one,few,many){const x=Math.abs(n)%100,y=x%10;return n+' '+(x>=11&&x<=14?many:y===1?one:y>=2&&y<=4?few:many);}
 function memberCount(c){const bots=c.bots??clubs.find(x=>x.id===c.id)?.bots??0;return plural(c.members,'участник','участника','участников')+(bots?' · '+plural(bots,'бот','бота','ботов'):'');}
 function parseRoute(path,search=''){
- const routes={'/':'welcome','/feed':'discover','/clubs':'clubs','/players':'members','/guides':'guides','/teams':'lfg','/events':'events','/account':'account','/messages':'direct','/notifications':'notifications','/reports':'reports','/saved':'saved','/drafts':'drafts','/search':'search','/rules':'rules'};
+ const routes={'/':'welcome','/feed':'discover','/clubs':'clubs','/players':'members','/guides':'guides','/teams':'lfg','/events':'events','/tournaments':'tournaments','/account':'account','/messages':'direct','/notifications':'notifications','/reports':'reports','/saved':'saved','/drafts':'drafts','/search':'search','/rules':'rules'};
  const clean=path==='/'?path:path.replace(/\/$/,'');if(routes[clean]){const tab=new URLSearchParams(search).get('tab');return {view:routes[clean],...(routes[clean]==='discover'?{homeTab:['conversations','play'].includes(tab)?tab:'overview'}:{})};}
  const m=/^\/(clubs|posts|players)\/([\w-]{1,80})$/.exec(clean);
  if(!m||(m[1]==='posts'&&!/^\d{1,16}$/.test(m[2])))return null;
@@ -61,7 +61,7 @@ function routePath(){
  if(view==='club')return '/clubs/'+encodeURIComponent(selectedClub);
  if(view==='post'||view==='editPost')return '/posts/'+selectedPost;
  if(view==='player')return '/players/'+encodeURIComponent(selectedPlayer);
- const paths={welcome:'/',discover:'/feed',clubs:'/clubs',members:'/players',guides:'/guides',lfg:'/teams',events:'/events',account:'/account',direct:'/messages',notifications:'/notifications',reports:'/reports',saved:'/saved',drafts:'/drafts',search:'/search',rules:'/rules'};
+ const paths={welcome:'/',discover:'/feed',clubs:'/clubs',members:'/players',guides:'/guides',lfg:'/teams',events:'/events',tournaments:'/tournaments',account:'/account',direct:'/messages',notifications:'/notifications',reports:'/reports',saved:'/saved',drafts:'/drafts',search:'/search',rules:'/rules'};
  let path=paths[view]||'/';
  if(view==='discover'&&homeTab!=='overview')path+='?tab='+homeTab;
  if(view==='account'&&authReturn?.view==='club')path+='?return='+encodeURIComponent('/clubs/'+authReturn.id);
@@ -228,11 +228,11 @@ function personalHome(home,preview,compact,loadFailed=false){
  if(!compact){
   if(!user&&preview?.groups?.length)html+=`<section class="home-groups"><div class="section-head"><h2>Открытые группы</h2><button class="text-link" data-nav="lfg">Все группы</button></div>${preview.groups.map(g=>groupCard(g)).join('')}</section>`;
   const empty=!loadFailed&&!events.length&&!groups.length&&!mine.length&&!preview?.groups?.length;
-  html+=`<section class="play-invitation ${empty?'compact-empty':''}">${empty?'<h2>Встретимся в Рифте?</h2><p>Пока нет подходящих вечеров и групп. Предложи свою игру.</p>':''}<div class="row wrap"><button class="btn primary" ${user?'data-home-create-event':'data-preview-start="events"'}>Запланировать вечер</button><button class="btn quiet" ${user?'data-home-create-group':'data-preview-start="lfg"'}>Собрать группу</button><button class="text-link" data-nav="lfg">Поиск игроков и групп</button><button class="text-link" data-nav="events">Все события</button></div></section>`;
+  html+=`<section class="play-invitation ${empty?'compact-empty':''}">${empty?'<h2>Встретимся в Рифте?</h2><p>Пока нет подходящих вечеров и групп. Предложи свою игру.</p>':''}<div class="row wrap"><button class="btn primary" ${user?'data-home-create-event':'data-preview-start="events"'}>Запланировать вечер</button><button class="btn quiet" ${user?'data-home-create-group':'data-preview-start="lfg"'}>Собрать группу</button><button class="text-link" data-nav="lfg">Поиск игроков и групп</button><button class="text-link" data-nav="events">Все события</button><button class="text-link" data-nav="tournaments">Турниры</button></div></section>`;
  }
  return html;
 }
-function playNavigation(selected){return `<nav class="play-section-nav" aria-label="Играем вместе"><a data-route href="/teams" ${selected==='lfg'?'aria-current="page"':''}>Поиск компании</a><a data-route href="/events" ${selected==='events'?'aria-current="page"':''}>Игровые вечера</a></nav>`;}
+function playNavigation(selected){return `<nav class="play-section-nav" aria-label="Играем вместе"><a data-route href="/teams" ${selected==='lfg'?'aria-current="page"':''}>Поиск компании</a><a data-route href="/events" ${selected==='events'?'aria-current="page"':''}>Игровые вечера</a><a data-route href="/tournaments" ${selected==='tournaments'?'aria-current="page"':''}>Турниры</a></nav>`;}
 function announcementPreview(data,kind) {
  const events=kind==='events',items=events?data.events:data.groups;
  if(events)return `<section class="public-events"><header class="catalog-heading events-heading events-hero"><div><h1>Игровые вечера</h1><p class="muted">Выбери встречу или собери свою компанию.</p></div><button class="btn quiet" data-preview-start="events">Создать событие</button></header><p class="note">Время на твоём устройстве. Здесь показано до шести ближайших встреч.</p><div class="editorial-event-list">${items.map(e=>`<article class="event-card editorial-event-row"><time class="event-calendar" datetime="${esc(new Date(e.starts_at).toISOString())}"><strong>${new Date(e.starts_at).getDate()}</strong><span>${esc(new Date(e.starts_at).toLocaleDateString('ru-RU',{month:'short'}))}</span><small>${esc(new Date(e.starts_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}))}</small></time><div class="event-row-copy"><span class="tiny-label">${esc({ranked:'Ранкед',normal:'Обычная',aram:'ARAM',custom:'Своя игра'}[e.mode])}</span><h2>${esc(e.title)}</h2><p class="event-row-meta">${esc(e.region)} · ${esc(e.language)}</p><p class="event-spaces">${e.available?'Свободных мест: '+e.available:'Состав собран'}</p><button class="btn quiet" data-preview-join="${e.id}" data-preview-kind="events">Посмотреть</button></div></article>`).join('')||'<section class="finder-empty event-empty"><h2>Первый вечер может быть твоим</h2><p>Выбери время и пригласи компанию. После входа можно создать встречу или занять свободное место.</p><button class="btn primary" data-preview-start="events">Запланировать вечер</button></section>'}</div><p class="preview-note">Для записи нужен аккаунт. Имена состава и чат доступны участникам встречи.</p></section>`;
@@ -322,10 +322,10 @@ async function render(options={}) {
   mediaUI.cleanup();
   chatController?.destroy(); chatController = null;
   const version = ++requestVersion;
-  const activeNav={discover:'discover',clubs:'home',members:'people',club:'home',player:'people',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',drafts:'account',saved:'account',notifications:'notifications',post:'discover',editPost:'discover',search:'discover',guides:'discover',invite:'home'}[view];
+  const activeNav={discover:'discover',clubs:'home',members:'people',club:'home',player:'people',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',tournaments:'events',drafts:'account',saved:'account',notifications:'notifications',post:'discover',editPost:'discover',search:'discover',guides:'discover',invite:'home'}[view];
   for(const button of document.querySelectorAll('.primary-nav button, #reports, #notifications')){if(button.id===activeNav)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
   for(const button of document.querySelectorAll('.section-menu [data-nav]')){if(button.dataset.nav===view)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
-  const secondaryTitle={members:'Люди',player:'Люди',events:'События',guides:'Руководства',saved:'Сохранённое',drafts:'Черновики',notifications:'Ответы',reports:'Жалобы',rules:'Правила'}[view];
+  const secondaryTitle={members:'Люди',player:'Люди',events:'События',tournaments:'Турниры',guides:'Руководства',saved:'Сохранённое',drafts:'Черновики',notifications:'Ответы',reports:'Жалобы',rules:'Правила'}[view];
   const menuLabel=$('[data-section-menu-label]');if(menuLabel)menuLabel.textContent=secondaryTitle||'Ещё';
   if(menu){menu.dataset.sectionActive=secondaryTitle?'true':'false';menu.querySelector('summary').setAttribute('aria-label',secondaryTitle?secondaryTitle+' · открыть остальные разделы':'Открыть остальные разделы');}
   $('#main').setAttribute('aria-busy','true');
@@ -403,6 +403,7 @@ async function render(options={}) {
       $('#main').innerHTML=discoverPage(feed,home?.data,home?.error,people,preview?.data,preview?.error);return;
     }
     if(!user&&['events','lfg'].includes(view)){const data=await api('/api/community-preview');if(version!==requestVersion)return;$('#main').innerHTML=playNavigation(view)+announcementPreview(data,view);return;}
+    if(view==='tournaments'){$('#main').innerHTML=playNavigation('tournaments')+'<section id=tournamentsRoot></section>';chatController=window.createTournaments({root:$('#tournamentsRoot'),user,api});return;}
     if(view==='events'){$('#main').innerHTML=user?playNavigation('events')+'<section id=eventsRoot></section>':auth();if(user)chatController=window.createEvents({root:$('#eventsRoot'),user,api,state:eventState});return;}
     if(view==='lfg'){$('#main').innerHTML=user?playNavigation('lfg')+'<section id=lfgRoot></section>':auth();if(user)chatController=window.createLfg({root:$('#lfgRoot'),user,api,state:lfgState});return;}
     if (view === 'reports') {

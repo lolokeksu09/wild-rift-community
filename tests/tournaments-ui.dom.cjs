@@ -1,0 +1,11 @@
+const {JSDOM}=require('jsdom'),fs=require('node:fs'),assert=require('node:assert/strict');
+(async()=>{
+const dom=new JSDOM('<section id="root"></section>',{url:'https://example.test/tournaments',runScripts:'outside-only'}),w=dom.window;w.confirm=()=>true;
+const root=w.document.querySelector('#root'),calls=[];let state='open',teams=[],matches=[];
+const api=async(path,method,body)=>{calls.push({path,method,body});if(method==='POST'){if(path==='/api/tournaments')return {id:1};if(path.endsWith('/join'))teams=[{id:1,name:body.name,captain_id:'u'}];if(path.endsWith('/start')){state='running';matches=[{round:1,slot:0,team_a:1,team_b:2}];teams.push({id:2,name:'Opponent',captain_id:'v'});}if(path.endsWith('/results')){state='finished';matches[0]={...matches[0],score_a:body.scoreA,score_b:body.scoreB,winner:1};}return {ok:true};}
+return path==='/api/tournaments'?{tournaments:[]}:{tournament:{id:1,title:'Title <img src=x>',description:'Rules',state,capacity:4,owner_id:'u'},teams,matches,myTeam:teams.find(x=>x.captain_id==='u')?.id};};
+w.eval(fs.readFileSync(require('node:path').join(__dirname,'../server/public/tournaments.js'),'utf8'));const c=w.createTournaments({root,user:{id:'u'},api}),settle=()=>new Promise(r=>setTimeout(r,20));await settle();
+let f=root.querySelector('[data-tournament-create]');f.elements.title.value='New cup';f.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await settle();assert.equal(w.location.search,'?id=1');assert.equal(root.querySelector('img'),null);
+f=root.querySelector('[data-tournament-join]');f.elements.name.value='My team';f.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await settle();assert.match(root.textContent,/My team/);root.querySelector('[data-tournament-start]').click();await settle();
+f=root.querySelector('[data-tournament-result]');f.elements.scoreA.value='2';f.elements.scoreB.value='1';f.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await settle();assert.match(root.textContent,/Победитель — My team/);assert.equal(root.querySelector('[data-tournament-result]'),null);c.destroy();dom.window.close();console.log('PASS tournament UI: create, register, start, results, winner, escaping and deep link. DOM only.');
+})().catch(e=>{console.error(e);process.exit(1)});
