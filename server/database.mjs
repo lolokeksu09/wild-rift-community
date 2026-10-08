@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 15) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 16) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -235,6 +235,7 @@ export function openDatabase(path) {
     END;
     PRAGMA user_version=15;
     COMMIT;`);
+  if(version<16)db.exec(`BEGIN; ALTER TABLE posts ADD COLUMN edit_version INTEGER NOT NULL DEFAULT 1 CHECK(edit_version>0); ALTER TABLE posts ADD COLUMN edited_at INTEGER; ALTER TABLE posts ADD COLUMN edit_client_id TEXT; PRAGMA user_version=16; COMMIT;`);
   return db;
 }
 export function transaction(db, fn) {
