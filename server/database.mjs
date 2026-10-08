@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 26) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 27) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -385,6 +385,11 @@ export function openDatabase(path) {
     CREATE UNIQUE INDEX tournament_notification_unique ON tournament_notifications(user_id,tournament_id,round,slot,schedule_version,kind);
     CREATE INDEX tournament_notifications_user ON tournament_notifications(user_id,seen,id);
     PRAGMA user_version=26;
+  `));
+  if(version < 27) transaction(db,()=>db.exec(`
+    ALTER TABLE tournament_matches ADD COLUMN ready_a_at INTEGER;
+    ALTER TABLE tournament_matches ADD COLUMN ready_b_at INTEGER;
+    PRAGMA user_version=27;
   `));
   return db;
 }

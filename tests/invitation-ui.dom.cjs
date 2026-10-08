@@ -26,7 +26,9 @@ const {pathToFileURL}=require('node:url');const os=require('node:os');
   d.querySelector('#notifications').click();await until(()=>d.querySelectorAll('[data-match-notification]').length===2);assert.match(d.querySelector('#matchNotifications').textContent,/Матч назначен/);assert.match(d.querySelector('#matchNotifications').textContent,/30 минут/);
   d.dispatchEvent(new w.Event('visibilitychange'));await until(()=>d.querySelector('#notifications').title.includes('о матчах: 2'));
   d.querySelector('[data-match-read]').click();await until(()=>d.querySelectorAll('[data-match-read]').length===1);await until(()=>d.querySelector('#notifications').title.includes('о матчах: 1'));
-  d.querySelector('[data-match-notification] a').click();await until(()=>d.querySelector('[data-tournament-refresh]'));assert.equal(w.location.search,'?id='+id);assert.equal(d.querySelector('[data-tournament-schedule]'),null);
+  d.querySelector('[data-match-notification] a').click();await until(()=>d.querySelector('[data-tournament-refresh]'));assert.equal(w.location.search,'?id='+id);assert.equal(d.querySelector('[data-tournament-schedule]'),null);assert.equal(d.querySelector('[data-tournament-ready]'),null);
+  const r=await fetch(origin+'/api/tournaments/'+id+'/ready',{method:'POST',headers:{Cookie:captain.cookie,Origin:origin,'Content-Type':'application/json','X-Community-Request':'1'},body:JSON.stringify({round:1,slot:0,expectedVersion:1})});assert.equal(r.status,403);
+  await captain.req('/api/tournaments/'+id+'/ready','POST',{round:1,slot:0,expectedVersion:1});d.querySelector('[data-tournament-refresh]').click();await until(()=>d.querySelector('[data-tournament-readiness]')?.textContent.includes('Team <svg> · Готова'));
   assert.deepEqual(errors,[]);console.log('PASS invitation center with real HTTP: private list, escaped content, exact tournament deep link, consent, combined badge reset and cancelled invitation removal. DOM only.');
  }finally{dom?.window.close();await app.close();fs.rmSync(temp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

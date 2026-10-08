@@ -17,7 +17,7 @@ test('live WAL snapshot encrypts content, restores independently and revokes sta
     db.exec("INSERT INTO users(id,handle,name,password,created_at) VALUES('u','owner','Owner','preserved-password-hash',1); INSERT INTO sessions VALUES('cookie','u','csrf',9999999999999); INSERT INTO clubs(id,owner_id,name,description,access,created_at) VALUES('c','u','Private','Private backup content','request',1); INSERT INTO memberships VALUES('c','u','member'); INSERT INTO posts(club_id,author_id,title,body,created_at) VALUES('c','u','Secret','Private preserved post',1);");
     replaceCodes(db, 'u', 1);
     const result = await createBackup(source, archive, key);
-    assert.equal(result.schema, 26);
+    assert.equal(result.schema, 27);
     const encrypted = readFileSync(archive);
     assert(!encrypted.includes(Buffer.from('Private preserved post')));
     assert(!encrypted.includes(Buffer.from('preserved-password-hash')));

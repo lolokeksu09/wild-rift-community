@@ -50,7 +50,7 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
    if(get("SELECT count(*) n FROM tournaments WHERE owner_id=? AND state!='finished' AND cancelled_at IS NULL",user.id).n>=5)fail(409,'Можно организовать до пяти незавершённых турниров.');
    return Number(run('INSERT INTO tournaments(owner_id,title,description,capacity,client_id,signature,created_at) VALUES(?,?,?,?,?,?,?)',user.id,title,description,capacity,clientId,signature,now()).lastInsertRowid);});send(200,{id});return true;
  }
- const m=path.match(/^\/api\/tournaments\/(\d+)(?:\/(join|leave|start|results|invite|accept|decline|remove|member-leave|cancel|schedule))?$/);if(!m)fail(404,'Маршрут не найден.');
+ const m=path.match(/^\/api\/tournaments\/(\d+)(?:\/(join|leave|start|results|invite|accept|decline|remove|member-leave|cancel|schedule|ready))?$/);if(!m)fail(404,'Маршрут не найден.');
  const id=Number(m[1]),t=get('SELECT * FROM tournaments WHERE id=?',id);if(!t||blocked(t.owner_id))fail(404,'Турнир недоступен.');
  if(!m[2]&&method==='GET'){
   const teams=all(`SELECT t.id,t.name,t.captain_id,t.roster_required,
@@ -60,7 +60,7 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
   const myTeam=membership?.status==='accepted'?membership.team_id:null;
   const invitation=membership?.status==='pending'&&t.state==='open'&&t.cancelled_at===null&&!blocked(teams.find(x=>x.id===membership.team_id)?.captain_id)?teams.find(x=>x.id===membership.team_id):null;
   const roster=myTeam?all(`SELECT r.user_id,r.status,u.handle FROM tournament_roster r JOIN users u ON u.id=r.user_id WHERE r.team_id=? AND r.status!='declined' ORDER BY r.user_id`,myTeam).filter(r=>!blocked(r.user_id)):[];
-  send(200,{tournament:safe(t),teams,roster,invitation,matches:all('SELECT round,slot,team_a,team_b,score_a,score_b,winner,starts_at,schedule_version FROM tournament_matches WHERE tournament_id=? ORDER BY round,slot',id),myTeam});return true;
+  send(200,{tournament:safe(t),teams,roster,invitation,matches:all('SELECT round,slot,team_a,team_b,score_a,score_b,winner,starts_at,schedule_version,ready_a_at,ready_b_at FROM tournament_matches WHERE tournament_id=? ORDER BY round,slot',id),myTeam});return true;
  }
  if(method!=='POST')fail(405,'Метод не поддерживается.');signed();
  if(m[2]==='cancel'){
@@ -144,8 +144,22 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
    if(match.schedule_version!==expectedVersion)fail(409,'Время уже изменилось. Обнови турнир перед переносом.');
    if(startsAt<=now()||startsAt>now()+366*86400000)fail(422,'Выбери будущее время в пределах года.');
    const version=match.schedule_version+1,kind=match.starts_at===null?'scheduled':'rescheduled';
-   run('UPDATE tournament_matches SET starts_at=?,schedule_version=? WHERE tournament_id=? AND round=? AND slot=?',startsAt,version,id,round,slot);
+   run('UPDATE tournament_matches SET starts_at=?,schedule_version=?,ready_a_at=NULL,ready_b_at=NULL WHERE tournament_id=? AND round=? AND slot=?',startsAt,version,id,round,slot);
    for(const r of all("SELECT user_id FROM tournament_roster WHERE tournament_id=? AND status='accepted' AND team_id IN (?,?)",id,match.team_a,match.team_b))run('INSERT INTO tournament_notifications(user_id,tournament_id,round,slot,schedule_version,kind,created_at) VALUES(?,?,?,?,?,?,?)',r.user_id,id,round,slot,version,kind,now());
+  });send(200,{ok:true});return true;
+ }
+ if(m[2]==='ready'){
+  const {round,slot,expectedVersion}=body;
+  if(![round,slot,expectedVersion].every(Number.isSafeInteger)||round<1||slot<0||expectedVersion<1)fail(422,'Некорректный матч или версия расписания.');
+  transaction(db,()=>{
+   const match=get('SELECT * FROM tournament_matches WHERE tournament_id=? AND round=? AND slot=?',id,round,slot);
+   if(t.state!=='running'||!match?.team_a||!match.team_b||match.winner||match.starts_at===null)fail(409,'Подтверждение доступно после назначения времени незавершённого матча.');
+   const teams=all('SELECT id,captain_id FROM tournament_teams WHERE id IN (?,?)',match.team_a,match.team_b),team=teams.find(x=>x.captain_id===user.id);
+   if(!team||!get("SELECT 1 FROM tournament_roster WHERE tournament_id=? AND team_id=? AND user_id=? AND status='accepted'",id,team.id,user.id))fail(403,'Готовность подтверждает капитан участвующей команды.');
+   if(teams.some(x=>blocked(x.captain_id)||!eligible(x.captain_id))||!eligible(t.owner_id))fail(404,'Матч недоступен.');
+   if(match.schedule_version!==expectedVersion)fail(409,'Время матча изменилось. Обнови турнир и подтверди готовность заново.');
+   const column=team.id===match.team_a?'ready_a_at':'ready_b_at';
+   if(match[column]===null)run(`UPDATE tournament_matches SET ${column}=? WHERE tournament_id=? AND round=? AND slot=?`,now(),id,round,slot);
   });send(200,{ok:true});return true;
  }
  if(m[2]==='results'){
