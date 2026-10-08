@@ -42,7 +42,7 @@ async function render() {
       const mine=await api('/api/reports');
       const queue=user.isModerator?await api('/api/moderation/reports'):null;
       if(version!==requestVersion)return;
-      $('#main').innerHTML=`<h1>Жалобы</h1><p class="note">Решение по жалобе не удаляет сообщение и не блокирует аккаунт автоматически.</p><h2>Мои обращения</h2>${mine.reports.map(r=>`<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p>${esc(r.reason)}</p><p>${esc(r.decision_note)}</p></article>`).join('')||'<p>Обращений нет.</p>'}${queue?`<h2>Очередь модерации</h2><div id="reportQueue">${queue.reports.map(reportCard).join('')}</div>${queue.next?`<button class="btn quiet" data-reports-more="${queue.next}">Ранее</button>`:''}`:''}`;
+      $('#main').innerHTML=`<h1>Жалобы</h1><p class="note">Решение по жалобе не удаляет сообщение и не блокирует аккаунт автоматически.</p><h2>Мои обращения</h2><div id=ownReports>${mine.reports.map(ownReportCard).join('')||'<p>Обращений нет.</p>'}</div>${mine.next?`<button class="btn quiet" data-own-reports-more="${mine.next}">Ранее</button>`:''}${queue?`<h2>Очередь модерации</h2><div id="reportQueue">${queue.reports.map(reportCard).join('')}</div>${queue.next?`<button class="btn quiet" data-reports-more="${queue.next}">Ранее</button>`:''}`:''}`;
       return;
     }
     if (view === 'direct') { $('#main').innerHTML = user ? '<section id=directRoot></section>' : auth(); if(user) chatController = window.createDirectInbox({root:$('#directRoot'),user,api}); return; }
@@ -78,6 +78,8 @@ $('#confirmDelete').onclick = async () => { if (!pendingDelete) return; const id
 document.addEventListener('click', async event => {
   const b = event.target.closest('button'); if (!b) return;
   try {
+    if(b.dataset.reportRead){b.disabled=true;await api(`/api/reports/${b.dataset.reportRead}/read`,'POST',{});await render();updateReportBadge();}
+    if(b.dataset.ownReportsMore){b.disabled=true;const result=await api('/api/reports?before='+b.dataset.ownReportsMore);if(!b.isConnected)return;$('#ownReports').insertAdjacentHTML('beforeend',result.reports.map(ownReportCard).join(''));if(result.next){b.dataset.ownReportsMore=result.next;b.disabled=false;}else b.remove();}
     if(b.dataset.reportsMore){b.disabled=true;const result=await api('/api/moderation/reports?before='+b.dataset.reportsMore);if(!b.isConnected)return;$('#reportQueue').insertAdjacentHTML('beforeend',result.reports.map(reportCard).join(''));if(result.next){b.dataset.reportsMore=result.next;b.disabled=false;}else b.remove();}
     if (b.id === 'retry') return render();
     if (b.dataset.open) { selectedClub = b.dataset.open; view = 'club'; await render(); }
@@ -126,3 +128,14 @@ setInterval(updateMessageBadge,5000);
 
 function reportStatus(status){return ({pending:'Ожидает рассмотрения',upheld:'Нарушение подтверждено',dismissed:'Отклонено'})[status]||status;}
 function reportCard(r){return `<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p class="note">${r.kind==='direct'?'Личное сообщение':'Сообщение клуба'}</p><blockquote class="content">${esc(r.snapshot)}</blockquote><p>${esc(r.reason)}</p>${r.status==='pending'?`<form data-report-decision="${r.id}"><label class="field">Решение<select name="decision"><option value="upheld">Нарушение подтверждено</option><option value="dismissed">Отклонено</option></select></label><label class="field">Объяснение для заявителя<textarea name="note" required minlength="3" maxlength="1000"></textarea></label>${errorLine}<button class="btn primary">Сохранить решение</button></form>`:`<p>${esc(r.decision_note)}</p>`}</article>`;}
+
+function ownReportCard(r){return `<article class="panel"><h3>№${r.id} · ${esc(reportStatus(r.status))}</h3><p>${esc(r.reason)}</p><p>${esc(r.decision_note)}</p>${r.status!=='pending'&&!r.decision_seen?`<button class="btn quiet" data-report-read="${r.id}">Новое решение · отметить прочитанным</button>`:''}</article>`;}
+let reportBadgeBusy=false;
+async function updateReportBadge(){
+ if(reportBadgeBusy)return;const id=user?.id;if(!id){$('#reports').textContent='Жалобы';return;}
+ reportBadgeBusy=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+ try{const data=await api('/api/reports/summary','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;$('#reports').textContent=data.viewerId===id?`Жалобы${data.unread?' · решений: '+data.unread:''}`:'Жалобы · обнови сеанс';}
+ catch{if(user?.id===id)$('#reports').textContent='Жалобы · нет связи';}
+ finally{clearTimeout(timer);reportBadgeBusy=false;}
+}
+setInterval(updateReportBadge,5000);

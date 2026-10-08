@@ -17,8 +17,20 @@ export function moderationRoutes({db,user,path,method,body,url,send,now,moderato
    const r=run(`INSERT INTO reports(reporter_id,kind,message_id,sender_id,snapshot,reason,created_at) VALUES(?,?,?,?,?,?,?)`,user.id,kind,id,message.sender_id,message.body,reason,now());return {id:Number(r.lastInsertRowid),replayed:false};
   });send(result.replayed?200:201,result);return true;
  }
+ if(path==='/api/reports/summary'&&method==='GET'){
+  send(200,{viewerId:user.id,unread:get("SELECT count(*) AS n FROM reports WHERE reporter_id=? AND status!='pending' AND decision_seen=0",user.id).n});return true;
+ }
+ const seen=path.match(/^\/api\/reports\/(\d+)\/read$/);
+ if(seen&&method==='POST'){
+  const report=get('SELECT id,status FROM reports WHERE id=? AND reporter_id=?',Number(seen[1]),user.id);
+  if(!report)fail(404,'Жалоба недоступна.');
+  if(report.status==='pending')fail(409,'Решение ещё не принято.');
+  run('UPDATE reports SET decision_seen=1 WHERE id=?',report.id);send(200,{ok:true});return true;
+ }
  if(path==='/api/reports'&&method==='GET'){
-  send(200,{reports:all('SELECT id,kind,message_id,reason,status,decision_note,created_at FROM reports WHERE reporter_id=? ORDER BY id DESC LIMIT 100',user.id)});return true;
+  const raw=url.searchParams.get('before');if(raw!==null&&(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw))))fail(422,'Некорректный курсор.');
+  const rows=all('SELECT id,kind,message_id,reason,status,decision_note,decision_seen,created_at FROM reports WHERE reporter_id=? AND id<? ORDER BY id DESC LIMIT 101',user.id,Number(raw??Number.MAX_SAFE_INTEGER));const reports=rows.slice(0,100);
+  send(200,{viewerId:user.id,reports,next:rows.length>100?reports.at(-1).id:null});return true;
  }
  if(!moderatorIds.includes(user.id))fail(403,'Доступ только модератору сервиса.');
  if(path==='/api/moderation/reports'&&method==='GET'){
