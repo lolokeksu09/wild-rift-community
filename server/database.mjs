@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 3) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 4) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -74,6 +74,14 @@ export function openDatabase(path) {
     CREATE TABLE blocks (blocker_id TEXT NOT NULL REFERENCES users(id), target_id TEXT NOT NULL REFERENCES users(id),
       PRIMARY KEY(blocker_id,target_id), CHECK(blocker_id<>target_id)) STRICT;
     PRAGMA user_version=3;
+    COMMIT;`);
+  if (version < 4) db.exec(`BEGIN IMMEDIATE;
+    CREATE TABLE direct_reads (
+      conversation_id TEXT NOT NULL REFERENCES direct_conversations(id),
+      user_id TEXT NOT NULL REFERENCES users(id), last_id INTEGER NOT NULL CHECK(last_id>=0),
+      PRIMARY KEY(conversation_id,user_id)
+    ) STRICT;
+    PRAGMA user_version=4;
     COMMIT;`);
   return db;
 }
