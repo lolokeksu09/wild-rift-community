@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 24) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 25) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -372,6 +372,11 @@ export function openDatabase(path) {
     INSERT INTO tournament_roster(tournament_id,team_id,user_id,status)
       SELECT tournament_id,id,captain_id,'accepted' FROM tournament_teams;
     PRAGMA user_version=24;
+  `));
+  if(version < 25) transaction(db,()=>db.exec(`
+    ALTER TABLE tournaments ADD COLUMN cancelled_at INTEGER;
+    ALTER TABLE tournaments ADD COLUMN cancel_reason TEXT NOT NULL DEFAULT '';
+    PRAGMA user_version=25;
   `));
   return db;
 }

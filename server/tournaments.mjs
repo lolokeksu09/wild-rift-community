@@ -10,17 +10,17 @@ export function tournamentRoutes({db,user,path,method,body,send,now}) {
  const blocked=id=>user&&get('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',user.id,id,id,user.id);
  const between=(a,b)=>get('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',a,b,b,a);
  const eligible=uid=>!['restricted','suspended'].includes(sanctionFor(db,uid,now())?.level);
- const safe=t=>({id:t.id,title:t.title,description:t.description,capacity:t.capacity,state:t.state,owner_id:t.owner_id,created_at:t.created_at});
- if(path==='/api/tournaments'&&method==='GET'){send(200,{tournaments:all('SELECT * FROM tournaments ORDER BY id DESC LIMIT 50').filter(t=>!blocked(t.owner_id)).map(t=>({...safe(t),teamCount:get('SELECT count(*) n FROM tournament_teams WHERE tournament_id=?',t.id).n,invited:!!(user&&get("SELECT 1 FROM tournament_roster WHERE tournament_id=? AND user_id=? AND status='pending'",t.id,user.id))}))});return true;}
+ const safe=t=>({id:t.id,title:t.title,description:t.description,capacity:t.capacity,state:t.cancelled_at!==null?'cancelled':t.state,cancelled_at:t.cancelled_at,cancel_reason:t.cancel_reason,owner_id:t.owner_id,created_at:t.created_at});
+ if(path==='/api/tournaments'&&method==='GET'){send(200,{tournaments:all('SELECT * FROM tournaments ORDER BY id DESC LIMIT 50').filter(t=>!blocked(t.owner_id)).map(t=>({...safe(t),teamCount:get('SELECT count(*) n FROM tournament_teams WHERE tournament_id=?',t.id).n,invited:!!(t.cancelled_at===null&&user&&get("SELECT 1 FROM tournament_roster WHERE tournament_id=? AND user_id=? AND status='pending'",t.id,user.id))}))});return true;}
  if(path==='/api/tournaments'&&method==='POST'){
   signed();const title=text(body.title,'Название',3,80),description=text(body.description??'','Описание',0,1000),capacity=body.capacity,clientId=text(body.clientId,'Идентификатор',16,80);
   if(![4,8,16].includes(capacity))fail(422,'Выбери лимит 4, 8 или 16 команд.');
   const signature=JSON.stringify({title,description,capacity});
   const id=transaction(db,()=>{const old=get('SELECT id,signature FROM tournaments WHERE owner_id=? AND client_id=?',user.id,clientId);if(old){if(old.signature!==signature)fail(409,'Запрос уже использован для другого турнира.');return old.id;}
-   if(get("SELECT count(*) n FROM tournaments WHERE owner_id=? AND state!='finished'",user.id).n>=5)fail(409,'Можно организовать до пяти незавершённых турниров.');
+   if(get("SELECT count(*) n FROM tournaments WHERE owner_id=? AND state!='finished' AND cancelled_at IS NULL",user.id).n>=5)fail(409,'Можно организовать до пяти незавершённых турниров.');
    return Number(run('INSERT INTO tournaments(owner_id,title,description,capacity,client_id,signature,created_at) VALUES(?,?,?,?,?,?,?)',user.id,title,description,capacity,clientId,signature,now()).lastInsertRowid);});send(200,{id});return true;
  }
- const m=path.match(/^\/api\/tournaments\/(\d+)(?:\/(join|leave|start|results|invite|accept|decline|remove|member-leave))?$/);if(!m)fail(404,'Маршрут не найден.');
+ const m=path.match(/^\/api\/tournaments\/(\d+)(?:\/(join|leave|start|results|invite|accept|decline|remove|member-leave|cancel))?$/);if(!m)fail(404,'Маршрут не найден.');
  const id=Number(m[1]),t=get('SELECT * FROM tournaments WHERE id=?',id);if(!t||blocked(t.owner_id))fail(404,'Турнир недоступен.');
  if(!m[2]&&method==='GET'){
   const teams=all(`SELECT t.id,t.name,t.captain_id,t.roster_required,
@@ -28,11 +28,20 @@ export function tournamentRoutes({db,user,path,method,body,send,now}) {
     FROM tournament_teams t WHERE tournament_id=? ORDER BY id`,id);
   const membership=user&&get('SELECT * FROM tournament_roster WHERE tournament_id=? AND user_id=?',id,user.id);
   const myTeam=membership?.status==='accepted'?membership.team_id:null;
-  const invitation=membership?.status==='pending'&&t.state==='open'&&!blocked(teams.find(x=>x.id===membership.team_id)?.captain_id)?teams.find(x=>x.id===membership.team_id):null;
+  const invitation=membership?.status==='pending'&&t.state==='open'&&t.cancelled_at===null&&!blocked(teams.find(x=>x.id===membership.team_id)?.captain_id)?teams.find(x=>x.id===membership.team_id):null;
   const roster=myTeam?all(`SELECT r.user_id,r.status,u.handle FROM tournament_roster r JOIN users u ON u.id=r.user_id WHERE r.team_id=? AND r.status!='declined' ORDER BY r.user_id`,myTeam).filter(r=>!blocked(r.user_id)):[];
   send(200,{tournament:safe(t),teams,roster,invitation,matches:all('SELECT round,slot,team_a,team_b,score_a,score_b,winner FROM tournament_matches WHERE tournament_id=? ORDER BY round,slot',id),myTeam});return true;
  }
  if(method!=='POST')fail(405,'Метод не поддерживается.');signed();
+ if(m[2]==='cancel'){
+  owner(t);const reason=text(body.reason,'Причина отмены',5,300);
+  transaction(db,()=>{
+   if(t.cancelled_at!==null){if(t.cancel_reason!==reason)fail(409,'Турнир уже отменён с другой причиной.');return;}
+   if(t.state!=='open')fail(409,'Можно отменить только турнир до старта.');
+   run('UPDATE tournaments SET cancelled_at=?,cancel_reason=? WHERE id=?',now(),reason,id);
+  });send(200,{ok:true});return true;
+ }
+ if(t.cancelled_at!==null)fail(409,'Турнир отменён. Заявки и приглашения закрыты.');
  const open=()=>{if(t.state!=='open')fail(409,'Набор команд завершён.');};
  if(m[2]==='join'){
   const name=text(body.name,'Название команды',2,40);

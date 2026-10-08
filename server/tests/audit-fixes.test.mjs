@@ -116,7 +116,7 @@ test('19 to 20 preserves legacy report IDs, decisions, appeals, audit and sequen
    DROP TABLE tournament_roster;DROP TABLE tournament_matches;DROP TABLE tournament_teams;DROP TABLE tournaments;PRAGMA user_version=19;COMMIT;`);
   db.close();db=openDatabase(file);
   for(let i=0;i<2;i++){
-   assert.equal(db.prepare('PRAGMA user_version').get().user_version,24);assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
+   assert.equal(db.prepare('PRAGMA user_version').get().user_version,25);assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
    const r=db.prepare('SELECT * FROM reports WHERE id=7').get();assert.equal(r.target_id,'9');assert.equal(r.snapshot,'Original message');assert.equal(r.decision_seen,1);
    assert.equal(db.prepare('SELECT reason FROM report_appeals').get().reason,'Original appeal');assert.equal(db.prepare('SELECT note FROM moderation_audit').get().note,'Original audit');assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
    db.close();db=openDatabase(file);
@@ -249,7 +249,7 @@ test('20 to 21 keeps reports, appeals, audit and sequence and accepts the new ki
   db.prepare("INSERT INTO moderation_audit(report_id,actor_id,decision,note,created_at) VALUES(7,'b','upheld','note',3)").run();
   db.close();
   db=openDatabase(file);
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version,24);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version,25);
   assert.equal(db.prepare('SELECT status,target_id FROM reports WHERE id=7').get().status,'upheld');
   assert.equal(db.prepare('SELECT count(*) n FROM report_appeals WHERE report_id=7').get().n,1);
   assert.equal(db.prepare('SELECT count(*) n FROM moderation_audit WHERE report_id=7').get().n,1);

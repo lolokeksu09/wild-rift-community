@@ -53,6 +53,9 @@ jobs:
         run: npm ci
       - if: steps.scope.outputs.runtime == 'true'
         run: npm ci --prefix tests
+      - name: Check release tools
+        if: steps.scope.outputs.runtime == 'true'
+        run: python3 -m unittest discover -s tools/tests
       - name: Check operator scripts
         if: steps.scope.outputs.runtime == 'true'
         run: bash -n deploy/install.sh deploy/offsite-backup.sh deploy/smoke-image.sh
