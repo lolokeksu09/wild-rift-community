@@ -1,14 +1,19 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createApp } from '../server/app.mjs';
 
 const browser = await chromium.launch();
 try {
   for (const width of [360, 390, 768, 1440]) {
-    const app = await createApp({ moderatorIds: [1] });
+    const directory = mkdtempSync(join(tmpdir(), 'wr-browser-'));
+    const databasePath = join(directory, 'community.sqlite');
+    let app = await createApp({ databasePath });
     const contexts = [], errors = [];
     try {
-      const origin = await app.listen();
+      let origin = await app.listen();
       async function actor(handle) {
         const context = await browser.newContext({ viewport: { width, height: 900 } });
         contexts.push(context);
@@ -44,7 +49,14 @@ try {
         await page.locator('[data-message-id]').filter({ hasText: text }).waitFor();
       }
       const mod = await actor('moderator'), owner = await actor('owner'), member = await actor('member');
-      assert.equal(mod.id, 1);
+      await app.close();
+      app = await createApp({ databasePath, moderatorIds: [mod.id] });
+      origin = await app.listen();
+      for (const user of [mod, owner, member]) {
+        await user.page.goto(origin);
+        await user.page.locator('#createClub').waitFor();
+      }
+      assert.equal((await mod.api('/api/me')).user.isModerator, true);
       const longText = '<img src=x> ' + 'ДлинноеСообщение'.repeat(30);
 
       // Club message crosses real browser contexts and disappears after a ban.
@@ -118,6 +130,7 @@ try {
     } finally {
       for (const context of contexts) await context.close();
       await app.close();
+      rmSync(directory, { recursive: true, force: true });
     }
   }
 } finally { await browser.close(); }
