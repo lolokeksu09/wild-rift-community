@@ -1,6 +1,7 @@
 FROM node:24.19.0-bookworm-slim
 WORKDIR /app
-COPY --chown=node:node package.json ./
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
 COPY --chown=node:node server ./server
 USER node
 ENV NODE_ENV=production PORT=3000 COMMUNITY_DB=/data/community.sqlite
