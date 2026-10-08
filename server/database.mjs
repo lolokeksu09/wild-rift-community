@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 13) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 14) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -197,6 +197,26 @@ export function openDatabase(path) {
       status TEXT NOT NULL CHECK(status IN ('pending','accepted','cancelled')),UNIQUE(club_id,owner_id,client_id)) STRICT;
     CREATE UNIQUE INDEX club_transfer_pending ON club_transfers(club_id) WHERE status='pending';
     PRAGMA user_version=13;
+    COMMIT;`);
+  if(version < 14) db.exec(`BEGIN IMMEDIATE;
+    CREATE TABLE game_events(id INTEGER PRIMARY KEY AUTOINCREMENT,owner_id TEXT NOT NULL REFERENCES users(id),client_id TEXT NOT NULL,signature TEXT NOT NULL,
+      title TEXT NOT NULL,description TEXT NOT NULL,mode TEXT NOT NULL,region TEXT NOT NULL,language TEXT NOT NULL,
+      timezone TEXT NOT NULL,starts_at INTEGER NOT NULL,ends_at INTEGER NOT NULL,created_at INTEGER NOT NULL,
+      cancelled INTEGER NOT NULL DEFAULT 0 CHECK(cancelled IN (0,1)),UNIQUE(owner_id,client_id)) STRICT;
+    CREATE INDEX game_events_start ON game_events(starts_at,id);
+    CREATE TABLE event_slots(event_id INTEGER NOT NULL REFERENCES game_events(id),role TEXT NOT NULL,
+      user_id TEXT REFERENCES users(id),PRIMARY KEY(event_id,role),UNIQUE(event_id,user_id)) STRICT;
+    CREATE TABLE event_exclusions(event_id INTEGER NOT NULL REFERENCES game_events(id),user_id TEXT NOT NULL REFERENCES users(id),
+      PRIMARY KEY(event_id,user_id)) STRICT;
+    CREATE TABLE event_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,event_id INTEGER NOT NULL REFERENCES game_events(id),sender_id TEXT NOT NULL REFERENCES users(id),
+      client_id TEXT NOT NULL,body TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(event_id,sender_id,client_id)) STRICT;
+    CREATE INDEX event_messages_history ON event_messages(event_id,id);
+    CREATE TABLE event_notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL REFERENCES users(id),event_id INTEGER NOT NULL REFERENCES game_events(id),
+      kind TEXT NOT NULL CHECK(kind IN ('joined','left','removed','cancelled','reminder')),created_at INTEGER NOT NULL,
+      seen INTEGER NOT NULL DEFAULT 0 CHECK(seen IN (0,1))) STRICT;
+    CREATE UNIQUE INDEX event_reminder_unique ON event_notifications(user_id,event_id) WHERE kind='reminder';
+    CREATE INDEX event_notifications_user ON event_notifications(user_id,seen,id);
+    PRAGMA user_version=14;
     COMMIT;`);
   return db;
 }

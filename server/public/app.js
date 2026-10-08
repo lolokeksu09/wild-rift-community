@@ -9,7 +9,7 @@ let inviteToken=/^#invite=([a-f0-9]{64})$/.exec(location.hash)?.[1]||null;
 if(inviteToken)history.replaceState(null,'',location.pathname);
 let selectedPost=null,selectedComment=null;
 let selectedPlayer=null,playerReturnView='discover',directDraftHandle='';
-let lfgState={};
+let lfgState={},eventState={};
 let chatController = null;
 let user = null, csrf = null, clubs = [], selectedClub = null, view = inviteToken?'invite':'discover', requestVersion = 0, pendingDelete = null;
 async function api(path, method = 'GET', body, options = {}) {
@@ -42,7 +42,7 @@ function feedCard(p) {
   return `<div class="feed-entry"><button class="feed-club" data-open="${esc(p.club_id)}">${esc(p.club_name)} <span aria-hidden="true">↗</span></button>${postHTML(p).replace('data-comments=',`data-comment-club="${esc(p.club_id)}" data-comments=`)}</div>`;
 }
 function discoverPage(feed) {
-  return `<section class="welcome-hero"><div class="hero-copy"><span class="tiny-label">ИГРА ОБЪЕДИНЯЕТ. ЛЮДИ ОСТАЮТСЯ.</span><h1>Твой Рифт.<br>Твои люди.</h1><p>Найди напарников на вечер,<br>свой клуб и разговоры после матча.</p><div class="row wrap"><button class="btn primary" data-nav="lfg">Найти команду <span aria-hidden="true">↗</span></button><button class="btn quiet" data-nav="clubs">Открыть клубы</button></div></div><div class="rift-art" aria-hidden="true"><i></i><i></i><i></i><span>WR</span></div><span class="hero-index" aria-hidden="true">MEET / PLAY / BELONG</span></section><div class="discovery-grid"><section><div class="section-head"><div><span class="tiny-label">ЧЕМ ЖИВЁТ СООБЩЕСТВО</span><h2>Свежие обсуждения</h2></div><span class="live-label">По времени</span></div><div id="feedPosts">${feed.posts.map(feedCard).join('')||'<div class="empty-state feed-empty"><span class="empty-mark" aria-hidden="true">✦</span><h3>Здесь начнётся разговор</h3><p>Публикации из доступных тебе клубов появятся в этой ленте. Можно обсудить матч, попросить совет или просто познакомиться.</p><button class="btn quiet" data-nav="clubs">Выбрать клуб</button></div>'}</div>${feed.next?`<button class="btn quiet wide" data-feed-more="${feed.next}">Ещё обсуждения</button>`:''}</section><aside class="discovery-aside"><section class="panel gathering"><span class="tiny-label">ОДНА ЦЕЛЬ. ОДНА КОМАНДА.</span><h2>Следующий матч — вместе</h2><p>Выбери режим, нужную роль и время. Собери группу из 2–5 игроков.</p><button class="btn primary wide" data-nav="lfg">Собрать команду</button></section><section class="panel"><div class="section-head"><h3>Открой для себя</h3></div>${clubs.slice(0,3).map(c=>`<button class="profile-club" data-open="${esc(c.id)}"><span class="avatar">${initials(c.name)}</span><span>${esc(c.name)}<small>${c.members} участников</small></span><span aria-hidden="true">↗</span></button>`).join('')||'<p class="note">Новые клубы появятся здесь. Создай первый и пригласи друзей.</p>'}<button class="text-link" data-nav="clubs">Все клубы →</button></section><p class="community-note">За каждым ником — человек.<br>Уважай чужой опыт и играй в свою игру.</p></aside></div>`;
+  return `<section class="welcome-hero"><div class="hero-copy"><span class="tiny-label">ИГРА ОБЪЕДИНЯЕТ. ЛЮДИ ОСТАЮТСЯ.</span><h1>Твой Рифт.<br>Твои люди.</h1><p>Найди напарников на вечер,<br>свой клуб и разговоры после матча.</p><div class="row wrap"><button class="btn primary" data-nav="lfg">Найти команду <span aria-hidden="true">↗</span></button><button class="btn quiet" data-nav="events">Игровые вечера</button></div></div><div class="rift-art" aria-hidden="true"><i></i><i></i><i></i><span>WR</span></div><span class="hero-index" aria-hidden="true">MEET / PLAY / BELONG</span></section><div class="discovery-grid"><section><div class="section-head"><div><span class="tiny-label">ЧЕМ ЖИВЁТ СООБЩЕСТВО</span><h2>Свежие обсуждения</h2></div><span class="live-label">По времени</span></div><div id="feedPosts">${feed.posts.map(feedCard).join('')||'<div class="empty-state feed-empty"><span class="empty-mark" aria-hidden="true">✦</span><h3>Здесь начнётся разговор</h3><p>Публикации из доступных тебе клубов появятся в этой ленте. Можно обсудить матч, попросить совет или просто познакомиться.</p><button class="btn quiet" data-nav="clubs">Выбрать клуб</button></div>'}</div>${feed.next?`<button class="btn quiet wide" data-feed-more="${feed.next}">Ещё обсуждения</button>`:''}</section><aside class="discovery-aside"><section class="panel gathering"><span class="tiny-label">ОДНА ЦЕЛЬ. ОДНА КОМАНДА.</span><h2>Следующий матч — вместе</h2><p>Выбери режим, нужную роль и время. Собери группу из 2–5 игроков.</p><button class="btn primary wide" data-nav="lfg">Собрать команду</button></section><section class="panel"><div class="section-head"><h3>Открой для себя</h3></div>${clubs.slice(0,3).map(c=>`<button class="profile-club" data-open="${esc(c.id)}"><span class="avatar">${initials(c.name)}</span><span>${esc(c.name)}<small>${c.members} участников</small></span><span aria-hidden="true">↗</span></button>`).join('')||'<p class="note">Новые клубы появятся здесь. Создай первый и пригласи друзей.</p>'}<button class="text-link" data-nav="clubs">Все клубы →</button></section><p class="community-note">За каждым ником — человек.<br>Уважай чужой опыт и играй в свою игру.</p></aside></div>`;
 }
 function postHTML(p) {
   const member=clubs.some(c=>c.id===p.club_id&&c.membership==='member');
@@ -52,14 +52,14 @@ async function render() {
   mediaUI.cleanup();
   chatController?.destroy(); chatController = null;
   const version = ++requestVersion;
-  const activeNav={discover:'discover',clubs:'home',club:'home',player:'account',account:'account',direct:'direct',reports:'reports',lfg:'lfg',saved:'account',notifications:'notifications',post:'discover',invite:'home'}[view];
+  const activeNav={discover:'discover',clubs:'home',club:'home',player:'account',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',saved:'account',notifications:'notifications',post:'discover',invite:'home'}[view];
   for(const button of document.querySelectorAll('.primary-nav button, #reports, #notifications')){if(button.id===activeNav)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
   $('#main').setAttribute('aria-busy','true');
   $('#main').innerHTML='<div class=loading-state role=status>Загружаем…</div>';
   try {
     const session = await api('/api/me');
     if (version !== requestVersion) return;
-    if(user?.id!==session.user?.id){lfgState={};directDraftHandle='';}
+    if(user?.id!==session.user?.id){lfgState={};eventState={};directDraftHandle='';}
     user = session.user; csrf = session.csrf;
     const result = await api('/api/clubs');
     if (version !== requestVersion) return;
@@ -87,6 +87,7 @@ async function render() {
       selectedClub=data.post.club_id;$('#main').innerHTML=`<button class="back-link" data-nav="${postReturnView}">← ${postReturnView==='club'?'К клубу':'Ответы и упоминания'}</button>${postHTML(data.post)}`;await comments(selectedPost,selectedComment);return;
     }
     if(view==='discover'){const feed=await api('/api/feed');if(version!==requestVersion)return;$('#main').innerHTML=discoverPage(feed);return;}
+    if(view==='events'){$('#main').innerHTML=user?'<section id=eventsRoot></section>':auth();if(user)chatController=window.createEvents({root:$('#eventsRoot'),user,api,state:eventState});return;}
     if(view==='lfg'){$('#main').innerHTML=user?'<section id=lfgRoot></section>':auth();if(user)chatController=window.createLfg({root:$('#lfgRoot'),user,api,state:lfgState});return;}
     if (view === 'reports') {
       if(!user){$('#main').innerHTML=auth();return;}
@@ -140,6 +141,7 @@ function sendingAttempt(form,signature){
   return form.dataset.sendId;
 }
 $('#discover').onclick=()=>{view='discover';render();};
+if($('#events'))$('#events').onclick=()=>{view='events';render();};
 $('#lfg').onclick=()=>{view='lfg';render();};
 $('#notifications').onclick=()=>{view='notifications';render();};
 $('#reports').onclick=()=>{view='reports';render();};
@@ -194,7 +196,7 @@ document.addEventListener('click', async event => {
     if(b.dataset.reportsMore){b.disabled=true;const result=await api('/api/moderation/reports?before='+b.dataset.reportsMore);if(!b.isConnected)return;$('#reportQueue').insertAdjacentHTML('beforeend',result.reports.map(reportCard).join(''));if(result.next){b.dataset.reportsMore=result.next;b.disabled=false;}else b.remove();}
     if (b.id === 'retry') return render();
     if (b.dataset.open) { selectedClub = b.dataset.open;clubTab='posts'; view = 'club'; await render(); }
-    if (b.dataset.logout) { await api(b.dataset.logout, 'POST', {}); try { const prefix = `wr-chat-pending:${user.id}:`; for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key); } catch {} user = csrf = null;lfgState={};directDraftHandle='';inviteToken=null;clubTab='posts'; view = 'account'; await render(); }
+    if (b.dataset.logout) { await api(b.dataset.logout, 'POST', {}); try { const prefix = `wr-chat-pending:${user.id}:`; for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key); } catch {} user = csrf = null;lfgState={};eventState={};directDraftHandle='';inviteToken=null;clubTab='posts'; view = 'account'; await render(); }
     if (b.dataset.membership) { b.disabled = true; await api(`/api/clubs/${selectedClub}/${b.dataset.membership}`, 'POST', {}); await render(); }
     if (b.dataset.decision) { b.disabled = true; await api(`/api/clubs/${selectedClub}/decision`, 'POST', { userId: b.dataset.user, decision: b.dataset.decision }); await render(); }
     if (b.dataset.ban && confirm('Участник потеряет доступ к содержимому клуба и не сможет вступить снова. Продолжить?')) { await api(`/api/clubs/${selectedClub}/ban`, 'POST', { userId: b.dataset.ban }); await render(); }
@@ -288,4 +290,5 @@ async function updateDiscussionBadge(){
  catch{if(user?.id===id)$('#notifications').textContent='Ответы · нет связи';}
  finally{clearTimeout(timer);discussionBadgeBusy=false;}
 }
-setInterval(updateDiscussionBadge,5000);
+async function updateEventBadge(){const button=$('#events'),id=user?.id;if(!button)return;if(!id){button.textContent='События';return;}try{const data=await api('/api/events/notifications/summary');if(user?.id===id)button.textContent='События'+(data.unread?' · '+data.unread:'');}catch{}}
+setInterval(()=>{updateDiscussionBadge();updateEventBadge();},5000);
