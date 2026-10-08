@@ -82,3 +82,7 @@
 .transfer-notice{border-color:#5c6f94}.transfer-notice p{font-size:13px;line-height:1.65;color:#bacce5}
 .invite-preview{border-top:3px solid var(--club-accent)}
 @media(max-width:600px){.club-tabs button{padding:10px 9px;font-size:12px}.club-member{grid-template-columns:1fr;gap:10px}.member-controls{justify-content:flex-start;max-width:none}.club-tabs{margin:18px 0}.club-overview .row{gap:10px}}
+
+.club-compose summary{min-height:44px;align-content:center;cursor:pointer;font-weight:600;color:#c8dfff;font-size:14px}
+.club-compose[open] summary{margin-bottom:18px}
+.club-compose form{margin:0}
