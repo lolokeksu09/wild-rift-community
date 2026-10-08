@@ -58,7 +58,7 @@ try{
  }
  // The account form must also keep its submit button accessible.
  for(const width of [320,390]){
-  await page.setViewportSize({width,height:844});await page.goto(origin+'/account');await page.locator('[data-account-section=editor]').click();await page.locator('#profile [name=bio]').focus();await page.setViewportSize({width,height:300});
+  await page.setViewportSize({width,height:844});await page.goto(origin+'/account');await page.getByRole('button', { name: 'Редактировать профиль', exact: true }).click();await page.locator('#profile [name=bio]').focus();await page.setViewportSize({width,height:300});
   const save=page.locator('#profile button[type=submit]');await save.scrollIntoViewIfNeeded();await save.focus();
   const metrics=await save.evaluate(e=>{const r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {top:r.top,bottom:r.bottom,uncovered:e.contains(hit),scrollWidth:document.documentElement.scrollWidth};});
   assert(metrics.top>=0&&metrics.bottom<=300&&metrics.uncovered);assert(metrics.scrollWidth<=width);formResults.push({width,height:300,...metrics});

@@ -16,17 +16,18 @@ try{
   };
   const me=await api('/api/register','POST',{handle:'audit_'+width,name:'Проверка',password:'Audit-browser-password-123'});
   const club=await api('/api/clubs','POST',{name:'Проверка '+width,description:'',access:'open'});
-  await page.goto(origin+'/account');await page.locator('#profile').waitFor({state:'attached'});await page.locator('[data-account-section=editor]').click();
+  await page.goto(origin+'/account');await page.locator('#profile').waitFor({state:'attached'});await page.getByRole('button', { name: 'Редактировать профиль', exact: true }).click();
+  const openPeople=async()=>{if(width<=700){if(await page.locator('.section-menu').getAttribute('open')===null)await page.locator('.section-menu summary').click();await page.locator('.section-menu [data-nav=members]').click();}else await page.locator('#people').click();};
   const dialogResult=async(accept,click)=>{
    const dialog=page.waitForEvent('dialog');const action=click();const d=await dialog;assert.equal(d.type(),'confirm');await (accept?d.accept():d.dismiss());await action;
   };
   await page.locator('#profile [name=bio]').fill('Не терять описание');
-  await dialogResult(false,()=>page.locator('#people').click());assert.equal(new URL(page.url()).pathname,'/account');assert.equal(await page.locator('#profile [name=bio]').inputValue(),'Не терять описание');
+  await dialogResult(false,()=>openPeople());assert.equal(new URL(page.url()).pathname,'/account');assert.equal(await page.locator('#profile [name=bio]').inputValue(),'Не терять описание');
   // Cancelling a browser-history transition restores URL and the same form.
   await page.evaluate(()=>history.pushState(null,'','/account?check=1'));
   await dialogResult(false,()=>page.evaluate(()=>history.back()));assert.equal(new URL(page.url()).pathname,'/account');assert.equal(await page.locator('#profile [name=bio]').inputValue(),'Не терять описание');
   await page.locator('#profile button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#profile [name=bio]')?.defaultValue==='Не терять описание');
-  await page.locator('#people').click();await page.locator('#communityMembers').waitFor();await page.locator('#account').click();await page.locator('#profile').waitFor({state:'attached'});await page.locator('[data-account-section=editor]').click();
+  await openPeople();await page.locator('#communityMembers').waitFor();await page.locator('#account').click();await page.locator('#profile').waitFor({state:'attached'});await page.getByRole('button', { name: 'Редактировать профиль', exact: true }).click();
   await page.locator('#profile [name=profileVisible]').check();await dialogResult(false,()=>page.locator('.top-search').click());assert(await page.locator('#profile [name=profileVisible]').isChecked());
   await page.locator('#profile [name=profileVisible]').uncheck();
   await page.locator('#profile [name=avatarFile]').setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64')});
@@ -44,7 +45,7 @@ try{
   await page.goto(origin+'/posts/'+post.id);await page.locator('[data-report-object=post]').waitFor();assert.equal(await page.locator('#main h1.post-title').count(),1);
   const report=async(selector)=>{page.once('dialog',d=>d.accept('Проверка нарушения правил'));await page.locator(selector).click();await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('Жалоба отправлена'));};
   await report('[data-report-object=post]');await page.locator('[data-comments]').click();await page.locator('[data-report-object=comment]').waitFor();await report('[data-report-object=comment]');
-  await page.goto(origin+'/players/'+peer.user.id);await page.locator('[data-report-object=profile]').waitFor();assert.equal(await page.locator('#people').getAttribute('aria-current'),'page');await report('[data-report-object=profile]');
+  await page.goto(origin+'/players/'+peer.user.id);await page.locator('.public-profile-menu summary').click();await page.locator('[data-report-object=profile]').waitFor();assert.equal(await page.locator('#people').getAttribute('aria-current'),'page');await report('[data-report-object=profile]');
   assert.equal((await api('/api/reports')).reports.length,3);
   if(width===390){
    let summaries=0;page.on('request',r=>{if(new URL(r.url()).pathname==='/api/notifications/summary')summaries++;});

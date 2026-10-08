@@ -38,7 +38,7 @@ try {
  async function inspect(page,label,width){
   await settled(page);
   const metrics=await page.evaluate(()=>{
-   const shown=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden';};
+   const shown=e=>{const r=e.getBoundingClientRect();return e.checkVisibility()&&r.width>0&&r.height>0;};
    const outside=[...document.querySelectorAll('#main *,dialog[open] *')].filter(shown).filter(e=>{if(e.closest('.club-tabs,.interest-filters,.server-chat-log'))return false;const r=e.getBoundingClientRect();return r.right>innerWidth+1||r.left < -1;}).map(e=>({tag:e.tagName,class:e.className,text:e.textContent.trim().slice(0,45)})).slice(0,12);
    const clipped=[...document.querySelectorAll('.post-author .author-link,.post-title,.poll-label,.club-member strong')].filter(shown).filter(e=>e.clientWidth>0&&e.scrollWidth>e.clientWidth+2).map(e=>({class:e.className,text:e.textContent.slice(0,45)}));
    const touching=[...document.querySelectorAll('.comment[data-comment-id]')].flatMap(e=>{const buttons=[...e.querySelectorAll(':scope>.text-link')].map(b=>b.getBoundingClientRect());return buttons.slice(1).filter((r,i)=>Math.abs(r.y-buttons[i].y)<2&&r.x-buttons[i].right<4).map(()=>e.dataset.commentId);});

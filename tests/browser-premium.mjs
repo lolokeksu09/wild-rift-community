@@ -23,7 +23,7 @@ try {
    const context=await browser.newContext({viewport:{width,height:width<700?844:1000}}),p=await context.newPage();p.on('pageerror',e=>errors.push(e.message));
    await p.goto(origin+'/feed');await p.locator('.story-row').first().waitFor();assert.equal(await p.locator('#notifications').isVisible(),false);assert.equal(await p.locator('#reports').isVisible(),false);
    assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-   assert.equal(await p.locator('.story-row').count(),3);
+   assert.equal(await p.locator('.story-row').count(),1,'Only the real publication belongs in the conversation feed');
    // A phone should expose a real conversation without scrolling past club promotion.
    if(width<700){const author=await p.locator('.story-byline').first().boundingBox();assert(author&&author.y>=0&&author.y+author.height<844,'Conversation author must be visible on the initial phone viewport');}
    else {await p.locator('.story-row h3 a').first().click();await p.locator('.post-title').waitFor();assert.match(new URL(p.url()).pathname,/^\/posts\/\d+$/);await p.goto(origin+'/feed');await p.locator('.story-row').first().waitFor();}

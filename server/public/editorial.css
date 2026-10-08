@@ -911,7 +911,7 @@ body:not(.launch-mode) .editorial-cover h1 { font-weight:700; font-size:clamp(64
 .profile-club-cover img { width:100%; height:100%; object-fit:cover; }
 .account-library { display:block; padding:0; margin:0 0 22px; border:0; }
 .account-shortcut { position:relative; display:block; width:100%; text-align:left; padding:18px 36px 18px 0; color:var(--text); background:none; border:0; border-top:1px solid var(--line); }
-.account-shortcut strong { display:block; font:700 25px/1.25 var(--heading-font); }
+.account-shortcut strong { display:block; overflow-wrap:anywhere; font:700 25px/1.25 var(--heading-font); }
 .account-shortcut small { display:block; color:var(--muted); margin-top:6px; font-size:12px; }
 .account-shortcut>span { position:absolute; right:8px; top:20px; font-size:28px; color:var(--accent); }
 @media(max-width:700px) {
@@ -1085,7 +1085,7 @@ body:not(.launch-mode) .editorial-cover h1 { font-weight:700; font-size:clamp(64
 .reaction-icon { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
 .reaction-row button { display:inline-flex; align-items:center; gap:6px; }
 #main[data-view=post]>.back-link { margin:0 16px 12px 0; }
-.post-club-context { min-height:49px; color:var(--accent); font-size:13px; }
+.post-club-context { max-width:100%; white-space:normal; overflow-wrap:anywhere; text-align:left; min-height:49px; color:var(--accent); font-size:13px; }
 #main[data-view=post]>.panel { padding-top:22px; }
 #main[data-view=post] .post-title { font-weight:700; font-size:clamp(32px,4vw,48px); max-width:24ch; margin:22px 0; }
 #main[data-view=post] .post-author .avatar { width:46px; height:46px; border-radius:50%; }

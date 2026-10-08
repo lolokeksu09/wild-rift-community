@@ -19,10 +19,11 @@ try {
     async function layout(label) {
       await page.locator('#main h1').first().waitFor();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${width}: overflow in ${label}`);
-      const boxes = await page.locator('.primary-nav button').evaluateAll(elements => elements.map(el => {
+      const boxes = await page.locator('.primary-nav button:visible').evaluateAll(elements => elements.map(el => {
         const r = el.getBoundingClientRect();
         return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
       }));
+      if (await page.locator('.primary-nav').isVisible()) assert.equal(boxes.length, width <= 700 ? 5 : 7, `${width}: visible navigation count`);
       for (const box of boxes) assert(box.width > 0 && box.height > 0 && box.x >= 0 && box.right <= width + 1, `${width}: nav outside viewport`);
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
         const a = boxes[i], b = boxes[j];
@@ -65,6 +66,7 @@ try {
     await page.locator('#imageViewer button').click();
     await layout('club overview');
     await page.screenshot({path:`ui-screenshots/club-${width}.png`,fullPage:true});
+    const postPath = await page.locator('.post-title a').first().getAttribute('href');
     await page.locator('#home').click();
     await page.locator('[data-club-card]').first().waitFor();
     await page.locator('#clubSearch').fill('нет такого клуба');
@@ -75,12 +77,13 @@ try {
     assert((await page.locator('[data-club-card]:visible').count())>0);
     await layout('club cards');
     await page.screenshot({path:`ui-screenshots/clubs-${width}.png`,fullPage:true});
-    for (const [id, heading] of [['account', 'Аккаунт'], ['direct', 'Чаты'], ['reports', 'Жалобы']]) {
+    for (const [id, heading] of [['account', 'Мой профиль'], ['direct', 'Разговор продолжается'], ['reports', 'Жалобы']]) {
+      if (id === 'reports') await page.locator('.section-menu summary').click();
       await page.locator(`#${id}`).click();
       await page.locator('#main h1').filter({ hasText: heading }).waitFor();
       assert.equal(await page.locator(`#${id}`).getAttribute('aria-current'), 'page');
       await layout(id);
-      if(id==='account'){await page.locator('[data-account-section=editor]').click();
+      if(id==='account'){await page.getByRole('button', { name: 'Редактировать профиль', exact: true }).click();
         await page.locator('#profile [name=rank]').fill('Мастер');
         await page.locator('#profile [name=region]').fill('Европа');
         await page.locator('#profile [name=language]').fill('Русский');
@@ -103,6 +106,7 @@ try {
         }
         await page.locator('#profile button[type=submit]').click();
         await page.locator('.identity-avatar img').waitFor();
+        await page.locator('.profile-more-facts summary').click();
         await page.locator('.game-card').getByText('Мастер',{exact:true}).waitFor();
         if(width===360){
           const saved=await page.evaluate(async()=> (await (await fetch('/api/me')).json()).user.avatarId);
@@ -111,7 +115,7 @@ try {
         }
         await layout('saved player profile');
         const guest=await context.browser().newContext({viewport:{width,height:900}});
-        const other=await guest.newPage();await other.goto(origin+'/feed');await other.locator('.author-link').first().click();
+        const other=await guest.newPage();await other.goto(origin+postPath);await other.locator('.author-link').first().click();
         await other.getByRole('heading',{name:'Профиль игрока'}).waitFor();
         assert.equal(await other.locator('.game-card').getByText('Player#ABC',{exact:true}).count(),0);
         await other.screenshot({path:`ui-screenshots/public-profile-${width}.png`,fullPage:true});await guest.close();

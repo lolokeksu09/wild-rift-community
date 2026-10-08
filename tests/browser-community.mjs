@@ -87,11 +87,13 @@ try {
       await member.page.locator('[data-request-report]').click();
       await member.page.getByText('Жалоба отправлена. Запрос не принят.', { exact: true }).waitFor();
       assert.equal((await member.api('/api/direct')).conversations.find(c => c.id === conversation.id).status, 'pending');
+      await mod.page.locator('.section-menu summary').click();
       await mod.page.locator('#reports').click();
       await layout(mod.page, 'moderator queue / escaped snapshot', '[data-report-decision]');
       await mod.page.locator('[data-report-decision] [name=note]').fill('Проверено <script>текст</script> ' + 'Объяснение'.repeat(30));
       await mod.page.locator('[data-report-decision] button').click();
       await mod.page.locator('[data-report-decision]').waitFor({ state: 'detached' });
+      await member.page.locator('.section-menu summary').click();
       await member.page.locator('#reports').click();
       await layout(member.page, 'report result', '[data-report-read]');
       await member.page.locator('[data-report-read]').click();
@@ -133,6 +135,7 @@ try {
       await member.page.locator('[data-lfg-action=leave]').click();
       await member.page.locator('[data-lfg-chat]').waitFor({ state: 'detached' });
       await member.page.locator('[data-lfg-back]').click();
+      await member.page.locator('.group-notifications summary').click();
       await layout(member.page, 'group notifications after leaving', '[data-lfg-read]');
     } finally {
       for (const context of contexts) await context.close();

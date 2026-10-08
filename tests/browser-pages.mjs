@@ -17,7 +17,7 @@ try{for(const width of [360,390,768,1440]){
  await p.goto(origin+'/clubs/'+demoId('club:0'));await p.locator('.club-overview').waitFor();await p.waitForFunction(()=>document.title.startsWith('После матча'));
  await p.goto(origin+'/posts/'+post.id);await p.locator('.post-title').waitFor();assert.equal(await p.title(),post.title+' — Wild Rift Community');
  assert.equal(await p.locator('link[rel=canonical]').getAttribute('href'),origin+'/posts/'+post.id);
- await p.locator('#people').click();await p.waitForFunction(()=>document.title.startsWith('Люди'));assert.equal(await p.locator('meta[property="og:url"]').getAttribute('content'),origin+'/players');
+ if(width<=700){await p.locator('.section-menu summary').click();await p.locator('.section-menu [data-nav=members]').click();}else await p.locator('#people').click();await p.waitForFunction(()=>document.title.startsWith('Люди'));assert.equal(await p.locator('meta[property="og:url"]').getAttribute('content'),origin+'/players');
  await p.goBack();await p.waitForFunction(title=>document.title.startsWith(title),post.title);
  assert.equal((await p.goto(origin+'/posts/999999')).status(),404);await p.waitForFunction(()=>document.querySelector('#main').getAttribute('aria-busy')==='false');assert((await p.title()).includes('Страница не найдена'));
  assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);await context.close();console.log(`PASS ${width}px: HTML status, public metadata, SPA navigation and history`);
