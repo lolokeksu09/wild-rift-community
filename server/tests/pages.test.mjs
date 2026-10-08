@@ -51,8 +51,9 @@ test('replacement patterns in stored text stay literal in server HTML',async t=>
  db.prepare('INSERT INTO clubs(id,owner_id,name,description,access,created_at) VALUES(?,?,?,?,?,0)').run('open','author',clubName,description,'open');
  const post=db.prepare('INSERT INTO posts(club_id,author_id,title,body,created_at) VALUES(?,?,?,?,0)').run('open','author',title,body).lastInsertRowid;
  const baseline=await (await fetch(origin+'/rules')).text(),count=(html,re)=>(html.match(re)||[]).length;
+ const brand=/<title>Правила сообщества — ([^<]*)<\/title>/.exec(baseline)[1];
  for(const [path,heading,text] of [['/posts/'+post,title,body],['/players/author',name,bio],['/clubs/open',clubName,description],["/missing$&$'",'Страница не найдена',null]]){
-  const html=await (await fetch(origin+path)).text(),full=escapeHTML(heading+' — Wild Rift Community');
+  const html=await (await fetch(origin+path)).text(),full=escapeHTML(heading)+' — '+brand;
   for(const re of [/<script /g,/<title>/g,/<\/head>/g,/<!doctype/gi,/<meta name="description"/g])assert.equal(count(html,re),count(baseline,re),path+' '+re);
   assert(html.includes(`<title>${full}</title>`),path);assert(html.includes(`<meta property="og:title" content="${full}">`),path);
   if(text)assert(html.includes(`<meta name="description" content="${escapeHTML(text)}">`),path);
