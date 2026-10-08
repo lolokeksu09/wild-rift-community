@@ -47,8 +47,31 @@ test('message reports: access, snapshots, resolution and audit',async t=>{
   assert.equal((await b.request('/api/reports/summary')).data.unread,0);
   assert.equal((await b.request('/api/reports?before=-1')).status,422);
  });
+ await t.test('appeal ownership, retry identity and independent reviewer',async()=>{
+  const appeal=`/api/reports/${rid}/appeal`,reason={reason:'Прошу пересмотреть выводы'};
+  assert.equal((await a.request(appeal,'POST',reason)).status,404);
+  assert.equal((await c.request(appeal,'POST',reason)).status,404);
+  const results=await Promise.all([b.request(appeal,'POST',reason),b.request(appeal,'POST',reason)]);
+  assert.deepEqual(results.map(r=>r.status).sort(),[200,201]);
+  assert.equal((await b.request(appeal,'POST',{reason:'Изменённая апелляция'})).status,409);
+  assert.equal((await b.request(appeal+'/read','POST',{})).status,409);
+  const route=`/api/moderation/reports/${rid}/appeal-decision`,decision={decision:'dismissed',note:'Первый вывод отменён после пересмотра'};
+  assert.equal((await c.request(route,'POST',decision)).status,403);
+  assert.equal((await b.request(route,'POST',decision)).status,403);
+  const second=client();await second.request('/api/register','POST',{handle:'reviewer',name:'Reviewer',password:'local-test-password-123'});
+  await app.close();app=await createApp({databasePath,moderatorIds:[c.id,b.id,second.id]});origin=await app.listen();
+  const votes=await Promise.all([second.request(route,'POST',decision),second.request(route,'POST',decision)]);assert(votes.every(r=>r.status===200));
+  assert.equal((await second.request(route,'POST',{...decision,decision:'upheld'})).status,409);
+  const own=(await b.request('/api/reports')).data.reports[0];assert.equal(own.status,'upheld');assert.equal(own.appeal_status,'dismissed');assert.equal(own.appeal_note,decision.note);
+  assert.equal(own.moderator_id,undefined);assert.equal((await b.request('/api/reports/summary')).data.unread,1);
+  // A stale read of the original decision must not mark the appeal result read.
+  await b.request(`/api/reports/${rid}/read`,'POST',{});assert.equal((await b.request('/api/reports/summary')).data.unread,1);
+  assert.equal((await second.request(appeal+'/read','POST',{})).status,404);
+  await b.request(appeal+'/read','POST',{});assert.equal((await b.request('/api/reports/summary')).data.unread,0);
+  const {DatabaseSync}=await import('node:sqlite');const db=new DatabaseSync(databasePath);assert.equal(db.prepare('SELECT count(*) AS n FROM moderation_audit').get().n,2);assert.equal(db.prepare("SELECT count(*) AS n FROM moderation_audit WHERE stage='appeal'").get().n,1);db.close();
+ });
  await t.test('revoking moderator configuration removes access after restart',async()=>{
   await app.close();app=await createApp({databasePath});origin=await app.listen();assert.equal((await c.request('/api/moderation/reports')).status,403);
-  assert.equal((await b.request('/api/reports')).data.reports[0].status,'upheld');assert.equal((await b.request('/api/reports/summary')).data.unread,0);
+  assert.equal((await b.request('/api/reports')).data.reports[0].status,'upheld');assert.equal((await b.request('/api/reports')).data.reports[0].appeal_status,'dismissed');assert.equal((await b.request('/api/reports/summary')).data.unread,0);
  });
 });
