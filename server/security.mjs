@@ -29,12 +29,12 @@ export function passwordValue(value) {
   if (typeof value !== 'string' || value.length < 12 || value.length > 128) fail(422, 'Пароль: от 12 до 128 символов.');
   return value;
 }
-export async function jsonBody(req) {
+export async function jsonBody(req,maxBytes=16384) {
   if (!(req.headers['content-type'] || '').startsWith('application/json')) fail(415, 'Ожидается JSON.');
   let size = 0; const chunks = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 16384) fail(413, 'Запрос слишком большой.');
+    if (size > maxBytes) fail(413, 'Запрос слишком большой.');
     chunks.push(chunk);
   }
   let data;
