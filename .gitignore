@@ -17,7 +17,7 @@ coverage/
 uploads/
 
 # Local database (never publish or commit)
-/data/
+data/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
