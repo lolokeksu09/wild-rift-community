@@ -1,13 +1,14 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let chatController = null;
 let user = null, csrf = null, clubs = [], selectedClub = null, view = 'clubs', requestVersion = 0, pendingDelete = null;
-async function api(path, method = 'GET', body) {
+async function api(path, method = 'GET', body, options = {}) {
   const headers = {};
   if (method !== 'GET') { headers['Content-Type'] = 'application/json'; headers['X-Community-Request'] = '1'; if (csrf) headers['X-CSRF-Token'] = csrf; }
-  const response = await fetch(path, { method, headers, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body) });
+  const response = await fetch(path, { method, headers, signal: options.signal, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Не удалось выполнить запрос.');
+  if (!response.ok) { const error = new Error(data.error || 'Не удалось выполнить запрос.'); error.status = response.status; throw error; }
   return data;
 }
 function notify(message) { $('#toast').textContent = message; clearTimeout(window.noticeTimer); window.noticeTimer = setTimeout(() => $('#toast').textContent = '', 5000); }
@@ -26,6 +27,7 @@ function postHTML(p) {
   return `<article class="panel"><small>${esc(p.author_name)} · ${esc(new Date(p.created_at).toLocaleString('ru-RU'))}</small><h3 class="post-title">${esc(p.title)}</h3><p class="content">${esc(p.body)}</p><div class="post-actions"><button data-comments="${p.id}">Обсудить</button>${p.author_id === user?.id ? `<button data-delete="${p.id}">Удалить</button>` : ''}</div><div id="comments-${p.id}"></div></article>`;
 }
 async function render() {
+  chatController?.destroy(); chatController = null;
   const version = ++requestVersion;
   try {
     const session = await api('/api/me');
@@ -45,7 +47,8 @@ async function render() {
       const owner = club.owner_id === user?.id;
       const members = owner ? (await api(`/api/clubs/${club.id}/members`)).members : [];
       if (version !== requestVersion) return;
-      $('#main').innerHTML = `<div class="pagehead"><div><h1>${esc(club.name)}</h1><p class="muted">${esc(club.description)}</p></div></div><section class="panel"><div class="row wrap"><span class="pill">${club.access === 'open' ? 'Открытый клуб' : 'По заявкам'}</span><small>Участников: ${club.members}</small>${user && !owner && club.membership !== 'banned' ? `<button class="btn primary" data-membership="${member || club.membership === 'pending' ? 'leave' : 'join'}">${member ? 'Выйти из клуба' : club.membership === 'pending' ? 'Отменить заявку' : club.access === 'open' ? 'Вступить' : 'Подать заявку'}</button>` : ''}</div>${!user ? '<p class="note">Для участия войди в аккаунт.</p>' : ''}${!canRead ? '<p class="note">Содержимое доступно только принятым участникам.</p>' : ''}</section>${owner ? `<section class="panel"><h3>Участники и заявки</h3>${members.map(m => `<div class="row between wrap comment"><span>${esc(m.name)} · ${esc(m.status)}</span>${m.id !== user.id ? `<div class="row">${m.status === 'pending' ? `<button class="btn quiet" data-decision="approve" data-user="${m.id}">Принять</button><button class="btn quiet" data-decision="reject" data-user="${m.id}">Отклонить</button>` : m.status === 'member' ? `<button class="btn quiet" data-ban="${m.id}">Блокировать</button>` : ''}</div>` : '<small>Владелец</small>'}</div>`).join('')}</section>` : ''}${member ? `<form id="post" class="panel"><h3>Новая публикация</h3><label class="field">Заголовок<input name="title" required maxlength="100"></label><label class="field">Текст<textarea name="body" required maxlength="4000"></textarea></label>${errorLine}<button class="btn primary">Опубликовать</button></form>` : ''}<div id="posts">${posts.posts.map(postHTML).join('') || (canRead ? '<div class="empty-state"><h3>Обсуждение начинается здесь</h3><p>Публикаций пока нет.</p></div>' : '')}</div>${posts.next ? `<button class="btn quiet" data-more="${posts.next}">Показать ещё</button>` : ''}`;
+      $('#main').innerHTML = `<div class="pagehead"><div><h1>${esc(club.name)}</h1><p class="muted">${esc(club.description)}</p></div></div><section class="panel"><div class="row wrap"><span class="pill">${club.access === 'open' ? 'Открытый клуб' : 'По заявкам'}</span><small>Участников: ${club.members}</small>${user && !owner && club.membership !== 'banned' ? `<button class="btn primary" data-membership="${member || club.membership === 'pending' ? 'leave' : 'join'}">${member ? 'Выйти из клуба' : club.membership === 'pending' ? 'Отменить заявку' : club.access === 'open' ? 'Вступить' : 'Подать заявку'}</button>` : ''}</div>${!user ? '<p class="note">Для участия войди в аккаунт.</p>' : ''}${!canRead ? '<p class="note">Содержимое доступно только принятым участникам.</p>' : ''}</section>${owner ? `<section class="panel"><h3>Участники и заявки</h3>${members.map(m => `<div class="row between wrap comment"><span>${esc(m.name)} · ${esc(m.status)}</span>${m.id !== user.id ? `<div class="row">${m.status === 'pending' ? `<button class="btn quiet" data-decision="approve" data-user="${m.id}">Принять</button><button class="btn quiet" data-decision="reject" data-user="${m.id}">Отклонить</button>` : m.status === 'member' ? `<button class="btn quiet" data-ban="${m.id}">Блокировать</button>` : ''}</div>` : '<small>Владелец</small>'}</div>`).join('')}</section>` : ''}${member ? '<section class="panel" id="clubChat"></section>' : ''}${member ? `<form id="post" class="panel"><h3>Новая публикация</h3><label class="field">Заголовок<input name="title" required maxlength="100"></label><label class="field">Текст<textarea name="body" required maxlength="4000"></textarea></label>${errorLine}<button class="btn primary">Опубликовать</button></form>` : ''}<div id="posts">${posts.posts.map(postHTML).join('') || (canRead ? '<div class="empty-state"><h3>Обсуждение начинается здесь</h3><p>Публикаций пока нет.</p></div>' : '')}</div>${posts.next ? `<button class="btn quiet" data-more="${posts.next}">Показать ещё</button>` : ''}`;
+      if (member) chatController = window.createClubChat({ root: $('#clubChat'), clubId: club.id, userId: user.id, api });
       return;
     }
     $('#main').innerHTML = clubCards();
@@ -66,7 +69,7 @@ document.addEventListener('click', async event => {
   try {
     if (b.id === 'retry') return render();
     if (b.dataset.open) { selectedClub = b.dataset.open; view = 'club'; await render(); }
-    if (b.dataset.logout) { await api(b.dataset.logout, 'POST', {}); user = csrf = null; view = 'account'; await render(); }
+    if (b.dataset.logout) { await api(b.dataset.logout, 'POST', {}); try { const prefix = `wr-chat-pending:${user.id}:`; for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key); } catch {} user = csrf = null; view = 'account'; await render(); }
     if (b.dataset.membership) { b.disabled = true; await api(`/api/clubs/${selectedClub}/${b.dataset.membership}`, 'POST', {}); await render(); }
     if (b.dataset.decision) { b.disabled = true; await api(`/api/clubs/${selectedClub}/decision`, 'POST', { userId: b.dataset.user, decision: b.dataset.decision }); await render(); }
     if (b.dataset.ban && confirm('Участник потеряет доступ к содержимому клуба и не сможет вступить снова. Продолжить?')) { await api(`/api/clubs/${selectedClub}/ban`, 'POST', { userId: b.dataset.ban }); await render(); }
