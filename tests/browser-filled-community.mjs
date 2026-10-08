@@ -34,7 +34,13 @@ try {
  await owner.api('/api/direct','POST',{handle:'filled_player_1',body:'Привет! Проверяем наполненную переписку.',clientId:'filled-direct-request-0001'});
  const conversation=(await member.api('/api/direct')).conversations[0].id;await member.api('/api/direct/'+conversation+'/decision','POST',{decision:'accept'});
  for(let i=0;i<24;i++)await actors[i%2].api('/api/direct/'+conversation+'/messages','POST',{clientId:'filled-direct-message-'+i,body:'Сообщение '+i+'. '+('Обсуждаем время следующего матча. '.repeat(i%3+1))});
- async function settled(page){await page.waitForFunction(()=>document.querySelector('#main')?.getAttribute('aria-busy')==='false');await page.evaluate(async()=>{await document.fonts.ready;await Promise.all([...document.images].map(i=>i.decode().catch(()=>{})));});}
+ async function settled(page){
+  await page.waitForFunction(()=>document.querySelector('#main')?.getAttribute('aria-busy')==='false');
+  // Load offscreen fixture images before decoding; lazy loading can otherwise wait for a scroll forever.
+  await page.evaluate(()=>{for(const image of document.images)image.loading='eager';});
+  await page.waitForFunction(()=>document.fonts.status==='loaded'&&[...document.images].every(image=>image.complete&&image.naturalWidth>0),null,{timeout:10000});
+  await page.evaluate(async()=>{await Promise.all([...document.images].map(image=>image.decode()));});
+ }
  async function inspect(page,label,width){
   await settled(page);
   const metrics=await page.evaluate(()=>{
