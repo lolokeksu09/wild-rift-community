@@ -35,7 +35,7 @@ try {
         await page.goto(origin+'/feed');
         await page.locator('.welcome-hero').waitFor();
         await page.locator('#home').click();
-        await page.locator('#createClub').waitFor();
+        await page.locator('#createClub').waitFor({state:'attached'});
         return { page, api, id: registration.user.id };
       }
       async function layout(page, label, ready) {
@@ -58,7 +58,7 @@ try {
         await user.page.goto(origin+'/feed');
         await user.page.locator('.welcome-hero').waitFor();
         await user.page.locator('#home').click();
-        await user.page.locator('#createClub').waitFor();
+        await user.page.locator('#createClub').waitFor({state:'attached'});
       }
       assert.equal((await mod.api('/api/me')).user.isModerator, true);
       const longText = '<img src=x> ' + 'ДлинноеСообщение'.repeat(30);
@@ -105,7 +105,7 @@ try {
 
       // Two players create/apply/accept through UI, then lose send access on close.
       await owner.page.locator('#lfg').click();
-      await owner.page.getByText('Создать группу', { exact: true }).click();
+      await owner.page.locator('.group-create summary').click();
       const form = owner.page.locator('[data-lfg-create]');
       for (const [key, value] of Object.entries({ title: 'Команда браузерного теста', region: 'eu', language: 'ru', capacity: '2', description: longText })) {
         await form.locator(`[name=${key}]`).fill(value);

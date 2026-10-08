@@ -21,17 +21,17 @@ try {
  await api('/api/events','POST',{clientId:'premium-event-fixture-001',title:'Вечер ARAM с компанией',description:'Играем вместе',mode:'aram',region:'EU',language:'Русский',timezone:'UTC',startsAt:Date.now()+3600000,durationHours:1,roles:['mid','jungle'],ownerRole:'mid'});
  for(const width of [360,390,768,1440]){
    const context=await browser.newContext({viewport:{width,height:width<700?844:1000}}),p=await context.newPage();p.on('pageerror',e=>errors.push(e.message));
-   await p.goto(origin+'/feed');await p.locator('.feed-entry').waitFor();assert.equal(await p.locator('#notifications').isVisible(),false);assert.equal(await p.locator('#reports').isVisible(),false);
+   await p.goto(origin+'/feed');await p.locator('.story-row').first().waitFor();assert.equal(await p.locator('#notifications').isVisible(),false);assert.equal(await p.locator('#reports').isVisible(),false);
    assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-   assert.equal(await p.locator('.discovery-club').count(),3);
+   assert.equal(await p.locator('.story-row').count(),3);
    // A phone should expose a real conversation without scrolling past club promotion.
-   if(width<700){const author=await p.locator('.feed-entry .post-author').first().boundingBox();assert(author&&author.y>=0&&author.y+author.height<844,'Conversation author must be visible on the initial phone viewport');}
-   else {await p.locator('.hero-conversation').click();await p.locator('.post-title').waitFor();assert.match(new URL(p.url()).pathname,/^\/posts\/\d+$/);await p.goto(origin+'/feed');await p.locator('.feed-entry').waitFor();}
+   if(width<700){const author=await p.locator('.story-byline').first().boundingBox();assert(author&&author.y>=0&&author.y+author.height<844,'Conversation author must be visible on the initial phone viewport');}
+   else {await p.locator('.story-row h3 a').first().click();await p.locator('.post-title').waitFor();assert.match(new URL(p.url()).pathname,/^\/posts\/\d+$/);await p.goto(origin+'/feed');await p.locator('.story-row').first().waitFor();}
    await p.screenshot({path:`ui-screenshots/premium-home-${width}.png`,fullPage:true});
-   await p.locator('.community-paths [data-nav=guides]').click();await p.locator('[data-guide-filters]').waitFor();assert.equal(await p.locator('.guide-more-filters').getAttribute('open'),null);await p.getByRole('heading',{name:'Здесь будет опыт сообщества'}).waitFor();assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-   await p.locator('#events').click();await p.getByRole('heading',{name:'Вечер ARAM с компанией'}).waitFor();assert.equal(await p.locator('#login').count(),0);
+   await p.locator('.home-shortcuts [data-nav=guides]').click();await p.locator('[data-guide-filters]').waitFor();assert.equal(await p.locator('.guide-more-filters').getAttribute('open'),null);await p.getByRole('heading',{name:'Здесь будет опыт сообщества'}).waitFor();assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   await p.locator('.section-menu summary').click();await p.locator('.section-menu [data-nav=events]').click();await p.getByRole('heading',{name:'Вечер ARAM с компанией'}).waitFor();assert.equal(await p.locator('#login').count(),0);
    await p.locator('#lfg').click();await p.getByRole('heading',{name:'Спокойный вечер в Рифте'}).waitFor();await p.screenshot({path:`ui-screenshots/premium-groups-${width}.png`,fullPage:true});
-   await p.locator(`[data-preview-join="${group.id}"]`).click();await p.locator('#register').waitFor();assert.match(await p.locator('.pagehead').textContent(),/подать заявку в команду/);
+   await p.locator(`[data-preview-join="${group.id}"]`).click();await p.locator('#register').waitFor({state:'attached'});await p.locator('[data-auth-switch=register]').click();assert.match(await p.locator('.pagehead').textContent(),/подать заявку в команду/);
    await p.locator('#register [name=name]').fill('Новый игрок');await p.locator('#register [name=handle]').fill('premium_new_'+width);await p.locator('#register [name=password]').fill('Premium-local-test-123');await p.locator('#register button').click();
    await p.locator('#lfgRoot').getByRole('heading',{name:'Спокойный вечер в Рифте',exact:true}).waitFor();assert.equal(await p.locator('[data-chat-form]').count(),0);
    await context.close();console.log(`PASS ${width}px: community layout, guest controls, clubs, compact guides, public announcements, signup returns to selected team, private chat`);

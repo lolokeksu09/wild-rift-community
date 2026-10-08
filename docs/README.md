@@ -8,7 +8,7 @@
 |---|---|
 | Что создаём | [План продукта](ANDROID_PRODUCT_PLAN.md), [функциональное ТЗ](SPEC.md) |
 | Следующее обновление | [Статус](android/STATUS.md), [этапы](android/ROADMAP.md) |
-| Новое оформление сайта | [Согласованный план редизайна](WEB_REDESIGN_PLAN.md) |
+| Новое оформление сайта | [Согласованный план редизайна](WEB_REDESIGN_PLAN.md), [базовая версия этапа 24](DESIGN_BASELINE_STAGE24.md) |
 | Как устроен клиент | [Архитектура Android](android/ARCHITECTURE.md) |
 | Как выглядит и движется | [Дизайн](android/DESIGN_SYSTEM.md), [экраны](android/SCREENS.md) |
 | Как подключается к серверу | [Контракт API](android/API_CONTRACT.md) |

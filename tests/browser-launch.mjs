@@ -14,7 +14,7 @@ try{browser=await chromium.launch();for(const width of [320,360,390,768,1440]){
  assert.match(await page.locator('[data-launch-card="0"]').textContent(),/сообщество игроков Wild Rift/i);
  assert.equal(await page.locator('.launch-track').evaluate(el=>getComputedStyle(el).scrollSnapType),'x mandatory');
  assert.equal(await page.locator('.launch-track').evaluate(el=>getComputedStyle(el).scrollBehavior),'auto');
- assert.equal(await page.locator('#launch-title').evaluate(el=>getComputedStyle(el).color),'rgb(244, 241, 234)');
+ assert.equal(await page.locator('#launch-title').evaluate(el=>getComputedStyle(el).color),'rgb(244, 238, 231)');
  await page.locator('[data-launch-next]').click();
  await page.waitForFunction(()=>document.querySelector('[data-launch-step="1"]').getAttribute('aria-current')==='step');
  await page.locator('[data-launch-track]').focus();await page.keyboard.press('End');

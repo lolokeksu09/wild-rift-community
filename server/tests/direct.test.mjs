@@ -13,7 +13,7 @@ test('direct conversations: consent, privacy, persistence and authorization',asy
  const a=client(),b=client(),c=client(),guest=client();for(const [u,handle] of [[a,'alice'],[b,'bravo'],[c,'charlie']])assert.equal((await u.request('/api/register','POST',{handle,name:handle,password:'local-test-password-123'})).status,201);
  const payload={handle:'bravo',clientId:'first-direct-message-0001',body:'Привет <script>'};let id,route;
  await t.test('concurrent request retries keep one first message; no self acceptance',async()=>{
-  const results=await Promise.all(Array.from({length:4},()=>a.request('/api/direct','POST',payload)));assert.equal(results.filter(r=>r.status===201).length,1);assert.equal(new Set(results.map(r=>r.data.id)).size,1);assert.equal((await b.request('/api/direct')).data.requests,1);assert.equal((await a.request('/api/direct')).data.requests,0);id=results[0].data.id;route=`/api/direct/${id}/messages`;
+  const results=await Promise.all(Array.from({length:4},()=>a.request('/api/direct','POST',payload)));assert.equal(results.filter(r=>r.status===201).length,1);assert.equal(new Set(results.map(r=>r.data.id)).size,1);assert.equal((await b.request('/api/direct')).data.requests,1);assert.equal((await a.request('/api/direct')).data.requests,0);const pending=(await b.request('/api/direct')).data.conversations[0];assert.equal(pending.last_body,null);assert.equal(pending.last_created_at,null);assert.equal(pending.last_sender_id,null);assert.equal(pending.first_body,payload.body);id=results[0].data.id;route=`/api/direct/${id}/messages`;
   assert.equal((await a.request(`/api/direct/${id}/decision`,'POST',{decision:'accept'})).status,403);
   assert.equal((await a.request(route,'POST',{clientId:'pending-extra-message',body:'again'})).status,403);
   assert.equal((await b.request('/api/direct','POST',{...payload,handle:'alice'})).status,409);
@@ -35,7 +35,21 @@ test('direct conversations: consent, privacy, persistence and authorization',asy
   assert.equal((await a.request(route)).data.messages.length,2);assert.equal((await b.request(route,'POST',p)).status,200);
   assert.equal((await a.request(route+'?after=-1')).status,422);
  });
- await t.test('unread counts, monotonic read cursors and authorization',async()=>{
+ await t.test('inbox previews stay participant-only and respect unpublished avatars',async()=>{
+  const {openDatabase}=await import('../database.mjs');const db=openDatabase(databasePath);
+  try{
+   db.prepare('INSERT INTO media VALUES(?,?,?,?,?,?,?,?,?)').run('preview-avatar',b.id,'preview-avatar-client','test',Buffer.from('local-test-image'),1,1,16,time);
+   db.prepare('UPDATE users SET avatar_id=?,profile_visible=1,game_profile=? WHERE id=?').run('preview-avatar',JSON.stringify({demoBot:'community-v1',riotId:'private#abc'}),b.id);
+   let row=(await a.request('/api/direct')).data.conversations[0];
+   assert.equal(row.last_body,'Ответ');assert.equal(row.last_created_at,time);assert.equal(row.last_sender_id,b.id);
+   assert.equal(row.peer_avatar_id,'preview-avatar');assert.equal(row.peer_is_bot,true);assert(!('peer_game_profile' in row),'Inbox must not expose private game fields');
+   db.prepare('UPDATE users SET profile_visible=0 WHERE id=?').run(b.id);
+   row=(await a.request('/api/direct')).data.conversations[0];assert.equal(row.peer_avatar_id,null);
+   assert.equal((await a.request('/api/media/preview-avatar')).status,404);
+   assert.equal((await c.request('/api/direct')).data.conversations.length,0);
+  }finally{db.close();}
+ });
+ await t.test('unread counts, monotonic read cursors and authorization' ,async()=>{
   assert.equal((await a.request('/api/direct')).data.unread,1);
   assert.equal((await b.request('/api/direct')).data.unread,1);
   const history=(await a.request(route)).data.messages,last=history.at(-1).id;
