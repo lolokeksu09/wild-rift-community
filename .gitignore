@@ -21,3 +21,7 @@ data/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Backup archives and generated browser screenshots
+*.wrbackup
+tests/ui-screenshots/
