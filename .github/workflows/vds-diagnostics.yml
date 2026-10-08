@@ -42,7 +42,7 @@ jobs:
           set -eu
           id
           docker compose -f /opt/wild-rift-community/compose.yaml ps
-          docker compose -f /opt/wild-rift-community/compose.yaml exec -T caddy caddy version
+          docker compose -f /opt/wild-rift-community/compose.yaml exec -T caddy caddy version </dev/null
           docker compose -f /opt/wild-rift-community/compose.yaml logs --tail=40 caddy
           curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
             --output /dev/null --write-out 'HTTPS status=%{http_code} verify=%{ssl_verify_result}\n' \
