@@ -1,3 +1,4 @@
+import {guideRoutes} from './guides.mjs';
 import {pollRoutes} from './polls.mjs';
 import {postManagementRoutes} from './post-management.mjs';
 import {draftRoutes} from './drafts.mjs';
@@ -22,6 +23,7 @@ const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
   ['/post-management.js',['post-management.js','text/javascript; charset=utf-8']],
   ['/polls.js',['polls.js','text/javascript; charset=utf-8']],
+  ['/guides.js',['guides.js','text/javascript; charset=utf-8']],
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/composer.js', ['composer.js','text/javascript; charset=utf-8']],
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
@@ -139,7 +141,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           } finally {activeUploads--;}
           return;
         }
-        body = await jsonBody(req);
+        body = await jsonBody(req,/^\/api\/(?:clubs\/[\w-]+\/guides|posts\/\d+\/guide)$/.test(path)?65536:16384);
       }
       if (method === 'GET' && path === '/api/me') { send(200, { user: user ? safeUser(user) : null, csrf: user?.csrf || null }); return; }
       if (method === 'POST' && ['/api/register', '/api/login'].includes(path)) {
@@ -220,6 +222,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         transaction(db,()=>{if(cover!==club.cover_id)clubAudit(db,user,club.id,club.id,'cover',now);run('UPDATE clubs SET cover_id=? WHERE id=?',cover,club.id);if(club.cover_id && club.cover_id!==cover && !imageAttached(db,club.cover_id))run('DELETE FROM media WHERE id=?',club.cover_id);});
         send(200,{ok:true});return;
       }
+      if(guideRoutes({db,user,path,method,body,url,send,now,clubFor,postFor,mentions}))return;
       if(pollRoutes({db,user,path,method,body,send,now,clubFor,postFor,mentions}))return;
       if(postManagementRoutes({db,user,path,method,body,url,send,now,postFor,clubFor}))return;
       if (clubRoutes({db,user,path,method,body,url,send,now,clubFor,postFor})) return;

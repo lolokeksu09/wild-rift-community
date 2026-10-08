@@ -2,6 +2,7 @@
 const $ = s => document.querySelector(s);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const mediaUI=window.WRProfiles;
+const guideUI=window.WRGuides;let guideState={};
 const composerUI=window.WRComposer;const pollUI=window.WRPolls;
 let composerController=null;
 const postManagement=window.WRPostManagement;let searchState={query:'',club:''};
@@ -57,21 +58,21 @@ function personalHome(feed,home,homeError){
 }
 function postHTML(p) {
   const member=clubs.some(c=>c.id===p.club_id&&c.membership==='member');
-  return `<article class="panel"><div class="post-author">${mediaUI.avatar(p.author_avatar_id,p.author_name)}<div><button type="button" class="author-link" data-player="${esc(p.author_id)}">${esc(p.author_name)}</button><small>${esc(new Date(p.created_at).toLocaleString('ru-RU'))}${p.edited_at?` · <span title="${esc(new Date(p.edited_at).toLocaleString('ru-RU'))}">Изменено</span>`:''}</small></div></div><h3 class="post-title">${esc(p.title)}</h3><p class="content">${esc(p.body)}</p>${mediaUI.image(p.image_id,'Изображение к публикации: '+p.title)}${pollUI?.card(p,user,member)||''}${discussionUI.actions(p,user,member)}${view==='club'?clubUI.postTools(p,clubs.find(c=>c.id===p.club_id),clubPins.has(p.id),user):''}<div id="comments-${p.id}"></div></article>`;
+  return `<article class="panel ${p.guide?`guide-post ${view==='post'?'guide-expanded':''}`:''}"><div class="post-author">${mediaUI.avatar(p.author_avatar_id,p.author_name)}<div><button type="button" class="author-link" data-player="${esc(p.author_id)}">${esc(p.author_name)}</button><small>${esc(new Date(p.created_at).toLocaleString('ru-RU'))}${p.edited_at?` · <span title="${esc(new Date(p.edited_at).toLocaleString('ru-RU'))}">Изменено</span>`:''}</small></div></div>${guideUI?.badge(p.guide)||''}<h3 class="post-title">${esc(p.title)}</h3><p class="content">${esc(p.body)}</p>${p.guide&&view!=='post'?`<button class="btn quiet" data-guide-open="${p.id}">Читать руководство →</button>`:''}${mediaUI.image(p.image_id,'Изображение к публикации: '+p.title)}${pollUI?.card(p,user,member)||''}${discussionUI.actions(p,user,member)}${view==='club'?clubUI.postTools(p,clubs.find(c=>c.id===p.club_id),clubPins.has(p.id),user):''}<div id="comments-${p.id}"></div></article>`;
 }
 async function render() {
   composerController?.destroy();composerController=null;
   mediaUI.cleanup();
   chatController?.destroy(); chatController = null;
   const version = ++requestVersion;
-  const activeNav={discover:'discover',clubs:'home',club:'home',player:'account',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',drafts:'account',saved:'account',notifications:'notifications',post:'discover',editPost:'discover',search:'discover',invite:'home'}[view];
+  const activeNav={discover:'discover',clubs:'home',club:'home',player:'account',account:'account',direct:'direct',reports:'reports',lfg:'lfg',events:'events',drafts:'account',saved:'account',notifications:'notifications',post:'discover',editPost:'discover',search:'discover',guides:'discover',invite:'home'}[view];
   for(const button of document.querySelectorAll('.primary-nav button, #reports, #notifications')){if(button.id===activeNav)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
   $('#main').setAttribute('aria-busy','true');
   $('#main').innerHTML='<div class=loading-state role=status>Загружаем…</div>';
   try {
     const session = await api('/api/me');
     if (version !== requestVersion) return;
-    if(user?.id!==session.user?.id){lfgState={};eventState={};directDraftHandle='';composerUI?.reset();searchState={query:'',club:''};}
+    if(user?.id!==session.user?.id){lfgState={};eventState={};directDraftHandle='';composerUI?.reset();searchState={query:'',club:''};guideState={};}
     user = session.user; csrf = session.csrf;
     const result = await api('/api/clubs');
     if (version !== requestVersion) return;
@@ -98,6 +99,10 @@ async function render() {
       const data=await api('/api/discussions/notifications');if(version!==requestVersion||data.viewerId!==user.id)return;
       $('#main').innerHTML=`<div class="pagehead"><div><span class="tiny-label">РАЗГОВОР ПРОДОЛЖАЕТСЯ</span><h1>Ответы и упоминания</h1><p class="muted">События в доступных обсуждениях.</p></div></div><div id="discussionEvents">${data.notifications.map(discussionUI.notification).join('')||'<div class="empty-state"><h3>Пока тихо</h3><p>Здесь появятся ответы на твои комментарии и упоминания через @логин.</p></div>'}</div>${data.next?`<button class="btn quiet" data-discussion-more="${data.next}">Ранее</button>`:''}`;return;
     }
+    if(view==='guides'){
+      const params=new URLSearchParams(guideState),data=await api('/api/guides?'+params);if(version!==requestVersion||data.viewerId!==(user?.id||null))return;
+      $('#main').innerHTML=`<button class="back-link" data-nav="discover">← На главную</button><div class="pagehead"><div><span class="tiny-label">ОПЫТ СООБЩЕСТВА</span><h1>Руководства игроков</h1><p class="note">Версии и игровые сведения указаны авторами. Выбирай материал под свою версию игры.</p></div></div>${guideUI.filters(guideState,clubs.filter(c=>c.membership!=='banned'&&(c.access==='open'||c.membership==='member')))}<div id="guidePosts">${data.posts.map(feedCard).join('')||'<section class="empty-state"><h3>Руководств по этим условиям пока нет</h3><p>Измени фильтры или поделись опытом в своём клубе.</p><button class="btn quiet" data-nav="clubs">К клубам</button></section>'}</div>${data.next?`<button class="btn quiet wide" data-guide-more="${data.next}">Ещё руководства</button>`:''}`;return;
+    }
     if(view==='search'){
       const club=clubs.find(c=>c.id===searchState.club),params=new URLSearchParams({q:searchState.query});if(searchState.club)params.set('club',searchState.club);
       const data=searchState.query?await api('/api/posts/search?'+params):null;if(version!==requestVersion||data&&data.viewerId!==(user?.id||null))return;
@@ -106,16 +111,16 @@ async function render() {
     if(view==='editPost'){
       const data=await api('/api/posts/'+selectedPost);if(version!==requestVersion)return;
       if(data.post.author_id!==user?.id||!clubs.some(c=>c.id===data.post.club_id&&c.membership==='member'))throw Error('Редактирование недоступно.');
-      $('#main').innerHTML=postManagement.editor(data.post);$('[data-post-edit-form] input')?.focus();return;
+      $('#main').innerHTML=data.post.guide?guideUI.editor(null,data.post):postManagement.editor(data.post);$('[data-post-edit-form] input,[data-guide-edit] input')?.focus();return;
     }
     if(view==='post'){
       const data=await api('/api/posts/'+selectedPost);if(version!==requestVersion)return;
-      selectedClub=data.post.club_id;$('#main').innerHTML=`<button class="back-link" data-nav="${postReturnView}">← ${({club:'К клубу',search:'К результатам поиска',discover:'На главную',saved:'К сохранённому'})[postReturnView]||'Ответы и упоминания'}</button>${postHTML(data.post)}`;await comments(selectedPost,selectedComment);return;
+      selectedClub=data.post.club_id;$('#main').innerHTML=`<button class="back-link" data-nav="${postReturnView}">← ${({club:'К клубу',search:'К результатам поиска',discover:'На главную',saved:'К сохранённому',guides:'К руководствам'})[postReturnView]||'Ответы и упоминания'}</button>${postHTML(data.post)}`;await comments(selectedPost,selectedComment);return;
     }
     if(view==='discover'){
       const [feed,home]=await Promise.all([api('/api/feed'),user?api('/api/home').then(data=>({data})).catch(error=>({error})):null]);
       if(version!==requestVersion)return;if(home?.data&&home.data.viewerId!==user.id)throw Error('Сеанс изменился. Обнови страницу.');
-      $('#main').innerHTML=discoverPage(feed,home?.data,home?.error);$('#feedPosts')?.insertAdjacentHTML('beforebegin','<button class="btn quiet wide search-entry" data-search-open>Поиск обсуждений →</button>');return;
+      $('#main').innerHTML=discoverPage(feed,home?.data,home?.error);$('#feedPosts')?.insertAdjacentHTML('beforebegin','<button class="btn quiet wide search-entry" data-search-open>Поиск обсуждений →</button><button class="btn quiet wide search-entry" data-guide-catalog>Руководства игроков →</button>');return;
     }
     if(view==='events'){$('#main').innerHTML=user?'<section id=eventsRoot></section>':auth();if(user)chatController=window.createEvents({root:$('#eventsRoot'),user,api,state:eventState});return;}
     if(view==='lfg'){$('#main').innerHTML=user?'<section id=lfgRoot></section>':auth();if(user)chatController=window.createLfg({root:$('#lfgRoot'),user,api,state:lfgState});return;}
@@ -139,7 +144,7 @@ async function render() {
       if(clubTab==='posts'){
         const posts=canRead?await api(`/api/clubs/${club.id}/posts`):{posts:[],next:null},pins=canRead?await api(`/api/clubs/${club.id}/pins`):{posts:[]};
         clubPins=new Set(pins.posts.map(p=>p.id));
-        content=`${canRead?`<button class="btn quiet wide search-entry" data-search-open="${esc(club.id)}">Поиск в этом клубе →</button>`:''}${clubUI.pins(pins.posts)}${member?`<details class="club-compose panel"><summary>Написать публикацию</summary><form id="post"><h3>Новая публикация</h3><label class="field">Заголовок<input name="title" required maxlength="100"></label><label class="field">Текст<textarea name="body" required maxlength="4000"></textarea></label>${mediaUI.picker('imageFile','Изображение к публикации')}${errorLine}<button class="btn primary">Опубликовать</button></form></details>${pollUI?.editor(club)||''}`:''}<div id="posts">${posts.posts.map(postHTML).join('')||(canRead?'<div class="empty-state"><h3>Обсуждение начинается здесь</h3><p>Публикаций пока нет.</p></div>':'')}</div>${posts.next?`<button class="btn quiet" data-more="${posts.next}">Показать ещё</button>`:''}`;
+        content=`${canRead?`<button class="btn quiet wide search-entry" data-search-open="${esc(club.id)}">Поиск в этом клубе →</button>`:''}${clubUI.pins(pins.posts)}${member?`<details class="club-compose panel"><summary>Написать публикацию</summary><form id="post"><h3>Новая публикация</h3><label class="field">Заголовок<input name="title" required maxlength="100"></label><label class="field">Текст<textarea name="body" required maxlength="4000"></textarea></label>${mediaUI.picker('imageFile','Изображение к публикации')}${errorLine}<button class="btn primary">Опубликовать</button></form></details>${pollUI?.editor(club)||''}${guideUI?.editor(club)||''}`:''}<div id="posts">${posts.posts.map(postHTML).join('')||(canRead?'<div class="empty-state"><h3>Обсуждение начинается здесь</h3><p>Публикаций пока нет.</p></div>':'')}</div>${posts.next?`<button class="btn quiet" data-more="${posts.next}">Показать ещё</button>`:''}`;
       }else if(clubTab==='chat')content='<section class="panel" id="clubChat"></section>';
       else if(clubTab==='members'){
         const members=await api(`/api/clubs/${club.id}/members`);content=clubUI.members(club,members,user);if(staff)content+=clubUI.journal(await api(`/api/clubs/${club.id}/audit`));
@@ -184,6 +189,11 @@ $('#confirmDelete').onclick = async () => { if (!pendingDelete) return; const id
 document.addEventListener('click', async event => {
   const b = event.target.closest('button'); if (!b) return;
   try {
+    if(b.hasAttribute('data-guide-catalog')){view='guides';await render();return;}
+    if(b.hasAttribute('data-guide-reset')){guideState={};view='guides';await render();return;}
+    if(b.dataset.guideOpen){if(view!=='post')postReturnView=view;selectedPost=b.dataset.guideOpen;selectedComment=null;view='post';await render();return;}
+    if(b.hasAttribute('data-guide-preview')){const form=b.closest('form');guideUI.draw(form);form.querySelector('[data-guide-preview-pane]').classList.toggle('hidden');return;}
+    if(b.dataset.guideMore){b.disabled=true;const data=await api('/api/guides?'+new URLSearchParams({...guideState,before:b.dataset.guideMore}));if(!b.isConnected||data.viewerId!==(user?.id||null))return;$('#guidePosts').insertAdjacentHTML('beforeend',data.posts.map(feedCard).join(''));if(data.next){b.dataset.guideMore=data.next;b.disabled=false;}else b.remove();return;}
     if(b.hasAttribute('data-poll-add')||b.hasAttribute('data-poll-remove')){pollUI.manage(b);return;}
     if(b.dataset.pollVote||b.dataset.pollRefresh){await pollUI.vote(b,{api,user,version:requestVersion,currentVersion:()=>requestVersion,currentUser:()=>user?.id});return;}
     if(b.hasAttribute('data-search-open')){searchState={query:'',club:b.dataset.searchOpen||''};view='search';await render();return;}
@@ -250,6 +260,8 @@ document.addEventListener('click', async event => {
 });
 document.addEventListener('submit', async event => {
   const form = event.target;
+  if(form.hasAttribute('data-guide-filters')){event.preventDefault();guideState=Object.fromEntries(new FormData(form));view='guides';await render();return;}
+  if(form.dataset.guideCreate||form.dataset.guideEdit){event.preventDefault();if(!form.reportValidity())return;const version=requestVersion,viewer=user?.id;try{const d=await guideUI.save(form,api);if(version!==requestVersion||viewer!==user?.id||!form.isConnected)return;selectedPost=d.id;if(form.dataset.guideCreate)postReturnView='club';view='post';await render();notify('Руководство сохранено.');}catch{}return;}
   if(form.dataset.pollCreate){event.preventDefault();if(!form.reportValidity())return;const version=requestVersion,viewer=user?.id;try{await pollUI.create(form,api);if(version!==requestVersion||viewer!==user?.id||!form.isConnected)return;await render();notify('Опрос опубликован.');}catch{}return;}
   if(form.hasAttribute('data-post-search')){event.preventDefault();if(!form.reportValidity())return;const data=new FormData(form);searchState={query:String(data.get('query')).trim(),club:String(data.get('club'))};view='search';await render();return;}
   if(form.dataset.postEditForm){event.preventDefault();if(!form.reportValidity())return;const version=requestVersion,viewer=user?.id;try{await postManagement.save(form,api);if(version!==requestVersion||viewer!==user?.id||!form.isConnected)return;view='post';await render();notify('Изменения сохранены.');}catch{}return;}
@@ -340,10 +352,10 @@ async function updateDiscussionBadge(){
 async function updateEventBadge(){const button=$('#events'),id=user?.id;if(!button)return;if(!id){button.textContent='События';return;}try{const data=await api('/api/events/notifications/summary');if(user?.id===id)button.textContent='События'+(data.unread?' · '+data.unread:'');}catch{}}
 setInterval(()=>{updateDiscussionBadge();updateEventBadge();},5000);
 
-window.addEventListener('beforeunload',event=>{const form=document.querySelector('[data-post-edit-form]');if(form&&[form.elements.title,form.elements.body].some(el=>el.value!==el.defaultValue)){event.preventDefault();event.returnValue='';}});
 
-window.addEventListener('beforeunload',event=>{const form=document.querySelector('[data-post-edit-form]');if(form&&[form.elements.title,form.elements.body].some(el=>el.value!==el.defaultValue)){event.preventDefault();event.returnValue='';}});
 
-window.addEventListener('beforeunload',event=>{const form=document.querySelector('[data-post-edit-form]');if(form&&[form.elements.title,form.elements.body].some(el=>el.value!==el.defaultValue)){event.preventDefault();event.returnValue='';}});
 
-document.addEventListener('click',event=>{const form=document.querySelector('[data-post-edit-form]');if(form&&event.target.closest('button')&&!form.contains(event.target)&&[form.elements.title,form.elements.body].some(el=>el.value!==el.defaultValue)&&!confirm('Уйти из редактора? Несохранённые изменения будут потеряны.')){event.preventDefault();event.stopImmediatePropagation();}},true);
+document.addEventListener('click',event=>{const form=document.querySelector('[data-post-edit-form],[data-guide-edit],[data-guide-create]');if(form&&event.target.closest('button')&&!form.contains(event.target)&&[...form.querySelectorAll('input,textarea,select')].some(el=>el.tagName==='SELECT'?el.value!==([...el.options].find(o=>o.defaultSelected)||el.options[0])?.value:el.value!==el.defaultValue)&&!confirm('Уйти из редактора? Несохранённые изменения будут потеряны.')){event.preventDefault();event.stopImmediatePropagation();}},true);
+
+window.addEventListener('beforeunload',event=>{const form=document.querySelector('[data-post-edit-form],[data-guide-edit],[data-guide-create]');if(form&&[...form.querySelectorAll('input,textarea,select')].some(el=>el.tagName==='SELECT'?el.value!==([...el.options].find(o=>o.defaultSelected)||el.options[0])?.value:el.value!==el.defaultValue)){event.preventDefault();event.returnValue='';}});
+document.addEventListener('input',event=>{const form=event.target.closest('[data-guide-create],[data-guide-edit]');if(form)guideUI.draw(form);});
