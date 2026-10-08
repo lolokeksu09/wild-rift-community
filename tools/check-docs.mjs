@@ -7,7 +7,7 @@ const files = readdirSync(root).filter(name => name.endsWith('.md')).map(name =>
 function collect(directory) {
   for (const entry of readdirSync(directory, {withFileTypes: true})) {
     const path = resolve(directory, entry.name);
-    if (entry.isDirectory()) collect(path);
+    if (entry.isDirectory() && !["build", "node_modules"].includes(entry.name)) collect(path);
     else if (entry.name.endsWith('.md')) files.push(path);
   }
 }
