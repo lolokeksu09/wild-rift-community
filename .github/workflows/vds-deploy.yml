@@ -1,0 +1,61 @@
+name: Deploy community to VDS
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/vds-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: vds-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - run: npm test
+      - name: Build release image
+        run: |
+          set -euo pipefail
+          docker build -t "wild-rift-community:$GITHUB_SHA" .
+          docker save "wild-rift-community:$GITHUB_SHA" | gzip > deploy/image.tar.gz
+      - name: Install release through pinned SSH host
+        env:
+          VDS_SSH_KEY: ${{ secrets.vvd_ssh_wr }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          keydir=$(mktemp -d)
+          trap 'rm -rf "$keydir"' EXIT
+          test -n "$VDS_SSH_KEY" || { echo "Missing secret vvd_ssh_wr"; exit 1; }
+          printf '%s\n' "$VDS_SSH_KEY" > "$keydir/id_ed25519"
+          unset VDS_SSH_KEY
+          ssh-keygen -y -P '' -f "$keydir/id_ed25519" > "$keydir/actual.pub"
+          printf '%s\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPST/+oYHSmTytBFOz0CyVzwlkTXwJUlN+rFBEFKkMJK' > "$keydir/expected.pub"
+          echo 'Actual key fingerprint:'
+          ssh-keygen -lf "$keydir/actual.pub"
+          echo 'Expected key fingerprint:'
+          ssh-keygen -lf "$keydir/expected.pub"
+          test "$(awk '{print $1, $2}' "$keydir/actual.pub")" = "$(awk '{print $1, $2}' "$keydir/expected.pub")" || { echo 'Secret key does not match authorized public key supplied by owner'; exit 1; }
+          printf '%s\n' '139.100.205.135 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH1pZF1lCdjez9hNRWJ+gpbwvIPvDxaiox1CYZbJ1LVX' > "$keydir/known_hosts"
+          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
+          opts=(-i "$keydir/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$keydir/known_hosts" -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
+          ssh "${opts[@]}" root@139.100.205.135 "install -d -m 700 /opt/wild-rift-community/releases/$GITHUB_SHA" </dev/null
+          scp "${opts[@]}" deploy/image.tar.gz deploy/compose.yaml deploy/Caddyfile deploy/install.sh "root@139.100.205.135:/opt/wild-rift-community/releases/$GITHUB_SHA/"
+          ssh "${opts[@]}" root@139.100.205.135 "bash /opt/wild-rift-community/releases/$GITHUB_SHA/install.sh $GITHUB_SHA" </dev/null
+      - name: Check HTTPS externally
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://139.100.205.135/api/me | tee /tmp/wr-me.json
+          node -e "const x=require('/tmp/wr-me.json'); if(x.user!==null || x.csrf!==null) process.exit(1)"
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://139.100.205.135/ | grep -q 'id="main"'
+
