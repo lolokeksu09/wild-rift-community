@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { fail, text } from './security.mjs';
 import { transaction } from './database.mjs';
+import {contactBudget,contactPolicy} from './contact-budget.mjs';
 
-export function directRoutes({db,user,path,method,body,url,send,now}) {
+export function directRoutes({db,user,path,method,body,url,send,now,contactLimits=contactPolicy()}) {
   if (!/^\/api\/(direct(?:\/|$)|blocks$|me\/privacy$)/.test(path)) return false;
   if (!user) fail(401,'Сначала войди в аккаунт.');
   const get=(q,...p)=>db.prepare(q).get(...p), all=(q,...p)=>db.prepare(q).all(...p), run=(q,...p)=>db.prepare(q).run(...p);
   const blocked=(a,b)=>get('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',a,b,b,a);
+  if(path==='/api/direct/contact-budget'&&method==='GET'){send(200,{viewerId:user.id,contactBudget:contactBudget(db,user,now(),contactLimits)});return true;}
   const messageInput=()=>{
     const clientId=text(body.clientId,'Идентификатор',16,80);
     if(!/^[A-Za-z0-9_-]+$/.test(clientId))fail(422,'Некорректный идентификатор.');
@@ -61,7 +63,7 @@ export function directRoutes({db,user,path,method,body,url,send,now}) {
       ORDER BY c.created_at DESC,c.id ASC LIMIT 51`,user.id,user.id,user.id,user.id,user.id,...(cursor?[cursor[0],cursor[0],cursor[1]]:[]));
     const conversations=rows.slice(0,50),last=conversations.at(-1);let summary;
     directRoutes({db,user,path:'/api/direct/summary',method:'GET',body,url,now,send:(_status,data)=>{summary=data;}});
-    send(200,{...summary,conversations,next:rows.length>50?Buffer.from(JSON.stringify([last.created_at,last.id])).toString('base64url'):null});return true;
+    send(200,{...summary,contactBudget:contactBudget(db,user,now(),contactLimits),conversations,next:rows.length>50?Buffer.from(JSON.stringify([last.created_at,last.id])).toString('base64url'):null});return true;
   }
   if(path==='/api/direct' && method==='POST'){
     const handle=text(body.handle,'Логин',3,24).toLowerCase(),{clientId,content}=messageInput();
@@ -76,10 +78,14 @@ export function directRoutes({db,user,path,method,body,url,send,now}) {
         fail(409,'Беседа или запрос уже существует. Открой список сообщений.');
       }
       if(!peer.dm_requests)fail(403,'Запрос этому игроку недоступен.');
-      const id=randomUUID();run('INSERT INTO direct_conversations VALUES(?,?,?,?,?,?)',id,low,high,user.id,'pending',now());
-      run('INSERT INTO direct_messages(conversation_id,sender_id,client_id,body,created_at) VALUES(?,?,?,?,?)',id,user.id,clientId,content,now());
+      const time=now(),budget=contactBudget(db,user,time,contactLimits);
+      if(budget.retryAfterSeconds)return {limited:true,budget};
+      const id=randomUUID();run('INSERT INTO direct_conversations VALUES(?,?,?,?,?,?)',id,low,high,user.id,'pending',time);
+      run('INSERT INTO direct_messages(conversation_id,sender_id,client_id,body,created_at) VALUES(?,?,?,?,?)',id,user.id,clientId,content,time);
       return {id,replayed:false};
-    });send(result.replayed?200:201,result);return true;
+    });
+    if(result.limited){const retryAfterSeconds=result.budget.retryAfterSeconds;send(429,{error:`Новые знакомства временно ограничены. Попробуй через ${Math.ceil(retryAfterSeconds/60)} мин. Существующие беседы доступны.`,retryAfterSeconds,contactBudget:result.budget});return true;}
+    send(result.replayed?200:201,result);return true;
   }
   const match=path.match(/^\/api\/direct\/([\w-]+)\/(decision|messages|read)$/);
   if(match){

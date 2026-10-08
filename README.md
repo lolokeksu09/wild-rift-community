@@ -13,6 +13,8 @@
 
 Пакет 0.29: метаданные публичных ссылок, HTTP 404/403, robots, sitemap и иконка — [PUBLIC_LINKS.md](docs/PUBLIC_LINKS.md).
 
+Следующий пакет 0.30: бюджет новых исходящих знакомств и пауза с сохранением формы — [CONTACT_LIMITS.md](docs/CONTACT_LIMITS.md). Публикация подтверждается отдельным успешным Deploy.
+
 ## С чего начать
 
 1. Прочитать [ТЗ](docs/SPEC.md) и [план](docs/ROADMAP.md).

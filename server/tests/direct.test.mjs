@@ -7,7 +7,7 @@ import {createApp} from '../app.mjs';
 
 test('direct conversations: consent, privacy, persistence and authorization',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'wr-direct-')),databasePath=join(dir,'db.sqlite');
- let app=await createApp({databasePath}),origin=await app.listen();
+ let time=Date.now();const now=()=>time;let app=await createApp({databasePath,now}),origin=await app.listen();
  t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
  function client(){return {cookie:'',csrf:'',async request(path,method='GET',body){const headers={Cookie:this.cookie};if(method!=='GET')Object.assign(headers,{Origin:origin,'Content-Type':'application/json','X-Community-Request':'1','X-CSRF-Token':this.csrf});const r=await fetch(origin+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(r.headers.has('set-cookie'))this.cookie=r.headers.get('set-cookie').split(';')[0];if(data.csrf)this.csrf=data.csrf;if(data.user)this.id=data.user.id;return {status:r.status,data};}};}
  const a=client(),b=client(),c=client(),guest=client();for(const [u,handle] of [[a,'alice'],[b,'bravo'],[c,'charlie']])assert.equal((await u.request('/api/register','POST',{handle,name:handle,password:'local-test-password-123'})).status,201);
@@ -31,7 +31,7 @@ test('direct conversations: consent, privacy, persistence and authorization',asy
   const p={clientId:'accepted-message-id-0001',body:'Ответ'};
   assert.equal((await b.request(route,'POST',p)).status,201);assert.equal((await b.request(route,'POST',p)).status,200);
   assert.equal((await b.request(route,'POST',{...p,body:'changed'})).status,409);
-  await app.close();app=await createApp({databasePath});origin=await app.listen();
+  await app.close();app=await createApp({databasePath,now});origin=await app.listen();
   assert.equal((await a.request(route)).data.messages.length,2);assert.equal((await b.request(route,'POST',p)).status,200);
   assert.equal((await a.request(route+'?after=-1')).status,422);
  });
@@ -46,7 +46,7 @@ test('direct conversations: consent, privacy, persistence and authorization',asy
   await a.request(`/api/direct/${id}/read`,'POST',{lastId:history[0].id});
   assert.equal((await a.request('/api/direct')).data.unread,1);
   assert.equal((await c.request('/api/direct')).data.unread,0);
-  await app.close();app=await createApp({databasePath});origin=await app.listen();
+  await app.close();app=await createApp({databasePath,now});origin=await app.listen();
   assert.equal((await a.request('/api/direct')).data.unread,1);
  });
  await t.test('privacy blocks new requests but keeps accepted conversations',async()=>{
@@ -63,7 +63,7 @@ test('direct conversations: consent, privacy, persistence and authorization',asy
   await b.request('/api/blocks','DELETE',{userId:a.id});assert.equal((await a.request(route)).status,200);
  });
  await t.test('rejection cannot be bypassed with another request or reversed decision',async()=>{
-  const r=await a.request('/api/direct','POST',{...payload,handle:'charlie'}),rid=r.data.id;
+  time+=300000;const r=await a.request('/api/direct','POST',{...payload,handle:'charlie'}),rid=r.data.id;
   assert.equal((await c.request(`/api/direct/${rid}/decision`,'POST',{decision:'reject'})).status,200);
   assert.equal((await a.request('/api/direct','POST',{...payload,handle:'charlie',clientId:'another-request-test'})).status,409);
   assert.equal((await c.request(`/api/direct/${rid}/decision`,'POST',{decision:'accept'})).status,409);

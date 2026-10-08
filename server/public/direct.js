@@ -7,6 +7,7 @@ window.createDirectInbox = function({root,user,api,initialHandle=''}) {
   const requests=new Set();
   async function request(path,method='GET',body){const c=new AbortController();requests.add(c);const timer=setTimeout(()=>c.abort(),10000);try{return await api(path,method,body,{signal:c.signal});}finally{clearTimeout(timer);requests.delete(c);}}
   const error=e=>{if(active){const el=root.querySelector('[data-direct-error]');if(el)el.textContent=e.message;}};
+  const budgetNote=budget=>budget?`Новых адресатов за 24 часа: осталось ${budget.remaining} из ${budget.limit}. Пауза между знакомствами — ${Math.ceil(budget.cooldownSeconds/60)} мин.${budget.newAccount?' Для нового аккаунта действует меньший лимит.':''} Существующие беседы не расходуют этот лимит.`:'';
   async function refresh(){
     chat?.destroy();chat=null;const version=++generation;
     root.innerHTML='<h1>Сообщения</h1><p data-direct-error role="alert"></p><button class="btn quiet" data-refresh>Обновить</button>';
@@ -16,7 +17,7 @@ window.createDirectInbox = function({root,user,api,initialHandle=''}) {
       if(data.viewerId!==user.id||session.user?.id!==user.id){root.textContent='Сеанс изменился. Обнови страницу.';return;}
 
       root.innerHTML=`<h1>Сообщения</h1><p class="error" data-direct-error role="alert"></p><button class="btn quiet" data-refresh>Обновить список</button>
-        <form data-request class="panel"><h2>Написать игроку</h2><p class="note">До принятия запроса можно отправить одно сообщение.</p><label class="field">Точный логин<input name="handle" required minlength="3" maxlength="24"></label><label class="field">Первое сообщение<textarea name="body" required maxlength="2000"></textarea></label><button class="btn primary">Отправить запрос</button></form>
+        <form data-request class="panel"><h2>Написать игроку</h2><p class="note">До принятия запроса можно отправить одно сообщение.</p><p class="note" data-contact-budget>${esc(budgetNote(data.contactBudget))}</p><label class="field">Точный логин<input name="handle" required minlength="3" maxlength="24"></label><label class="field">Первое сообщение<textarea name="body" required maxlength="2000"></textarea></label><button class="btn primary">Отправить запрос</button></form>
         <section class="panel"><label><input type="checkbox" data-privacy ${session.user.dmRequests?'checked':''}> Принимать новые запросы</label><p class="note">Настройка не закрывает существующие беседы.</p></section>
         ${groups.map(([title,filter],i)=>`<section class="panel" data-direct-group="${i}"><h2>${title}</h2>${data.conversations.filter(filter).map(card).join('')||'<p class="muted" data-group-empty>Пока пусто.</p>'}</section>`).join('')}
         <section class="panel"><h2>Заблокированные</h2>${blocked.blocks.map(b=>`<p>${esc(b.name)} · @${esc(b.handle)} <button class="btn quiet" data-unblock="${b.id}">Разблокировать</button></p>`).join('')||'<p>Список пуст.</p>'}<p class="note">Блокировка закрывает доступ к личной беседе с обеих сторон. История сохраняется и снова доступна после снятия всех блокировок. Отклонённый запрос не открывается повторно. В общих чатах сообщения заблокированных тобой игроков скрыты; членство в клубе не меняется.</p></section><section class="panel hidden" data-direct-chat></section>`;
@@ -42,7 +43,7 @@ window.createDirectInbox = function({root,user,api,initialHandle=''}) {
   async function submit(e){if(!e.target.matches('[data-request]'))return;e.preventDefault();const f=e.target,b=f.querySelector('button');if(!f.reportValidity())return;
     const payload={handle:f.elements.handle.value,body:f.elements.body.value};const signature=JSON.stringify(payload);
     if(f.dataset.signature!==signature){f.dataset.signature=signature;f.dataset.clientId=crypto.randomUUID();}
-    b.disabled=true;try{await request('/api/direct','POST',{...payload,clientId:f.dataset.clientId});if(active)await refresh();}catch(e){error(e);}finally{b.disabled=false;}
+    b.disabled=true;try{await request('/api/direct','POST',{...payload,clientId:f.dataset.clientId});if(active)await refresh();}catch(e){error(e);if(e.status===429){try{const d=await request('/api/direct/contact-budget');if(active&&d.viewerId===user.id)root.querySelector('[data-contact-budget]').textContent=budgetNote(d.contactBudget);}catch{}}}finally{b.disabled=false;}
   }
   async function change(e){if(!e.target.matches('[data-privacy]'))return;const el=e.target;el.disabled=true;try{await request('/api/me/privacy','PATCH',{dmRequests:el.checked});}catch(e){el.checked=!el.checked;error(e);}finally{el.disabled=false;}}
   root.addEventListener('click',click);root.addEventListener('submit',submit);root.addEventListener('change',change);refresh();
