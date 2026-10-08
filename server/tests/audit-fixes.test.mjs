@@ -116,7 +116,7 @@ test('19 to 20 preserves legacy report IDs, decisions, appeals, audit and sequen
    PRAGMA user_version=19;COMMIT;`);
   db.close();db=openDatabase(file);
   for(let i=0;i<2;i++){
-   assert.equal(db.prepare('PRAGMA user_version').get().user_version,21);assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
+   assert.equal(db.prepare('PRAGMA user_version').get().user_version,22);assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
    const r=db.prepare('SELECT * FROM reports WHERE id=7').get();assert.equal(r.target_id,'9');assert.equal(r.snapshot,'Original message');assert.equal(r.decision_seen,1);
    assert.equal(db.prepare('SELECT reason FROM report_appeals').get().reason,'Original appeal');assert.equal(db.prepare('SELECT note FROM moderation_audit').get().note,'Original audit');assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
    db.close();db=openDatabase(file);
@@ -249,7 +249,7 @@ test('20 to 21 keeps reports, appeals, audit and sequence and accepts the new ki
   db.prepare("INSERT INTO moderation_audit(report_id,actor_id,decision,note,created_at) VALUES(7,'b','upheld','note',3)").run();
   db.close();
   db=openDatabase(file);
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version,21);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version,22);
   assert.equal(db.prepare('SELECT status,target_id FROM reports WHERE id=7').get().status,'upheld');
   assert.equal(db.prepare('SELECT count(*) n FROM report_appeals WHERE report_id=7').get().n,1);
   assert.equal(db.prepare('SELECT count(*) n FROM moderation_audit WHERE report_id=7').get().n,1);
@@ -281,6 +281,50 @@ test('reports on group announcements, events and club pages enforce access and f
  const queue=(await mod.call('/api/moderation/reports')).reports.filter(r=>['club_page','lfg','event'].includes(r.kind));
  assert.equal(queue.length,3);assert(queue.every(r=>r.sender_id===owner.id&&r.snapshot.length>3));
  assert.equal((await mod.call(`/api/moderation/reports/${queue[0].id}/decision`,'POST',{decision:'upheld',note:'Подтверждено'})).status,200);
- assert.equal((await mod.call(`/api/moderation/reports/${queue[0].id}/action`,'POST',{action:'remove-post',note:'Нельзя'})).status,422,'no removal action exists for these kinds yet');
+ assert.equal((await mod.call(`/api/moderation/reports/${queue[0].id}/action`,'POST',{action:'remove-post',note:'Нельзя'})).status,422,'the action must match the reported kind');
  assert.equal((await owner.call('/api/me')).sanction.level,'warning');
+});
+
+test('moderators remove reported clubs, groups, events and club chat messages with evidence kept',async t=>{
+ const f=await fixture(t),[owner,member,mod,other]=f.clients;await f.restart([mod.id,other.id]);
+ const club=(await owner.call('/api/clubs','POST',{name:'Спам клуб',description:'Купи аккаунты',access:'open'})).id;
+ await member.call('/api/clubs/'+club+'/join','POST',{});
+ const post=(await owner.call('/api/clubs/'+club+'/posts','POST',{title:'Реклама',body:'Текст',clientId:'removal-post-0000001'})).id;
+ await member.call('/api/posts/'+post+'/comments','POST',{body:'Коммент',clientId:'removal-comm-0000001'});
+ await member.call('/api/posts/'+post+'/reaction','PUT',{kind:'like'});await member.call('/api/posts/'+post+'/saved','PUT',{});
+ await owner.call('/api/clubs/'+club+'/pins/'+post,'PUT',{});await owner.call('/api/clubs/'+club+'/invites','POST',{clientId:'removal-invite-000001'});
+ await owner.call('/api/clubs/'+club+'/polls','POST',{title:'Опрос',options:['а','б'],durationHours:2,clientId:'removal-poll-0000001'});
+ await member.call('/api/clubs/'+club+'/draft','PUT',{version:0,title:'Черновик',body:''});
+ const chat=(await owner.call('/api/clubs/'+club+'/messages','POST',{clientId:'removal-chat-0000001',body:'Спам в чате'})).message.id;
+ const group=(await owner.call('/api/lfg','POST',{title:'Продам буст',mode:'ranked',region:'eu',language:'ru',role:'any',rank:'',voice:'optional',description:'Пиши в личку',capacity:3,durationHours:8,clientId:'removal-group-000001'})).id;
+ await member.call('/api/lfg/'+group+'/apply','POST',{});await owner.call('/api/lfg/'+group+'/decision','POST',{userId:member.id,decision:'accept'});
+ await owner.call('/api/lfg/'+group+'/messages','POST',{clientId:'removal-gchat-000001',body:'Секрет'});
+ const event=(await owner.call('/api/events','POST',{title:'Раздача',description:'Ссылка',mode:'normal',region:'eu',language:'ru',timezone:'UTC',startsAt:Date.now()+3600000,durationHours:2,roles:['mid','jungle'],ownerRole:'mid',clientId:'removal-event-000001'})).id;
+ await member.call('/api/events/'+event+'/join','POST',{role:'jungle'});await owner.call('/api/events/'+event+'/messages','POST',{clientId:'removal-echat-000001',body:'Секрет'});
+ const file=async(kind,targetId)=>(await member.call('/api/reports','POST',{kind,targetId,reason:'Нарушение правил'})).id;
+ const reports={remove:await file('club_page',club),group:await file('lfg',group),event:await file('event',event),chat:await file('club',chat)};
+ const act=(id,action,note='Подтверждено нарушение',who=other)=>who.call(`/api/moderation/reports/${id}/action`,'POST',{action,note});
+ const decide=(id)=>mod.call(`/api/moderation/reports/${id}/decision`,'POST',{decision:'upheld',note:'Подтверждено'});
+ assert.equal((await act(reports.remove,'remove-club')).status,409,'a decision comes first');
+ for(const id of Object.values(reports))assert.equal((await decide(id)).status,200);
+ assert.equal((await act(reports.remove,'remove-club','x',member)).status,403,'ordinary users cannot remove');
+ assert.equal((await act(reports.remove,'close-group')).status,422);
+ // The object changed after the report: the stale snapshot must not remove new content.
+ const {openDatabase}=await import('../database.mjs');let db=openDatabase(f.file);
+ db.prepare('UPDATE clubs SET description=? WHERE id=?').run('Другое описание',club);db.close();
+ assert.equal((await act(reports.remove,'remove-club')).status,409);
+ db=openDatabase(f.file);db.prepare('UPDATE clubs SET description=? WHERE id=?').run('Купи аккаунты',club);db.close();
+ for(const [id,action] of [[reports.remove,'remove-club'],[reports.group,'close-group'],[reports.event,'cancel-event'],[reports.chat,'remove-chat-message']])assert.equal((await act(id,action)).status,200,action);
+ assert.equal((await act(reports.remove,'remove-club')).status,200,'identical repeat is a no-op');
+ assert.equal((await act(reports.remove,'remove-club','Другое пояснение')).status,409);
+ const v=openDatabase(f.file),n=(q,...a)=>v.prepare(q).get(...a).n;
+ assert.equal(v.prepare('PRAGMA foreign_key_check').all().length,0);
+ for(const t of ['clubs','memberships','posts','comments','post_reactions','saved_posts','club_pins','club_invites','polls','post_drafts','messages','audit'])assert.equal(n(`SELECT count(*) n FROM ${t}`),0,t);
+ assert.equal(v.prepare('SELECT title,closed FROM lfg_groups WHERE id=?').get(group).title,'[Удалено модерацией]');
+ assert.equal(n('SELECT count(*) n FROM lfg_messages'),0);assert.equal(n("SELECT count(*) n FROM lfg_notifications WHERE user_id=? AND kind='closed'",member.id),1);
+ assert.equal(n('SELECT cancelled n FROM game_events WHERE id=?',event),1);assert.equal(n('SELECT count(*) n FROM event_messages'),0);assert.equal(n("SELECT count(*) n FROM event_notifications WHERE user_id=? AND kind='cancelled'",member.id),1);
+ assert.equal(n('SELECT count(*) n FROM moderation_actions'),4);assert(v.prepare('SELECT snapshot FROM reports WHERE id=?').get(reports.remove).snapshot.includes('Купи аккаунты'),'evidence stays');
+ v.close();
+ assert.equal((await member.call('/api/clubs/'+club+'/detail')).status,404);
+ assert.equal((await member.call('/api/lfg/'+group)).group.state,'closed');
 });
