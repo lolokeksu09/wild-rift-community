@@ -7,6 +7,8 @@
 
 Оформление, первое знакомство и границы гостевого доступа — [COMMUNITY_DESIGN.md](docs/COMMUNITY_DESIGN.md).
 
+Каталог с тематическими фильтрами, чтение публикаций, копирование ссылок и первые шаги 0.27 — [COMMUNITY_REFINEMENT.md](docs/COMMUNITY_REFINEMENT.md).
+
 ## С чего начать
 
 1. Прочитать [ТЗ](docs/SPEC.md) и [план](docs/ROADMAP.md).
