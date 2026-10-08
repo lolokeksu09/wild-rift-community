@@ -58,4 +58,22 @@ test('looking for group: capacity, lifecycle, private chat',async t=>{
   assert.equal((await a.request(`/api/lfg/${second}/messages`,'POST',{clientId:'expired-group-message',body:'Нет'})).status,409);
   assert.equal((await a.request('/api/lfg')).data.groups.length,0);assert.equal((await a.request('/api/lfg?mine=1')).data.groups.length,2);
  });
+ await t.test('notifications are private, transactional, repeat-safe and persistent',async()=>{
+  const countEvents=async(u)=>(await u.request('/api/lfg/notifications')).data.notifications.length;
+  const fresh=(await a.request('/api/lfg','POST',{...input,clientId:'notification-group-01'})).data.id,p=`/api/lfg/${fresh}`;
+  const ownerBefore=await countEvents(a),playerBefore=await countEvents(loser);
+  await loser.request(p+'/apply','POST',{});await loser.request(p+'/apply','POST',{});assert.equal(await countEvents(a),ownerBefore+1);
+  await a.request(p+'/decision','POST',{userId:loser.id,decision:'accept'});await a.request(p+'/decision','POST',{userId:loser.id,decision:'accept'});assert.equal(await countEvents(loser),playerBefore+1);
+  await loser.request(p+'/leave','POST',{});await loser.request(p+'/leave','POST',{});assert.equal(await countEvents(a),ownerBefore+2);
+  await loser.request(p+'/apply','POST',{});await a.request(p+'/close','POST',{});await a.request(p+'/close','POST',{});assert.equal(await countEvents(loser),playerBefore+2);
+  const events=(await loser.request('/api/lfg/notifications')).data;assert.equal(events.viewerId,loser.id);assert.equal(events.notifications[0].kind,'closed');assert.equal(events.notifications[0].body,undefined);assert.equal(events.notifications[0].user_id,undefined);
+  const note=events.notifications[0].id;assert.equal((await winner.request(`/api/lfg/notifications/${note}/read`,'POST',{})).status,404);
+  assert.equal((await guest.request('/api/lfg/notifications')).status,401);assert.equal((await loser.request('/api/lfg/notifications?before=-1')).status,422);
+  const before=(await loser.request('/api/lfg/notifications/summary')).data.unread;
+  for(let i=0;i<2;i++)assert.equal((await loser.request(`/api/lfg/notifications/${note}/read`,'POST',{})).status,200);
+  assert.equal((await loser.request('/api/lfg/notifications/summary')).data.unread,before-1);
+  await app.close();app=await createApp(options);origin=await app.listen();assert.equal((await loser.request('/api/lfg/notifications/summary')).data.unread,before-1);
+  const page=(await loser.request('/api/lfg/notifications?before='+note)).data;assert(page.notifications.every(n=>n.id<note));
+ });
+
 });

@@ -4,6 +4,7 @@ export function lfgRoutes({db,user,path,method,body,url,send,now}){
  if(!path.startsWith('/api/lfg'))return false;
  if(!user)fail(401,'Сначала войди в аккаунт.');
  const get=(q,...p)=>db.prepare(q).get(...p),all=(q,...p)=>db.prepare(q).all(...p),run=(q,...p)=>db.prepare(q).run(...p);
+ const notify=(recipient,groupId,kind)=>run('INSERT INTO lfg_notifications(user_id,group_id,kind,created_at) VALUES(?,?,?,?)',recipient,groupId,kind,now());
  const blocked=(a,b)=>!!get('SELECT 1 FROM blocks WHERE (blocker_id=? AND target_id=?) OR (blocker_id=? AND target_id=?)',a,b,b,a);
  const count=id=>get("SELECT count(*) AS n FROM lfg_members WHERE group_id=? AND status='accepted'",id).n;
  const state=g=>g.closed?'closed':g.expires_at<=now()?'expired':count(g.id)>=g.capacity?'full':'open';
@@ -14,6 +15,18 @@ export function lfgRoutes({db,user,path,method,body,url,send,now}){
  const clientId=()=>{const id=text(body.clientId,'Идентификатор отправки',16,80);if(!/^[A-Za-z0-9_-]+$/.test(id))fail(422,'Некорректный идентификатор.');return id;};
  const cursor=()=>{const raw=url.searchParams.get('before');if(raw!==null&&(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw))))fail(422,'Некорректный курсор.');return Number(raw??Number.MAX_SAFE_INTEGER);};
  const card=g=>{const {create_signature,client_id,...safe}=g;return {...safe,members:count(g.id),state:state(g),membership:membership(g.id)};};
+ if(path==='/api/lfg/notifications/summary'&&method==='GET'){
+  send(200,{viewerId:user.id,unread:get('SELECT count(*) AS n FROM lfg_notifications WHERE user_id=? AND seen=0',user.id).n});return true;
+ }
+ if(path==='/api/lfg/notifications'&&method==='GET'){
+  const result=all('SELECT id,group_id,kind,created_at,seen FROM lfg_notifications WHERE user_id=? AND id<? ORDER BY id DESC LIMIT 51',user.id,cursor());const notifications=result.slice(0,50);
+  send(200,{viewerId:user.id,notifications,next:result.length>50?notifications.at(-1).id:null});return true;
+ }
+ const readNotification=path.match(/^\/api\/lfg\/notifications\/(\d+)\/read$/);
+ if(readNotification&&method==='POST'){
+  const id=Number(readNotification[1]);if(!get('SELECT id FROM lfg_notifications WHERE id=? AND user_id=?',id,user.id))fail(404,'Уведомление недоступно.');
+  run('UPDATE lfg_notifications SET seen=1 WHERE id=? AND user_id=?',id,user.id);send(200,{ok:true});return true;
+ }
  if(path==='/api/lfg'&&method==='POST'){
   const input={title:text(body.title,'Название',3,80),mode:text(body.mode,'Режим',1,24),region:text(body.region,'Регион',1,40).toLowerCase(),language:text(body.language,'Язык',1,40).toLowerCase(),role:text(body.role,'Роль',1,24),rank:text(body.rank??'','Желаемый ранг',0,40),voice:text(body.voice,'Голос',1,24),description:text(body.description??'','Описание',0,1000),capacity:body.capacity,startsAt:body.startsAt??null,durationHours:body.durationHours};
   if(!['ranked','normal','aram','custom'].includes(input.mode)||!['any','baron','jungle','mid','dragon','support'].includes(input.role)||!['optional','required','none'].includes(input.voice)||!Number.isInteger(input.capacity)||input.capacity<2||input.capacity>5||![1,2,4,8,24].includes(input.durationHours))fail(422,'Проверь параметры группы.');
@@ -50,15 +63,15 @@ export function lfgRoutes({db,user,path,method,body,url,send,now}){
    const old=membership(id);if(['accepted','pending'].includes(old))return old;
    if(old==='rejected')fail(403,'Заявка отклонена владельцем.');
    if(count(id)>=g.capacity)fail(409,'Свободных мест нет.');
-   run("INSERT INTO lfg_members VALUES(?,?,'pending') ON CONFLICT(group_id,user_id) DO UPDATE SET status='pending'",id,user.id);return 'pending';
+   run("INSERT INTO lfg_members VALUES(?,?,'pending') ON CONFLICT(group_id,user_id) DO UPDATE SET status='pending'",id,user.id);notify(g.owner_id,id,'application');return 'pending';
   });send(200,{status});return true;
  }
  if(action==='leave'&&method==='POST'){
   if(g.owner_id===user.id)fail(409,'Автор может закрыть группу.');
-  run("UPDATE lfg_members SET status='cancelled' WHERE group_id=? AND user_id=? AND status IN ('accepted','pending')",id,user.id);send(200,{ok:true});return true;
+  transaction(db,()=>{const old=membership(id);const result=run("UPDATE lfg_members SET status='cancelled' WHERE group_id=? AND user_id=? AND status IN ('accepted','pending')",id,user.id);if(result.changes)notify(g.owner_id,id,old==='accepted'?'left':'cancelled');});send(200,{ok:true});return true;
  }
  if(action==='close'&&method==='POST'){
-  if(g.owner_id!==user.id)fail(403,'Закрыть группу может автор.');run('UPDATE lfg_groups SET closed=1 WHERE id=?',id);send(200,{ok:true});return true;
+  if(g.owner_id!==user.id)fail(403,'Закрыть группу может автор.');transaction(db,()=>{const result=run('UPDATE lfg_groups SET closed=1 WHERE id=? AND closed=0',id);if(result.changes)for(const m of all("SELECT user_id FROM lfg_members WHERE group_id=? AND user_id<>? AND status IN ('accepted','pending')",id,user.id))notify(m.user_id,id,'closed');});send(200,{ok:true});return true;
  }
  if(action==='decision'&&method==='POST'){
   if(g.owner_id!==user.id)fail(403,'Заявки рассматривает автор.');
@@ -68,7 +81,7 @@ export function lfgRoutes({db,user,path,method,body,url,send,now}){
    const next=body.decision==='accept'?'accepted':'rejected';if(old===next)return;
    if(old!=='pending'&&!(old==='accepted'&&next==='rejected'))fail(409,'Нет подходящей заявки.');
    if(next==='accepted'){if(blocked(g.owner_id,target))fail(403,'Участник заблокирован.');if(count(id)>=g.capacity)fail(409,'Последнее место уже занято.');}
-   run('UPDATE lfg_members SET status=? WHERE group_id=? AND user_id=?',next,id,target);
+   run('UPDATE lfg_members SET status=? WHERE group_id=? AND user_id=?',next,id,target);notify(target,id,next==='accepted'?'accepted':old==='accepted'?'removed':'rejected');
   });send(200,{ok:true});return true;
  }
  if(action==='messages'){

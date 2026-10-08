@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 9) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 10) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -126,6 +126,11 @@ export function openDatabase(path) {
     CREATE TABLE lfg_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,group_id INTEGER NOT NULL REFERENCES lfg_groups(id),sender_id TEXT NOT NULL REFERENCES users(id),client_id TEXT NOT NULL,body TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(group_id,sender_id,client_id)) STRICT;
     CREATE INDEX lfg_messages_group ON lfg_messages(group_id,id);
     PRAGMA user_version=9;
+    COMMIT;`);
+  if (version < 10) db.exec(`BEGIN IMMEDIATE;
+    CREATE TABLE lfg_notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL REFERENCES users(id),group_id INTEGER NOT NULL REFERENCES lfg_groups(id),kind TEXT NOT NULL CHECK(kind IN ('application','accepted','rejected','removed','cancelled','left','closed')),created_at INTEGER NOT NULL,seen INTEGER NOT NULL DEFAULT 0 CHECK(seen IN (0,1))) STRICT;
+    CREATE INDEX lfg_notifications_user ON lfg_notifications(user_id,seen,id);
+    PRAGMA user_version=10;
     COMMIT;`);
   return db;
 }
