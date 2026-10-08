@@ -1,3 +1,4 @@
+import { playerRoutes, fold } from './players.mjs';
 import { profileFields, profileView } from './profiles.mjs';
 import { readImage, encodeImage, saveImage, ownedImage, imageAttached } from './media.mjs';
 import { lfgRoutes } from './lfg.mjs';
@@ -14,6 +15,7 @@ const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/community.css', ['community.css', 'text/css; charset=utf-8']],
+  ['/players.js', ['players.js', 'text/javascript; charset=utf-8']],
   ['/profiles.js', ['profiles.js', 'text/javascript; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/lfg.js', ['lfg.js', 'text/javascript; charset=utf-8']],
@@ -30,6 +32,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
   const secureCookie = publicOrigin ? '; Secure' : '';
   moderatorIds = [...moderatorIds];
   const db = openDatabase(databasePath);
+  db.function('wr_fold',{deterministic:true},fold);
   const dummyPassword = await passwordHash(token());
   const counters = new Map(); let activeAuth = 0, activeUploads = 0;
   const sql = (query, ...params) => db.prepare(query).get(...params);
@@ -201,6 +204,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         transaction(db,()=>{run('UPDATE clubs SET cover_id=? WHERE id=?',cover,club.id);if(club.cover_id && club.cover_id!==cover && !imageAttached(db,club.cover_id))run('DELETE FROM media WHERE id=?',club.cover_id);});
         send(200,{ok:true});return;
       }
+      if (playerRoutes({db,user,path,method,url,send})) return;
       if (lfgRoutes({db,user,path,method,body,url,send,now})) return;
       if (moderationRoutes({db,user,path,method,body,url,send,now,moderatorIds})) return;
       if (directRoutes({ db, user, path, method, body, url, send, now })) return;

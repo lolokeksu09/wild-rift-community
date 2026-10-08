@@ -1,3 +1,4 @@
+import {fold} from './players.mjs';
 import {fail,text} from './security.mjs';
 import {transaction} from './database.mjs';
 export function lfgRoutes({db,user,path,method,body,url,send,now}){
@@ -44,7 +45,11 @@ export function lfgRoutes({db,user,path,method,body,url,send,now}){
   const mine=url.searchParams.get('mine')==='1',params=[cursor()];let where='g.id<?';
   if(mine){where+=' AND EXISTS(SELECT 1 FROM lfg_members m WHERE m.group_id=g.id AND m.user_id=?)';params.push(user.id);}
   else{where+=' AND g.closed=0 AND g.expires_at>? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=? AND b.target_id=g.owner_id) OR (b.blocker_id=g.owner_id AND b.target_id=?))';params.push(now(),user.id,user.id);}
-  for(const field of ['mode','region','language','role']){const value=url.searchParams.get(field);if(value){where+=` AND g.${field}=?`;params.push(text(value,field,1,40).toLowerCase());}}
+  const filters={mode:['ranked','normal','aram','custom'],role:['any','baron','jungle','mid','dragon','support'],voice:['none','optional','required']};
+  for(const field of ['mode','region','language','role','rank','voice']){
+   const value=url.searchParams.get(field);
+   if(value){const normalized=fold(text(value,field,1,40));if(filters[field]&&!filters[field].includes(normalized))fail(422,'Проверь фильтры группы.');where+=` AND wr_fold(g.${field})=?`;params.push(normalized);}
+  }
   const result=all(`SELECT g.* FROM lfg_groups g WHERE ${where} ORDER BY g.id DESC LIMIT 51`,...params),groups=result.slice(0,50).map(card);
   send(200,{viewerId:user.id,groups,next:result.length>50?groups.at(-1).id:null});return true;
  }
