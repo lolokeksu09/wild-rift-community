@@ -18,6 +18,16 @@ export function directRoutes({db,user,path,method,body,url,send,now}) {
     if(blocked(c.user_low,c.user_high))fail(403,'Беседа заблокирована.');
     return c;
   };
+  if(path==='/api/direct/summary' && method==='GET'){
+    const visible=`(c.user_low=:viewer OR c.user_high=:viewer) AND NOT EXISTS
+      (SELECT 1 FROM blocks b WHERE (b.blocker_id=c.user_low AND b.target_id=c.user_high) OR (b.blocker_id=c.user_high AND b.target_id=c.user_low))`;
+    const params={viewer:user.id};
+    const unread=db.prepare(`SELECT count(*) n FROM direct_messages m JOIN direct_conversations c ON c.id=m.conversation_id
+      LEFT JOIN direct_reads r ON r.conversation_id=c.id AND r.user_id=:viewer
+      WHERE ${visible} AND c.status='accepted' AND m.sender_id<>:viewer AND m.id>COALESCE(r.last_id,0)`).get(params).n;
+    const requests=db.prepare(`SELECT count(*) n FROM direct_conversations c WHERE ${visible} AND c.status='pending' AND c.requester_id<>:viewer`).get(params).n;
+    send(200,{viewerId:user.id,unread,requests});return true;
+  }
   if(path==='/api/me/privacy' && method==='PATCH'){
     if(typeof body.dmRequests!=='boolean')fail(422,'Укажи настройку запросов.');
     run('UPDATE users SET dm_requests=? WHERE id=?',Number(body.dmRequests),user.id);send(200,{ok:true});return true;
@@ -36,16 +46,22 @@ export function directRoutes({db,user,path,method,body,url,send,now}) {
     }
   }
   if(path==='/api/direct' && method==='GET'){
-    const conversations=all(`SELECT c.*,u.id AS peer_id,u.name AS peer_name,u.handle AS peer_handle,
+    const raw=url.searchParams.get('after');let cursor=null;
+    if(raw!==null){try{cursor=JSON.parse(Buffer.from(raw,'base64url').toString('utf8'));}catch{fail(422,'Некорректный курсор.');}
+      if(!Array.isArray(cursor)||cursor.length!==2||!Number.isSafeInteger(cursor[0])||cursor[0]<0||typeof cursor[1]!=='string'||cursor[1].length>80)fail(422,'Некорректный курсор.');}
+    const rows=all(`SELECT c.*,u.id AS peer_id,u.name AS peer_name,u.handle AS peer_handle,
       (SELECT body FROM direct_messages WHERE conversation_id=c.id ORDER BY id LIMIT 1) AS first_body,
-      (SELECT id FROM direct_messages WHERE conversation_id=c.id ORDER BY id LIMIT 1) AS first_message_id
+      (SELECT id FROM direct_messages WHERE conversation_id=c.id ORDER BY id LIMIT 1) AS first_message_id,
+      CASE WHEN c.status='accepted' THEN (SELECT count(*) FROM direct_messages dm WHERE dm.conversation_id=c.id AND dm.sender_id<>?
+        AND dm.id>COALESCE((SELECT last_id FROM direct_reads WHERE conversation_id=c.id AND user_id=?),0)) ELSE 0 END AS unread
       FROM direct_conversations c JOIN users u ON u.id=CASE WHEN c.user_low=? THEN c.user_high ELSE c.user_low END
       WHERE (c.user_low=? OR c.user_high=?) AND NOT EXISTS
       (SELECT 1 FROM blocks b WHERE (b.blocker_id=c.user_low AND b.target_id=c.user_high) OR (b.blocker_id=c.user_high AND b.target_id=c.user_low))
-      ORDER BY c.created_at DESC,c.id`,user.id,user.id,user.id);
-    for(const c of conversations)c.unread=c.status==='accepted'?get(`SELECT count(*) AS n FROM direct_messages
-      WHERE conversation_id=? AND sender_id<>? AND id>COALESCE((SELECT last_id FROM direct_reads WHERE conversation_id=? AND user_id=?),0)`,c.id,user.id,c.id,user.id).n:0;
-    send(200,{viewerId:user.id,conversations,unread:conversations.reduce((n,c)=>n+c.unread,0),requests:conversations.filter(c=>c.status==='pending'&&c.requester_id!==user.id).length});return true;
+      ${cursor?'AND (c.created_at<? OR (c.created_at=? AND c.id>?))':''}
+      ORDER BY c.created_at DESC,c.id ASC LIMIT 51`,user.id,user.id,user.id,user.id,user.id,...(cursor?[cursor[0],cursor[0],cursor[1]]:[]));
+    const conversations=rows.slice(0,50),last=conversations.at(-1);let summary;
+    directRoutes({db,user,path:'/api/direct/summary',method:'GET',body,url,now,send:(_status,data)=>{summary=data;}});
+    send(200,{...summary,conversations,next:rows.length>50?Buffer.from(JSON.stringify([last.created_at,last.id])).toString('base64url'):null});return true;
   }
   if(path==='/api/direct' && method==='POST'){
     const handle=text(body.handle,'Логин',3,24).toLowerCase(),{clientId,content}=messageInput();
