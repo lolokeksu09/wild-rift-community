@@ -1,5 +1,5 @@
 name: Deploy community to VDS
-# Release 0.28: audited reports/catalog/profile fixes, cold schema20 migration and authorized live demo ownership.
+# Release 0.29: public link metadata and HTTP status fixes; schema20 unchanged.
 on:
   workflow_dispatch:
   push:
@@ -61,5 +61,5 @@ jobs:
           set -euo pipefail
           curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://139.100.205.135/api/me | tee /tmp/wr-me.json
           node -e "const x=require('/tmp/wr-me.json'); if(x.user!==null || x.csrf!==null) process.exit(1)"
-          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://139.100.205.135/ | grep -q 'Версия 0.28'
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://139.100.205.135/ | grep -q 'Версия 0.29'
 
