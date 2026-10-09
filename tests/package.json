@@ -18,7 +18,8 @@
     "test:chat-resilience": "node browser-chat-resilience.mjs",
     "test:filled-community": "node browser-filled-community.mjs",
     "test:tournaments-ui": "node tournaments-ui.dom.cjs",
-    "test:invitation-ui": "node invitation-ui.dom.cjs"
+    "test:invitation-ui": "node invitation-ui.dom.cjs",
+    "test:tournament-complete-ui": "node tournament-complete.dom.cjs"
   },
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"

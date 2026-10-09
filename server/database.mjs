@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 27) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 28) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -390,6 +390,23 @@ export function openDatabase(path) {
     ALTER TABLE tournament_matches ADD COLUMN ready_a_at INTEGER;
     ALTER TABLE tournament_matches ADD COLUMN ready_b_at INTEGER;
     PRAGMA user_version=27;
+  `));
+  if(version < 28) transaction(db,()=>db.exec(`
+    ALTER TABLE tournament_teams ADD COLUMN withdrawn_at INTEGER;
+    ALTER TABLE tournament_teams ADD COLUMN withdraw_reason TEXT NOT NULL DEFAULT '';
+    ALTER TABLE tournament_matches ADD COLUMN result_version INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE tournament_matches ADD COLUMN result_kind TEXT NOT NULL DEFAULT 'played';
+    ALTER TABLE tournament_matches ADD COLUMN result_reason TEXT NOT NULL DEFAULT '';
+    UPDATE tournament_matches SET result_version=1 WHERE winner IS NOT NULL AND team_b IS NOT NULL;
+    CREATE TABLE tournament_result_history(id INTEGER PRIMARY KEY AUTOINCREMENT,tournament_id INTEGER NOT NULL,round INTEGER NOT NULL,slot INTEGER NOT NULL,actor_id TEXT NOT NULL REFERENCES users(id),kind TEXT NOT NULL,reason TEXT NOT NULL,before_json TEXT NOT NULL,after_json TEXT NOT NULL,created_at INTEGER NOT NULL,client_id TEXT,signature TEXT NOT NULL,FOREIGN KEY(tournament_id,round,slot) REFERENCES tournament_matches(tournament_id,round,slot),UNIQUE(tournament_id,actor_id,client_id)) STRICT;
+    CREATE INDEX tournament_result_history_match ON tournament_result_history(tournament_id,round,slot,id);
+    CREATE TABLE tournament_notifications_new(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL REFERENCES users(id),tournament_id INTEGER NOT NULL,round INTEGER NOT NULL,slot INTEGER NOT NULL,schedule_version INTEGER NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('scheduled','rescheduled','reminder','result','corrected','withdrawn','changed')),created_at INTEGER NOT NULL,seen INTEGER NOT NULL DEFAULT 0 CHECK(seen IN (0,1)),result_version INTEGER NOT NULL DEFAULT 0,team_a_snapshot INTEGER,team_b_snapshot INTEGER,FOREIGN KEY(tournament_id,round,slot) REFERENCES tournament_matches(tournament_id,round,slot)) STRICT;
+    INSERT INTO tournament_notifications_new(id,user_id,tournament_id,round,slot,schedule_version,kind,created_at,seen,team_a_snapshot,team_b_snapshot)
+      SELECT n.id,n.user_id,n.tournament_id,n.round,n.slot,n.schedule_version,n.kind,n.created_at,n.seen,m.team_a,m.team_b FROM tournament_notifications n JOIN tournament_matches m ON m.tournament_id=n.tournament_id AND m.round=n.round AND m.slot=n.slot;
+    DROP TABLE tournament_notifications; ALTER TABLE tournament_notifications_new RENAME TO tournament_notifications;
+    CREATE UNIQUE INDEX tournament_notification_unique ON tournament_notifications(user_id,tournament_id,round,slot,schedule_version,result_version,kind);
+    CREATE INDEX tournament_notifications_user ON tournament_notifications(user_id,seen,id);
+    PRAGMA user_version=28;
   `));
   return db;
 }

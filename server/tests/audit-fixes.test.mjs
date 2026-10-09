@@ -113,10 +113,10 @@ test('19 to 20 preserves legacy report IDs, decisions, appeals, audit and sequen
    INSERT INTO reports_19 SELECT id,reporter_id,kind,message_id,sender_id,snapshot,reason,status,decision_note,moderator_id,created_at,decision_seen FROM reports;
    DROP TABLE moderation_actions;DROP TABLE reports;ALTER TABLE reports_19 RENAME TO reports;
    UPDATE sqlite_sequence SET seq=999 WHERE name='reports';DROP INDEX direct_messages_unread;
-   DROP TABLE tournament_notifications;DROP TABLE tournament_roster;DROP TABLE tournament_matches;DROP TABLE tournament_teams;DROP TABLE tournaments;PRAGMA user_version=19;COMMIT;`);
+   DROP TABLE tournament_result_history;DROP TABLE tournament_notifications;DROP TABLE tournament_roster;DROP TABLE tournament_matches;DROP TABLE tournament_teams;DROP TABLE tournaments;PRAGMA user_version=19;COMMIT;`);
   db.close();db=openDatabase(file);
   for(let i=0;i<2;i++){
-   assert.equal(db.prepare('PRAGMA user_version').get().user_version,27);assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
+   assert.equal(db.prepare('PRAGMA user_version').get().user_version,28);assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
    const r=db.prepare('SELECT * FROM reports WHERE id=7').get();assert.equal(r.target_id,'9');assert.equal(r.snapshot,'Original message');assert.equal(r.decision_seen,1);
    assert.equal(db.prepare('SELECT reason FROM report_appeals').get().reason,'Original appeal');assert.equal(db.prepare('SELECT note FROM moderation_audit').get().note,'Original audit');assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
    db.close();db=openDatabase(file);
@@ -243,13 +243,13 @@ test('20 to 21 keeps reports, appeals, audit and sequence and accepts the new ki
   let db=openDatabase(file);
   for(const id of ['a','b'])db.prepare('INSERT INTO users(id,handle,name,password,created_at) VALUES(?,?,?,?,0)').run(id,id,id,'x');
   // Rebuild the pre-21 table (kinds without lfg/event/club_page) and stamp schema 20.
-  db.exec(`PRAGMA foreign_keys=OFF;BEGIN;CREATE TABLE reports_old(id INTEGER PRIMARY KEY AUTOINCREMENT,reporter_id TEXT NOT NULL REFERENCES users(id),kind TEXT NOT NULL CHECK(kind IN ('direct','club','post','comment','profile')),message_id INTEGER,target_id TEXT NOT NULL,sender_id TEXT NOT NULL REFERENCES users(id),snapshot TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','upheld','dismissed')),decision_note TEXT NOT NULL DEFAULT '',moderator_id TEXT REFERENCES users(id),created_at INTEGER NOT NULL,decision_seen INTEGER NOT NULL DEFAULT 0 CHECK(decision_seen IN (0,1)),UNIQUE(reporter_id,kind,target_id)) STRICT;DROP TABLE reports;ALTER TABLE reports_old RENAME TO reports;DROP TABLE tournament_notifications;DROP TABLE tournament_roster;DROP TABLE tournament_matches;DROP TABLE tournament_teams;DROP TABLE tournaments;PRAGMA user_version=20;COMMIT;PRAGMA foreign_keys=ON;`);
+  db.exec(`PRAGMA foreign_keys=OFF;BEGIN;CREATE TABLE reports_old(id INTEGER PRIMARY KEY AUTOINCREMENT,reporter_id TEXT NOT NULL REFERENCES users(id),kind TEXT NOT NULL CHECK(kind IN ('direct','club','post','comment','profile')),message_id INTEGER,target_id TEXT NOT NULL,sender_id TEXT NOT NULL REFERENCES users(id),snapshot TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','upheld','dismissed')),decision_note TEXT NOT NULL DEFAULT '',moderator_id TEXT REFERENCES users(id),created_at INTEGER NOT NULL,decision_seen INTEGER NOT NULL DEFAULT 0 CHECK(decision_seen IN (0,1)),UNIQUE(reporter_id,kind,target_id)) STRICT;DROP TABLE reports;ALTER TABLE reports_old RENAME TO reports;DROP TABLE tournament_result_history;DROP TABLE tournament_notifications;DROP TABLE tournament_roster;DROP TABLE tournament_matches;DROP TABLE tournament_teams;DROP TABLE tournaments;PRAGMA user_version=20;COMMIT;PRAGMA foreign_keys=ON;`);
   db.prepare("INSERT INTO reports(id,reporter_id,kind,message_id,target_id,sender_id,snapshot,reason,status,created_at) VALUES(7,'a','post',5,'5','b','s','r','upheld',1)").run();
   db.prepare("INSERT INTO report_appeals(report_id,reason,created_at) VALUES(7,'appeal',2)").run();
   db.prepare("INSERT INTO moderation_audit(report_id,actor_id,decision,note,created_at) VALUES(7,'b','upheld','note',3)").run();
   db.close();
   db=openDatabase(file);
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version,27);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version,28);
   assert.equal(db.prepare('SELECT status,target_id FROM reports WHERE id=7').get().status,'upheld');
   assert.equal(db.prepare('SELECT count(*) n FROM report_appeals WHERE report_id=7').get().n,1);
   assert.equal(db.prepare('SELECT count(*) n FROM moderation_audit WHERE report_id=7').get().n,1);
