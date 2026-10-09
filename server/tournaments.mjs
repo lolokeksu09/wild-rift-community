@@ -58,17 +58,21 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
    if(get("SELECT count(*) n FROM tournaments WHERE owner_id=? AND state!='finished' AND cancelled_at IS NULL",user.id).n>=5)fail(409,'Можно организовать до пяти незавершённых турниров.');
    return Number(run('INSERT INTO tournaments(owner_id,title,description,capacity,client_id,signature,created_at) VALUES(?,?,?,?,?,?,?)',user.id,title,description,capacity,clientId,signature,now()).lastInsertRowid);});send(200,{id});return true;
  }
- const m=path.match(/^\/api\/tournaments\/(\d+)(?:\/(join|leave|start|results|invite|accept|decline|remove|member-leave|cancel|schedule|ready|correct|forfeit|withdraw))?$/);if(!m)fail(404,'Маршрут не найден.');
+ const m=path.match(/^\/api\/tournaments\/(\d+)(?:\/(join|leave|start|results|invite|accept|decline|remove|member-leave|cancel|schedule|ready|correct|forfeit|withdraw|roster-history))?$/);if(!m)fail(404,'Маршрут не найден.');
  const id=Number(m[1]),t=get('SELECT * FROM tournaments WHERE id=?',id);if(!t||blocked(t.owner_id))fail(404,'Турнир недоступен.');
+ const revision=uid=>get('SELECT COALESCE(max(id),0) revision FROM tournament_roster_history WHERE tournament_id=? AND user_id=?',id,uid).revision;
+ const rosterHistory=(teamId,before=Number.MAX_SAFE_INTEGER)=>all(`SELECT h.id,h.user_id,u.handle,h.kind,h.before_status,h.after_status,h.created_at FROM tournament_roster_history h JOIN users u ON u.id=h.user_id WHERE h.tournament_id=? AND h.team_id=? AND h.id<? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=? AND b.target_id=h.user_id) OR (b.blocker_id=h.user_id AND b.target_id=?)) ORDER BY h.id DESC LIMIT 51`,id,teamId,before,user.id,user.id);
+ if(m[2]==='roster-history'&&method==='GET'){signed();const member=get("SELECT team_id FROM tournament_roster WHERE tournament_id=? AND user_id=? AND status='accepted'",id,user.id);if(!member)fail(403,'История доступна участникам команды.');const before=url.searchParams.get('before');if(before&&(!/^\d+$/.test(before)||!Number.isSafeInteger(Number(before))||Number(before)<1))fail(422,'Некорректная страница истории.');const rows=rosterHistory(member.team_id,before?Number(before):Number.MAX_SAFE_INTEGER),more=rows.length>50;rows.splice(50);send(200,{viewerId:user.id,rosterHistory:rows,rosterHistoryNext:more?rows.at(-1).id:null});return true;}
  if(!m[2]&&method==='GET'){
   const teams=all(`SELECT t.id,t.name,t.captain_id,t.roster_required,t.withdrawn_at,t.withdraw_reason,
     (SELECT count(*) FROM tournament_roster r WHERE r.team_id=t.id AND r.status='accepted') memberCount
-    FROM tournament_teams t WHERE tournament_id=? ORDER BY id`,id);
+    FROM tournament_teams t WHERE tournament_id=? ORDER BY id`,id).map(team=>{const members=all("SELECT user_id FROM tournament_roster WHERE team_id=? AND status='accepted'",team.id),pendingCount=get("SELECT count(*) n FROM tournament_roster WHERE team_id=? AND status='pending'",team.id).n,unavailableCount=members.filter(r=>!eligible(r.user_id)||between(r.user_id,team.captain_id)||between(r.user_id,t.owner_id)).length;return {...team,pendingCount,missingCount:team.roster_required?Math.max(0,5-members.length):0,unavailableCount,readyForStart:(!team.roster_required||members.length===5)&&unavailableCount===0};});
   const membership=user&&get('SELECT * FROM tournament_roster WHERE tournament_id=? AND user_id=?',id,user.id);
   const myTeam=membership?.status==='accepted'?membership.team_id:null;
-  const invitation=membership?.status==='pending'&&t.state==='open'&&t.cancelled_at===null&&!blocked(teams.find(x=>x.id===membership.team_id)?.captain_id)?teams.find(x=>x.id===membership.team_id):null;
-  const roster=myTeam?all(`SELECT r.user_id,r.status,u.handle FROM tournament_roster r JOIN users u ON u.id=r.user_id WHERE r.team_id=? AND r.status!='declined' ORDER BY r.user_id`,myTeam).filter(r=>!blocked(r.user_id)):[];
-  send(200,{tournament:safe(t),teams,roster,invitation,matches:all('SELECT round,slot,team_a,team_b,score_a,score_b,winner,starts_at,schedule_version,ready_a_at,ready_b_at,result_version,result_kind,result_reason FROM tournament_matches WHERE tournament_id=? ORDER BY round,slot',id),history:all('SELECT round,slot,kind,reason,before_json,after_json,created_at FROM tournament_result_history WHERE tournament_id=? ORDER BY id',id),myTeam});return true;
+  const invitation=membership?.status==='pending'&&t.state==='open'&&t.cancelled_at===null&&!blocked(teams.find(x=>x.id===membership.team_id)?.captain_id)?{...teams.find(x=>x.id===membership.team_id),revision:revision(user.id)}:null;
+  const roster=myTeam?all(`SELECT r.user_id,r.status,u.handle FROM tournament_roster r JOIN users u ON u.id=r.user_id WHERE r.team_id=? ORDER BY r.user_id`,myTeam).filter(r=>!blocked(r.user_id)).map(r=>({...r,revision:revision(r.user_id),lastAction:get('SELECT kind FROM tournament_roster_history WHERE tournament_id=? AND user_id=? ORDER BY id DESC LIMIT 1',id,r.user_id)?.kind??null})):[];
+  const teamHistory=myTeam?rosterHistory(myTeam):[],historyMore=teamHistory.length>50;teamHistory.splice(50);
+  send(200,{tournament:safe(t),teams,roster,rosterHistory:teamHistory,rosterHistoryNext:historyMore?teamHistory.at(-1).id:null,invitation,matches:all('SELECT round,slot,team_a,team_b,score_a,score_b,winner,starts_at,schedule_version,ready_a_at,ready_b_at,result_version,result_kind,result_reason FROM tournament_matches WHERE tournament_id=? ORDER BY round,slot',id),history:all('SELECT round,slot,kind,reason,before_json,after_json,created_at FROM tournament_result_history WHERE tournament_id=? ORDER BY id',id),myTeam});return true;
  }
  if(method!=='POST')fail(405,'Метод не поддерживается.');signed();
  if(m[2]==='cancel'){
@@ -92,7 +96,11 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
  }
  if(['invite','accept','decline','remove','member-leave'].includes(m[2])){
   transaction(db,()=>{
-   open();const team=get('SELECT * FROM tournament_teams WHERE tournament_id=? AND captain_id=?',id,user.id);
+   open();const clientId=body.clientId===undefined?null:text(body.clientId,'Идентификатор запроса',16,80),signature=JSON.stringify({action:m[2],body});
+   if(clientId){const old=get('SELECT signature FROM tournament_roster_history WHERE tournament_id=? AND actor_id=? AND client_id=?',id,user.id,clientId);if(old){if(old.signature!==signature)fail(409,'Запрос уже использован для другого действия.');return;}}
+   const checkRevision=member=>{const count=get("SELECT count(*) n FROM tournament_roster_history WHERE tournament_id=? AND user_id=? AND kind='invited'",id,member.user_id).n;if(body.expectedRevision===undefined&&count<=1)return;if(!Number.isSafeInteger(body.expectedRevision)||body.expectedRevision!==revision(member.user_id))fail(409,'Состав изменился. Обнови страницу перед действием.');};
+   const record=(team,uid,kind,before,after)=>run('INSERT INTO tournament_roster_history(tournament_id,team_id,team_name,user_id,actor_id,kind,before_status,after_status,created_at,client_id,signature) VALUES(?,?,?,?,?,?,?,?,?,?,?)',id,team.id,team.name,uid,user.id,kind,before,after,now(),clientId,signature);
+   const team=get('SELECT * FROM tournament_teams WHERE tournament_id=? AND captain_id=?',id,user.id);
    const membership=get('SELECT * FROM tournament_roster WHERE tournament_id=? AND user_id=?',id,user.id);
    if(m[2]==='invite'){
     if(!team)fail(403,'Приглашения отправляет капитан.');
@@ -100,19 +108,23 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
     const target=get('SELECT * FROM users WHERE handle=? AND profile_visible=1',handle);
     if(!target||isDemo(target)||between(user.id,target.id)||between(t.owner_id,target.id)||!eligible(target.id))fail(404,'Игрок недоступен для приглашения.');
     const old=get('SELECT * FROM tournament_roster WHERE tournament_id=? AND user_id=?',id,target.id);
-    if(old?.team_id===team.id){if(old.status==='declined')fail(409,'Игрок отклонил приглашение или вышел.');return;}
+    if(old?.team_id===team.id&&old.status!=='declined'){if(clientId)fail(409,'Игрок уже в составе или ожидает ответа.');return;}
+    if(old?.status==='declined'&&!clientId)fail(409,'Для повторного приглашения обнови страницу.');
     if(old&&old.status!=='declined')fail(409,'Игрок уже в другой команде или получил приглашение.');
     if(get("SELECT count(*) n FROM tournament_roster WHERE team_id=? AND status!='declined'",team.id).n>=5)fail(409,'В составе и приглашениях уже пять игроков.');
     run("INSERT INTO tournament_roster(tournament_id,team_id,user_id,status) VALUES(?,?,?,'pending') ON CONFLICT(tournament_id,user_id) DO UPDATE SET team_id=excluded.team_id,status='pending'",id,team.id,target.id);
+    record(team,target.id,'invited',old?.status??null,'pending');
    }else if(m[2]==='remove'){
     if(!team)fail(403,'Состав изменяет капитан.');
     const target=text(body.userId,'Игрок',1,80),member=get('SELECT * FROM tournament_roster WHERE tournament_id=? AND user_id=?',id,target);
     if(target===user.id)fail(409,'Капитан может только снять заявку всей команды.');
     if(!member||member.team_id!==team.id)fail(404,'Игрок не в твоей команде.');
+    checkRevision(member);if(member.status==='declined')return;
     run("UPDATE tournament_roster SET status='declined' WHERE tournament_id=? AND user_id=?",id,target);
+    record(team,target,member.status==='pending'?'revoked':'removed',member.status,'declined');
    }else{
     if(!membership)fail(409,'Приглашение или команда не найдены.');
-    const captain=get('SELECT captain_id FROM tournament_teams WHERE id=?',membership.team_id).captain_id;
+    checkRevision(membership);const memberTeam=get('SELECT * FROM tournament_teams WHERE id=?',membership.team_id),captain=memberTeam.captain_id;
     if(captain===user.id)fail(409,'Капитан может только снять заявку всей команды.');
     if(m[2]==='accept'){
      if(between(user.id,captain)||!eligible(captain))fail(404,'Команда недоступна.');
@@ -120,11 +132,13 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
      if(membership.status!=='pending')fail(409,'Приглашение уже отозвано.');
      if(get("SELECT count(*) n FROM tournament_roster WHERE team_id=? AND status='accepted'",membership.team_id).n>=5)fail(409,'Команда уже собрана.');
      run("UPDATE tournament_roster SET status='accepted' WHERE tournament_id=? AND user_id=?",id,user.id);
+     record(memberTeam,user.id,'accepted',membership.status,'accepted');
     }else{
      if(membership.status==='declined')return;
      if(m[2]==='decline'&&membership.status!=='pending')fail(409,'Ты уже в составе. Используй выход из команды.');
      if(m[2]==='member-leave'&&membership.status!=='accepted')fail(409,'Ты ещё не в составе.');
      run("UPDATE tournament_roster SET status='declined' WHERE tournament_id=? AND user_id=?",id,user.id);
+     record(memberTeam,user.id,m[2]==='decline'?'declined':'left',membership.status,'declined');
     }
    }
   });send(200,{ok:true});return true;
