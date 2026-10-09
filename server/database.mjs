@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 29) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 30) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -413,6 +413,24 @@ export function openDatabase(path) {
     CREATE INDEX tournament_roster_history_team ON tournament_roster_history(tournament_id,team_id,id);
     CREATE INDEX tournament_roster_history_player ON tournament_roster_history(tournament_id,user_id,id);
     PRAGMA user_version=29;
+  `));
+  if(version < 30) transaction(db,()=>db.exec(`
+    CREATE TABLE club_post_subscriptions(club_id TEXT NOT NULL,user_id TEXT NOT NULL,PRIMARY KEY(club_id,user_id),FOREIGN KEY(club_id,user_id) REFERENCES memberships(club_id,user_id) ON DELETE CASCADE) STRICT;
+    CREATE TABLE club_post_notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,created_at INTEGER NOT NULL,seen INTEGER NOT NULL DEFAULT 0 CHECK(seen IN (0,1)),UNIQUE(user_id,post_id)) STRICT;
+    CREATE INDEX club_post_notifications_user ON club_post_notifications(user_id,seen,id);
+    CREATE TRIGGER club_post_notify AFTER INSERT ON posts BEGIN
+      INSERT OR IGNORE INTO club_post_notifications(user_id,post_id,created_at)
+      SELECT s.user_id,NEW.id,NEW.created_at FROM club_post_subscriptions s JOIN memberships m ON m.club_id=s.club_id AND m.user_id=s.user_id AND m.status='member'
+      WHERE s.club_id=NEW.club_id AND s.user_id!=NEW.author_id AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=s.user_id AND b.target_id=NEW.author_id) OR (b.blocker_id=NEW.author_id AND b.target_id=s.user_id));
+    END;
+    CREATE TRIGGER club_post_leave BEFORE DELETE ON memberships BEGIN
+      DELETE FROM club_post_notifications WHERE user_id=OLD.user_id AND post_id IN (SELECT id FROM posts WHERE club_id=OLD.club_id);
+    END;
+    CREATE TRIGGER club_post_membership AFTER UPDATE OF status ON memberships WHEN NEW.status!='member' BEGIN
+      DELETE FROM club_post_subscriptions WHERE club_id=NEW.club_id AND user_id=NEW.user_id;
+      DELETE FROM club_post_notifications WHERE user_id=NEW.user_id AND post_id IN (SELECT id FROM posts WHERE club_id=NEW.club_id);
+    END;
+    PRAGMA user_version=30;
   `));
   return db;
 }

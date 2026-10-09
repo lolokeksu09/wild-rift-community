@@ -72,7 +72,7 @@ test('18→19 migration is repeatable and preserves accounts without inventing c
     db.exec("INSERT INTO users(id,handle,name,password,created_at) VALUES('u','kept','Kept','untouched',1);"); db.close();
     for (let i = 0; i < 2; i++) {
       db = openDatabase(path);
-      assert.equal(db.prepare('PRAGMA user_version').get().user_version,29);
+      assert.equal(db.prepare('PRAGMA user_version').get().user_version,30);
       assert.equal(db.prepare('SELECT password FROM users').get().password, 'untouched');
       assert.equal(db.prepare('SELECT COUNT(*) n FROM recovery_codes').get().n, 0);
       assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok'); db.close();

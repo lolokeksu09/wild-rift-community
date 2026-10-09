@@ -1,12 +1,13 @@
+import {clubNotificationRoutes} from './club-notifications.mjs';
 import {fail} from './security.mjs';
 import {transaction} from './database.mjs';
 import {discussionRoutes} from './discussions.mjs';
 import {eventRoutes} from './events.mjs';
 import {lfgRoutes} from './lfg.mjs';
 import {tournamentRoutes} from './tournaments.mjs';
-const sources={discussions:{route:'/api/discussions/notifications',handler:discussionRoutes,table:'discussion_notifications'},events:{route:'/api/events/notifications',handler:eventRoutes,table:'event_notifications'},lfg:{route:'/api/lfg/notifications',handler:lfgRoutes,table:'lfg_notifications'},matches:{route:'/api/tournaments/notifications',handler:tournamentRoutes,table:'tournament_notifications'},invitations:{route:'/api/tournaments/invitations',handler:tournamentRoutes}};
-const types=['all','discussions','events','lfg','tournaments'];
-export function notificationRoutes(ctx){const {db,user,path,method,body,url,send}=ctx;if(path!=='/api/notifications'&&path!=='/api/notifications/read-all'&&!/^\/api\/notifications\/(discussions|events|lfg|matches|invitations)\/\d+\/read$/.test(path))return false;if(!user)fail(401,'Сначала войди в аккаунт.');
+const sources={clubs:{route:'/api/club-notifications',handler:clubNotificationRoutes,table:'club_post_notifications'},discussions:{route:'/api/discussions/notifications',handler:discussionRoutes,table:'discussion_notifications'},events:{route:'/api/events/notifications',handler:eventRoutes,table:'event_notifications'},lfg:{route:'/api/lfg/notifications',handler:lfgRoutes,table:'lfg_notifications'},matches:{route:'/api/tournaments/notifications',handler:tournamentRoutes,table:'tournament_notifications'},invitations:{route:'/api/tournaments/invitations',handler:tournamentRoutes}};
+const types=['all','clubs','discussions','events','lfg','tournaments'];
+export function notificationRoutes(ctx){const {db,user,path,method,body,url,send}=ctx;if(path!=='/api/notifications'&&path!=='/api/notifications/read-all'&&!/^\/api\/notifications\/(clubs|discussions|events|lfg|matches|invitations)\/\d+\/read$/.test(path))return false;if(!user)fail(401,'Сначала войди в аккаунт.');
  const call=(source,route,method='GET',payload={})=>{let result;const target=new URL(route,'https://internal.test');sources[source].handler({...ctx,path:target.pathname,url:target,method,body:payload,send:(status,data)=>{if(status!==200)fail(status,'Не удалось загрузить уведомления.');result=data;}});if(!result||result.viewerId!==undefined&&result.viewerId!==user.id)fail(409,'Сеанс изменился.');return result;};
  const page=(source,before,unread=false)=>call(source,sources[source].route+'?before='+before+(unread?'&unread=1':''));
  const rows=(source,p)=>source==='invitations'?p.invitations.map(n=>({...n,id:n.tournament_id,seen:0})):p.notifications;
