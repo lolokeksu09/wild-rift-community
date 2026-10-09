@@ -19,6 +19,7 @@ import { playerRoutes, fold } from './players.mjs';
 import { profileFields, profileView } from './profiles.mjs';
 import { readImage, encodeImage, saveImage, ownedImage, imageAttached } from './media.mjs';
 import {clubNotificationRoutes} from './club-notifications.mjs';
+import {agendaRoutes} from './agenda.mjs';
 import {notificationRoutes} from './notifications.mjs';
 import { lfgRoutes } from './lfg.mjs';
 import { moderationRoutes } from './moderation.mjs';
@@ -150,11 +151,11 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           if(path==='/favicon.ico'){res.writeHead(308,{Location:'/favicon.svg'});res.end();return;}
           if(path==='/robots.txt'||path==='/sitemap.xml'){
             if(path==='/sitemap.xml')rate('sitemap:'+readerKey(req,null),10);
-            const value=path==='/robots.txt'?`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /account\nDisallow: /messages\nDisallow: /notifications\nDisallow: /reports\nDisallow: /saved\nDisallow: /drafts\nDisallow: /search\nSitemap: ${expectedOrigin}/sitemap.xml\n`:sitemap(db,expectedOrigin);
+            const value=path==='/robots.txt'?`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /account\nDisallow: /messages\nDisallow: /notifications\nDisallow: /games\nDisallow: /reports\nDisallow: /saved\nDisallow: /drafts\nDisallow: /search\nSitemap: ${expectedOrigin}/sitemap.xml\n`:sitemap(db,expectedOrigin);
             res.writeHead(200,{'Content-Type':path==='/robots.txt'?'text/plain; charset=utf-8':'application/xml; charset=utf-8'});res.end(method==='HEAD'?undefined:value);return;
           }
         }
-        const pageRoute=/^\/(?:feed|clubs(?:\/[\w-]{1,80})?|posts\/\d{1,16}|players(?:\/[\w-]{1,80})?|guides|teams|events|tournaments|account|messages|notifications|reports|saved|drafts|search|rules)\/?$/.test(path);
+        const pageRoute=/^\/(?:feed|clubs(?:\/[\w-]{1,80})?|posts\/\d{1,16}|players(?:\/[\w-]{1,80})?|guides|teams|events|games|tournaments|account|messages|notifications|reports|saved|drafts|search|rules)\/?$/.test(path);
         const asset = assets.get(path)||(pageRoute?assets.get('/'):null);
         if (!['GET','HEAD'].includes(method)) fail(404, 'Страница не найдена.');
         if(!asset){
@@ -385,6 +386,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         send(200,{viewerId:user.id,...summaries,notificationTotal:summaries.clubs.unread+summaries.discussions.unread+summaries.events.unread+summaries.lfg.unread+summaries.matches.unread+summaries.tournaments.pending});return;
       }
       if(clubNotificationRoutes({db,user,path,method,body,url,send}))return;
+      if(agendaRoutes({db,user,path,method,url,send,now}))return;
       if(notificationRoutes({db,user,path,method,body,url,send,now,postFor}))return;
       if(guideRoutes({db,user,path,method,body,url,send,now,clubFor,postFor,mentions}))return;
       if(pollRoutes({db,user,path,method,body,send,now,clubFor,postFor,mentions}))return;
