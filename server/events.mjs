@@ -1,3 +1,4 @@
+import {chatMessages} from './chat-messages.mjs';
 import {fail,text} from './security.mjs';
 import {transaction} from './database.mjs';
 import {settleWaitlist,refreshWaitlists,waitlistState,eventWaitlistRoutes} from './event-waitlist.mjs';
@@ -46,7 +47,7 @@ export function eventRoutes({db,user,path,method,body,url,send,now}) {
   if(role){filter+=" AND EXISTS(SELECT 1 FROM event_slots s WHERE s.event_id=e.id AND s.role=:role AND s.user_id IS NULL AND NOT EXISTS(SELECT 1 FROM event_waitlist q WHERE q.event_id=e.id AND q.role=s.role AND q.status='offered'))";params.role=role;}
   const r=all(`SELECT e.*,u.name AS owner_name FROM game_events e JOIN users u ON u.id=e.owner_id WHERE e.id<:before AND ${filter} AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=:viewer AND b.target_id=e.owner_id) OR (b.blocker_id=e.owner_id AND b.target_id=:viewer)) ORDER BY e.id DESC LIMIT 21`,params),events=r.slice(0,20).map(card);send(200,{viewerId:user.id,events,next:r.length>20?events.at(-1).id:null});return true;
  }
- const m=path.match(/^\/api\/events\/(\d+)(?:\/(join|leave|remove|cancel|messages))?$/);if(!m)fail(404,'Маршрут не найден.');
+ const m=path.match(/^\/api\/events\/(\d+)(?:\/(join|leave|remove|cancel|messages(?:\/\d+(?:\/(?:edit|delete|reaction))?)?))?$/);if(!m)fail(404,'Маршрут не найден.');
  const id=Number(m[1]);if(!Number.isSafeInteger(id))fail(404,'Событие недоступно.');const action=m[2],e=event(id);settleWaitlist(db,id,now());
  if(!action&&method==='GET') {const members=slot(id)?all('SELECT s.role,u.id,u.name,u.handle FROM event_slots s JOIN users u ON u.id=s.user_id WHERE s.event_id=? ORDER BY s.role',id):[];send(200,{viewerId:user.id,event:card(e),members});return true;}
  if(action==='join'&&method==='POST') {
@@ -56,10 +57,7 @@ export function eventRoutes({db,user,path,method,body,url,send,now}) {
  if(action==='leave'&&method==='POST') {if(e.owner_id===user.id)fail(409,'Организатор может отменить событие.');transaction(db,()=>{if(run('UPDATE event_slots SET user_id=NULL WHERE event_id=? AND user_id=?',id,user.id).changes)notify(e.owner_id,id,'left');settleWaitlist(db,id,now());});send(200,{ok:true});return true;}
  if(action==='remove'&&method==='POST') {owner(e);const target=text(body.userId,'Участник',1,80);if(target===user.id)fail(409,'Организатор не может исключить себя.');transaction(db,()=>{const queued=run("UPDATE event_waitlist SET status='removed' WHERE event_id=? AND user_id=? AND status IN ('waiting','offered')",id,target).changes;if(run('UPDATE event_slots SET user_id=NULL WHERE event_id=? AND user_id=?',id,target).changes||queued){run('INSERT OR IGNORE INTO event_exclusions VALUES(?,?)',id,target);notify(target,id,'removed');}else if(!get('SELECT 1 FROM event_exclusions WHERE event_id=? AND user_id=?',id,target))fail(409,'Игрок не в составе или очереди.');settleWaitlist(db,id,now());});send(200,{ok:true});return true;}
  if(action==='cancel'&&method==='POST') {owner(e);transaction(db,()=>{if(run('UPDATE game_events SET cancelled=1 WHERE id=? AND cancelled=0',id).changes)for(const s of all('SELECT user_id FROM event_slots WHERE event_id=? AND user_id IS NOT NULL AND user_id<>?',id,user.id))notify(s.user_id,id,'cancelled');settleWaitlist(db,id,now());});send(200,{ok:true});return true;}
- if(action==='messages') {
-  member(e);const canSend=!e.cancelled&&e.ends_at>now();
-  if(method==='GET') {const before=url.searchParams.get('before'),after=url.searchParams.get('after'),raw=before??after;if((before!==null&&after!==null)||(raw!==null&&(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw)))))fail(422,'Некорректный курсор.');const newer=after!==null,r=all(`SELECT m.*,u.name AS sender_name FROM event_messages m JOIN users u ON u.id=m.sender_id WHERE m.event_id=? AND m.id${newer?'>':'<'}? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=? AND b.target_id=m.sender_id) OR (b.blocker_id=m.sender_id AND b.target_id=?)) ORDER BY m.id ${newer?'ASC':'DESC'} LIMIT 51`,id,Number(raw??Number.MAX_SAFE_INTEGER),user.id,user.id);const messages=r.slice(0,50),hasMore=r.length>50;if(!newer)messages.reverse();send(200,{viewerId:user.id,canSend,blockVersion:get('SELECT block_version FROM users WHERE id=?',user.id).block_version,messages,hasMore,next:hasMore?(newer?messages.at(-1).id:messages[0].id):null});return true;}
-  if(method==='POST') {if(!canSend)fail(409,'Событие завершено или отменено.');const clientId=key(),content=text(body.body,'Сообщение',1,2000);const result=transaction(db,()=>{const old=get('SELECT id,body FROM event_messages WHERE event_id=? AND sender_id=? AND client_id=?',id,user.id,clientId);if(old){if(old.body!==content)fail(409,'Идентификатор занят другим текстом.');return {id:old.id,replayed:true};}return {id:Number(run('INSERT INTO event_messages(event_id,sender_id,client_id,body,created_at) VALUES(?,?,?,?,?)',id,user.id,clientId,content,now()).lastInsertRowid),replayed:false};});send(result.replayed?200:201,{message:get('SELECT m.*,u.name AS sender_name FROM event_messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?',result.id),replayed:result.replayed});return true;}
- }
+ if(action?.startsWith('messages')){member(e);return chatMessages({db,kind:'event',chatId:id,user,method,body,url,send,now,canSend:!e.cancelled&&e.ends_at>now()});}
+
  fail(405,'Метод не поддерживается.');
 }

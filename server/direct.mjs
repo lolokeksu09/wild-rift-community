@@ -1,3 +1,4 @@
+import {chatMessages} from './chat-messages.mjs';
 import { randomUUID } from 'node:crypto';
 import { fail, text } from './security.mjs';
 import { transaction } from './database.mjs';
@@ -45,7 +46,7 @@ export function directRoutes({db,user,path,method,body,url,send,now,contactLimit
         if(result.changes)run('UPDATE users SET block_version=block_version+1 WHERE id=?',user.id);
         return get('SELECT block_version FROM users WHERE id=?',user.id).block_version;
       });
-      send(200,{ok:true,blockVersion});return true;
+      send(200,{ok:true,blockVersion,visibilityVersion:get('SELECT coalesce(sum(block_version),0) n FROM users').n});return true;
     }
   }
   if(path==='/api/direct' && method==='GET'){
@@ -92,7 +93,7 @@ export function directRoutes({db,user,path,method,body,url,send,now,contactLimit
     if(result.limited){const retryAfterSeconds=result.budget.retryAfterSeconds;send(429,{error:`Новые знакомства временно ограничены. Попробуй через ${Math.ceil(retryAfterSeconds/60)} мин. Существующие беседы доступны.`,retryAfterSeconds,contactBudget:result.budget});return true;}
     send(result.replayed?200:201,result);return true;
   }
-  const match=path.match(/^\/api\/direct\/([\w-]+)\/(decision|messages|read)$/);
+  const match=path.match(/^\/api\/direct\/([\w-]+)\/(decision|messages(?:\/\d+(?:\/(?:edit|delete|reaction))?)?|read)$/);
   if(match){
     const [,id,action]=match,c=conversation(id);
     if(action==='read'&&method==='POST'){
@@ -109,25 +110,9 @@ export function directRoutes({db,user,path,method,body,url,send,now,contactLimit
       if(c.status!=='pending'&&c.status!==status)fail(409,'Решение уже принято.');
       run('UPDATE direct_conversations SET status=? WHERE id=?',status,id);send(200,{status});return true;
     }
-    if(action==='messages'){
+    if(action.startsWith('messages')){
       if(c.status!=='accepted')fail(403,'Сначала получатель должен принять запрос.');
-      if(method==='GET'){
-        const before=url.searchParams.get('before'),after=url.searchParams.get('after'),cursor=before??after;
-        if((before!==null&&after!==null)||(cursor!==null&&(!/^\d+$/.test(cursor)||!Number.isSafeInteger(Number(cursor)))))fail(422,'Некорректный курсор.');
-        const newer=after!==null;
-        const result=all(`SELECT m.*,u.name AS sender_name FROM direct_messages m JOIN users u ON u.id=m.sender_id
-          WHERE conversation_id=? AND m.id${newer?'>':'<'}? ORDER BY m.id ${newer?'ASC':'DESC'} LIMIT 51`,id,Number(cursor??Number.MAX_SAFE_INTEGER));
-        const messages=result.slice(0,50),hasMore=result.length>50;if(!newer)messages.reverse();
-        send(200,{viewerId:user.id,messages,hasMore,next:hasMore?(newer?messages.at(-1).id:messages[0].id):null});return true;
-      }
-      if(method==='POST'){
-        const {clientId,content}=messageInput();
-        const result=transaction(db,()=>{
-          const old=get('SELECT * FROM direct_messages WHERE conversation_id=? AND sender_id=? AND client_id=?',id,user.id,clientId);
-          if(old){if(old.body!==content)fail(409,'Идентификатор занят другим текстом.');return {id:old.id,replayed:true};}
-          const r=run('INSERT INTO direct_messages(conversation_id,sender_id,client_id,body,created_at) VALUES(?,?,?,?,?)',id,user.id,clientId,content,now());return {id:Number(r.lastInsertRowid),replayed:false};
-        });send(result.replayed?200:201,{message:get('SELECT m.*,u.name AS sender_name FROM direct_messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?',result.id),replayed:result.replayed});return true;
-      }
+      return chatMessages({db,kind:'direct',chatId:id,user,method,body,url,send,now});
     }
   }
   fail(405,'Метод не поддерживается.');

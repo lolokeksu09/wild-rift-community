@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 32) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 33) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -452,6 +452,19 @@ export function openDatabase(path) {
     db.prepare("UPDATE sqlite_sequence SET seq=max(seq,?) WHERE name='event_notifications'").run(previousSequence);
     db.prepare("INSERT INTO sqlite_sequence(name,seq) SELECT 'event_notifications',? WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='event_notifications')").run(previousSequence);
   });
+  if(version < 33) transaction(db,()=>db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_message_state(kind TEXT NOT NULL CHECK(kind IN ('club','direct','lfg','event')),message_id INTEGER NOT NULL,chat_id TEXT NOT NULL,reply_id INTEGER,original_signature TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,edited_at INTEGER,deleted_at INTEGER,PRIMARY KEY(kind,message_id)) STRICT;
+    CREATE TABLE IF NOT EXISTS chat_message_reactions(kind TEXT NOT NULL,message_id INTEGER NOT NULL,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,emoji TEXT NOT NULL CHECK(emoji IN ('👍','❤️','😂','🔥','🎮')),PRIMARY KEY(kind,message_id,user_id,emoji),FOREIGN KEY(kind,message_id) REFERENCES chat_message_state(kind,message_id) ON DELETE CASCADE) STRICT;
+    CREATE TABLE IF NOT EXISTS chat_message_changes(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,chat_id TEXT NOT NULL,message_id INTEGER NOT NULL) STRICT;
+    CREATE INDEX IF NOT EXISTS chat_message_changes_chat ON chat_message_changes(kind,chat_id,id);
+    CREATE TABLE IF NOT EXISTS chat_message_operations(kind TEXT NOT NULL,chat_id TEXT NOT NULL,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,client_id TEXT NOT NULL,signature TEXT NOT NULL,PRIMARY KEY(kind,chat_id,user_id,client_id)) STRICT;
+    CREATE TRIGGER IF NOT EXISTS chat_club_removed AFTER DELETE ON messages BEGIN
+      INSERT INTO chat_message_changes(kind,chat_id,message_id) VALUES('club',OLD.club_id,OLD.id);
+      INSERT INTO chat_message_changes(kind,chat_id,message_id) SELECT kind,chat_id,message_id FROM chat_message_state WHERE kind='club' AND chat_id=OLD.club_id AND reply_id=OLD.id;
+      DELETE FROM chat_message_state WHERE kind='club' AND message_id=OLD.id;
+    END;
+    PRAGMA user_version=33;
+  `));
   return db;
 }
 export function transaction(db, fn) {

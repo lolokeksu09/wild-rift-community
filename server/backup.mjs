@@ -14,7 +14,7 @@ function checkDatabase(path) {
   const db = new DatabaseSync(path, { readOnly: true });
   try {
     const schema=db.prepare('PRAGMA user_version').get().user_version;
-    if (![19,20,21,22,23,24,25,26,27,28,29,30,31,32].includes(schema)) throw Error('Backup requires supported schema 19 to 32.');
+    if (![19,20,21,22,23,24,25,26,27,28,29,30,31,32,33].includes(schema)) throw Error('Backup requires supported schema 19 to 33.');
     if (db.prepare('PRAGMA integrity_check').get().integrity_check !== 'ok' || db.prepare('PRAGMA foreign_key_check').all().length) throw Error('Invalid backup database.');
     return schema;
   } finally { db.close(); }

@@ -1164,3 +1164,25 @@ body:not(.launch-mode) .editorial-cover h1 { font-weight:700; font-size:clamp(64
 .event-waitlist-offer h2 { margin-top:0; }
 .waitlist-deadline strong { color:var(--accent); }
 @media(max-width:700px) { .notification-filter-options { display:grid; gap:0; } .event-waitlist-offer .row { display:grid; grid-template-columns:1fr; gap:8px; } .event-waitlist-offer .row .btn { width:100%; } }
+
+/* Stage 42: message actions stay compact, with independent editing and reply context. */
+.chat-message-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}
+.chat-inline-action{padding:8px 0;border:0;background:none;color:var(--pink,#dda1b1);font:inherit;font-size:14px;cursor:pointer;min-height:44px}
+.editorial-chat .chat-message-tools{position:relative;margin:0;font-size:14px}
+.chat-message-tools summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
+.chat-message-tools[open]{padding:8px;border:1px solid var(--line,#514555);border-radius:10px}
+.chat-reaction-picker,.chat-reactions{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chat-reaction{min-width:44px;min-height:44px;padding:7px 10px;border:1px solid var(--line,#514555);border-radius:18px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.chat-reaction.selected{border-color:var(--pink,#dda1b1);background:rgba(221,161,177,.12)}
+.chat-quote{margin:10px 0;padding:8px 12px;border-left:3px solid var(--pink,#dda1b1);background:rgba(255,255,255,.035);border-radius:6px;overflow-wrap:anywhere}
+.chat-quote p,.chat-reply-context p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.chat-reply-context{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px;border-left:3px solid var(--pink,#dda1b1);grid-column:1/-1;min-width:0}
+.chat-reply-context[hidden]{display:none}
+.chat-action-dialog{max-width:520px;width:calc(100% - 32px);max-height:85dvh;overflow:auto;padding:24px;color:var(--text,#f4eee9);background:var(--panel,#2b2530);border:1px solid var(--line,#514555);border-radius:16px;box-sizing:border-box}
+.chat-action-dialog::backdrop{background:rgba(12,8,17,.78)}
+.chat-action-dialog h3{margin-top:0}.chat-action-dialog textarea{box-sizing:border-box;width:100%;font:inherit;font-size:16px;resize:vertical}
+.chat-action-dialog blockquote{margin:12px 0;overflow-wrap:anywhere;white-space:pre-wrap}
+.chat-action-dialog .danger,.chat-message-tools .danger{color:#f1a2ad;border-color:#a56071}
+.editorial-chat .bubble>small,.editorial-chat .chat-quote small,.editorial-chat .chat-reply-context small{font-size:13px;line-height:1.5}
+.editorial-chat .bubble .chat-edited{display:block;font-size:12px}
+@media(max-width:650px){.chat-action-dialog{padding:18px}.chat-action-dialog .row{display:grid;grid-template-columns:1fr 1fr}.chat-reply-context{flex-wrap:wrap}.chat-message-tools .btn{min-height:44px}}

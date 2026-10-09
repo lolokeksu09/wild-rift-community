@@ -1,3 +1,4 @@
+import {chatMessages} from './chat-messages.mjs';
 import {tournamentRoutes} from './tournaments.mjs';
 import { replaceCodes, consumeCode } from './recovery.mjs';
 import {catalogRoutes} from './catalog.mjs';
@@ -429,46 +430,13 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         });
         send(201, { id }); return;
       }
-      const messageRoute = path.match(/^\/api\/clubs\/([\w-]+)\/messages$/);
+      const messageRoute = path.match(/^\/api\/clubs\/([\w-]+)\/messages(?:\/\d+(?:\/(?:edit|delete|reaction))?)?$/);
       if (messageRoute) {
         const clubId = messageRoute[1];
         signed(user);
         // Chats require membership even when the club's posts are public.
         clubFor(clubId, user, true);
-        if (method === 'GET') {
-          const before = url.searchParams.get('before'), after = url.searchParams.get('after');
-          if (before !== null && after !== null) fail(422, 'Укажи только один курсор.');
-          const cursor = before ?? after;
-          if (cursor !== null && (!/^\d+$/.test(cursor) || !Number.isSafeInteger(Number(cursor)))) fail(422, 'Некорректный курсор.');
-          const newer = after !== null;
-          const result = rows(`SELECT m.id,m.club_id,m.sender_id,m.client_id,m.body,m.created_at,u.name AS sender_name
-            FROM messages m JOIN users u ON u.id=m.sender_id
-            WHERE m.club_id=? AND m.id${newer ? '>' : '<'}?
-            AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.blocker_id=? AND b.target_id=m.sender_id)
-            ORDER BY m.id ${newer ? 'ASC' : 'DESC'} LIMIT 51`, clubId, Number(cursor ?? Number.MAX_SAFE_INTEGER),user.id);
-          const hasMore = result.length > 50;
-          const messages = result.slice(0, 50);
-          if (!newer) messages.reverse();
-          send(200, { viewerId: user.id, blockVersion: sql('SELECT block_version FROM users WHERE id=?',user.id).block_version, messages, hasMore, next: hasMore ? (newer ? messages.at(-1).id : messages[0].id) : null }); return;
-        }
-        if (method === 'POST') {
-          const clientId = text(body.clientId, 'Идентификатор сообщения', 16, 80);
-          if (!/^[A-Za-z0-9_-]+$/.test(clientId)) fail(422, 'Некорректный идентификатор сообщения.');
-          const messageBody = text(body.body, 'Сообщение', 1, 2000);
-          const result = transaction(db, () => {
-            const existing = sql('SELECT id,body FROM messages WHERE club_id=? AND sender_id=? AND client_id=?', clubId, user.id, clientId);
-            if (existing) {
-              if (existing.body !== messageBody) fail(409, 'Этот идентификатор уже использован для другого текста.');
-              return { id: existing.id, replayed: true };
-            }
-            const inserted = run('INSERT INTO messages(club_id,sender_id,client_id,body,created_at) VALUES(?,?,?,?,?)', clubId, user.id, clientId, messageBody, now());
-            return { id: Number(inserted.lastInsertRowid), replayed: false };
-          });
-          const message = sql(`SELECT m.id,m.club_id,m.sender_id,m.client_id,m.body,m.created_at,u.name AS sender_name
-            FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?`, result.id);
-          send(result.replayed ? 200 : 201, { message, replayed: result.replayed }); return;
-        }
-        fail(405, 'Метод не поддерживается.');
+        chatMessages({db,kind:'club',chatId:clubId,user,method,body,url,send,now});return;
       }
       let match = path.match(/^\/api\/clubs\/([\w-]+)\/(join|leave|members|decision|ban|posts)$/);
       if (match) {
