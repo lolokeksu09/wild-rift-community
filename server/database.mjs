@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 31) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 32) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -436,6 +436,22 @@ export function openDatabase(path) {
     CREATE TABLE notification_preferences(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,category TEXT NOT NULL CHECK(category IN ('discussions','events','lfg','tournaments','clubs')),enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),PRIMARY KEY(user_id,category)) STRICT;
     PRAGMA user_version=31;
   `));
+  if(version < 32) transaction(db,()=>{
+    const previousSequence=db.prepare("SELECT seq FROM sqlite_sequence WHERE name='event_notifications'").get()?.seq||0;
+    db.exec(`CREATE TABLE event_waitlist(id INTEGER PRIMARY KEY AUTOINCREMENT,event_id INTEGER NOT NULL REFERENCES game_events(id),user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,role TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('waiting','offered','accepted','declined','expired','left','cancelled','removed')),client_id TEXT NOT NULL,created_at INTEGER NOT NULL,offer_token TEXT UNIQUE,offer_until INTEGER,notification_id INTEGER,FOREIGN KEY(event_id,role) REFERENCES event_slots(event_id,role),UNIQUE(event_id,user_id,client_id)) STRICT;
+      CREATE UNIQUE INDEX event_waitlist_active_user ON event_waitlist(event_id,user_id) WHERE status IN ('waiting','offered');
+      CREATE UNIQUE INDEX event_waitlist_offered_role ON event_waitlist(event_id,role) WHERE status='offered';
+      CREATE INDEX event_waitlist_role ON event_waitlist(event_id,role,status,id);
+      CREATE INDEX event_waitlist_due ON event_waitlist(status,offer_until);
+      CREATE TABLE event_notifications_v32(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,event_id INTEGER NOT NULL REFERENCES game_events(id),kind TEXT NOT NULL CHECK(kind IN ('joined','left','removed','cancelled','reminder','waitlist_offer','waitlist_closed')),created_at INTEGER NOT NULL,seen INTEGER NOT NULL DEFAULT 0 CHECK(seen IN (0,1))) STRICT;
+      INSERT INTO event_notifications_v32 SELECT * FROM event_notifications;
+      DROP TABLE event_notifications;ALTER TABLE event_notifications_v32 RENAME TO event_notifications;
+      CREATE UNIQUE INDEX event_reminder_unique ON event_notifications(user_id,event_id) WHERE kind='reminder';
+      CREATE INDEX event_notifications_user ON event_notifications(user_id,seen,id);
+      PRAGMA user_version=32;`);
+    db.prepare("UPDATE sqlite_sequence SET seq=max(seq,?) WHERE name='event_notifications'").run(previousSequence);
+    db.prepare("INSERT INTO sqlite_sequence(name,seq) SELECT 'event_notifications',? WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='event_notifications')").run(previousSequence);
+  });
   return db;
 }
 export function transaction(db, fn) {
