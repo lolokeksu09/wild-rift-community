@@ -26,7 +26,8 @@
     "test:notification-preferences-ui": "node notification-preferences.dom.cjs",
     "test:event-waitlist-ui": "node event-waitlist.dom.cjs",
     "test:search-routing-ui": "node search-routing.dom.cjs",
-    "test:chat-actions-ui": "node chat-actions.dom.cjs"
+    "test:chat-actions-ui": "node chat-actions.dom.cjs",
+    "test:roster-search-ui": "node roster-search.dom.cjs"
   },
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
