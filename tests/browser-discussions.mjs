@@ -39,8 +39,8 @@ try{
    assert.equal(await member.page.locator('#main img[src=x]').count(),0);
    async function layout(label){assert.equal(await member.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}: overflow ${label}`);assert.deepEqual(errors,[]);}
    await layout('comments');await member.page.evaluate(()=>scrollTo(0,0));await member.page.screenshot({path:`ui-screenshots/discussions-${width}.png`,fullPage:true});
-   await member.page.locator('.section-menu summary').click();await member.page.locator('#notifications').click();await member.page.getByRole('heading',{name:'Уведомления',exact:true}).waitFor();assert.equal(await member.page.locator('[data-discussion-post]').count(),2);
-   await member.page.locator('[data-discussion-read]').first().click();await member.page.getByText('Прочитано',{exact:true}).waitFor();assert.equal((await member.api('/api/discussions/notifications/summary')).unread,1);
+   await member.page.locator('.section-menu summary').click();await member.page.locator('#notifications').click();await member.page.getByRole('heading',{name:'Уведомления',exact:true}).waitFor();await member.page.locator('[data-discussion-post]').nth(1).waitFor();assert.equal(await member.page.locator('[data-discussion-post]').count(),2);
+   await member.page.locator('[data-discussion-read]').first().click();await member.page.waitForFunction(()=>document.querySelectorAll('[data-discussion-read]').length===1);assert.equal((await member.api('/api/discussions/notifications/summary')).unread,1);
    await layout('notifications');await member.page.evaluate(()=>scrollTo(0,0));await member.page.screenshot({path:`ui-screenshots/discussion-events-${width}.png`,fullPage:true});
    await member.page.locator('[data-discussion-post]').first().click();await member.page.locator('.comment-reply').first().waitFor();
    await member.page.locator('#account').click();await member.page.locator('#main [data-nav=saved]').click();await member.page.getByRole('heading',{name:'Сохранённое',exact:true}).waitFor();assert.equal(await member.page.locator('[data-save][aria-pressed=true]').count(),1);
