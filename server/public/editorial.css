@@ -1142,4 +1142,25 @@ body:not(.launch-mode) .editorial-cover h1 { font-weight:700; font-size:clamp(64
 .tournament-match>p { display:flex; justify-content:space-between; gap:12px; }
 .tournament-scores { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 #tournamentsRoot h1,#tournamentsRoot h2,#tournamentsRoot li { overflow-wrap:anywhere; }
-@media(max-width:700px) { .play-section-nav { flex-wrap:wrap; } .play-section-nav a { min-width:30%; font-size:18px; } .tournament-bracket { grid-template-columns:1fr; } }
+@media(max-width:700px) { .play-section-nav { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 8px; } .play-section-nav a { min-width:0; font-size:16px; } .tournament-bracket { grid-template-columns:1fr; } }
+
+/* Stage 41: controls keep their own layout; lists precede settings. */
+.notification-heading { align-items:center; gap:12px; }
+.notification-toolbar { padding:16px; }
+.notification-toolbar .notification-type { margin:0; }
+.notification-filter-options { display:flex; flex-wrap:wrap; gap:0 20px; margin-top:8px; }
+.notification-check { display:flex; align-items:center; gap:10px; min-height:44px; font-size:13px; cursor:pointer; }
+.notification-check input,.notification-preference input { width:20px; height:20px; flex-shrink:0; accent-color:var(--accent); margin:0; padding:0; }
+.notification-toolbar-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:4px; }
+.notification-help { margin-top:8px; font-size:12px; color:var(--muted); }
+.notification-help summary { cursor:pointer; min-height:44px; display:flex; align-items:center; }
+.notification-settings { scroll-margin-top:100px; }
+.notification-settings>summary { min-height:44px; display:flex; align-items:center; cursor:pointer; }
+.notification-settings fieldset { border:0; padding:0; margin:12px 0; min-width:0; }
+.notification-preference { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:52px; padding:8px 0; border-bottom:1px solid var(--line); cursor:pointer; font-size:14px; }
+.notification-preference span { min-width:0; overflow-wrap:anywhere; }
+.notification-preference:last-child { border-bottom:0; }
+.event-waitlist-offer { border-color:var(--accent); margin:16px 0; }
+.event-waitlist-offer h2 { margin-top:0; }
+.waitlist-deadline strong { color:var(--accent); }
+@media(max-width:700px) { .notification-filter-options { display:grid; gap:0; } .event-waitlist-offer .row { display:grid; grid-template-columns:1fr; gap:8px; } .event-waitlist-offer .row .btn { width:100%; } }
