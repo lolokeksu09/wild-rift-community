@@ -18,6 +18,7 @@ import { discussionRoutes, postExtras, attemptId, mentions, unblocked, staffOf }
 import { playerRoutes, fold } from './players.mjs';
 import { profileFields, profileView } from './profiles.mjs';
 import { readImage, encodeImage, saveImage, ownedImage, imageAttached } from './media.mjs';
+import {notificationRoutes} from './notifications.mjs';
 import { lfgRoutes } from './lfg.mjs';
 import { moderationRoutes } from './moderation.mjs';
 import { directRoutes } from './direct.mjs';
@@ -380,8 +381,9 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           ['lfg','/api/lfg/notifications/summary',lfgRoutes],['discussions','/api/discussions/notifications/summary',discussionRoutes],
           ['events','/api/events/notifications/summary',eventRoutes],['tournaments','/api/tournaments/invitations/summary',tournamentRoutes],['matches','/api/tournaments/notifications/summary',tournamentRoutes]
         ])handler({db,user,path:route,method,body,url,now,postFor,moderatorIds,send:(status,data)=>{if(status!==200)fail(status,'Не удалось обновить уведомления.');summaries[key]=data;}});
-        send(200,{viewerId:user.id,...summaries});return;
+        send(200,{viewerId:user.id,...summaries,notificationTotal:summaries.discussions.unread+summaries.events.unread+summaries.lfg.unread+summaries.matches.unread+summaries.tournaments.pending});return;
       }
+      if(notificationRoutes({db,user,path,method,body,url,send,now,postFor}))return;
       if(guideRoutes({db,user,path,method,body,url,send,now,clubFor,postFor,mentions}))return;
       if(pollRoutes({db,user,path,method,body,send,now,clubFor,postFor,mentions}))return;
       if(postManagementRoutes({db,user,path,method,body,url,send,now,postFor,clubFor}))return;

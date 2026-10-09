@@ -25,21 +25,21 @@ export function tournamentRoutes({db,user,path,method,body,send,now,url}) {
  if(['/api/tournaments/notifications','/api/tournaments/notifications/summary'].includes(path)&&method==='GET'){
   const rows=inbox(),unread=rows.filter(n=>!n.seen).length;if(path.endsWith('/summary')){send(200,{viewerId:user.id,unread});return true;}
   const before=url?.searchParams.get('before');if(before&&!/^[1-9]\d*$/.test(before))fail(422,'Некорректная граница списка.');
-  const page=rows.filter(n=>!before||n.id<Number(before)).slice(0,51),more=page.length>50;page.splice(50);
-  send(200,{viewerId:user.id,unread,notifications:page.map(({id,tournament_id,title,round,slot,kind,starts_at,seen,score_a,score_b,result_kind,result_reason})=>({id,tournament_id,title,round,slot,kind,starts_at,seen,score_a,score_b,result_kind,result_reason})),next:more?page.at(-1).id:null});return true;
+  const page=rows.filter(n=>(!before||n.id<Number(before))&&(url.searchParams.get('unread')!=='1'||!n.seen)).slice(0,51),more=page.length>50;page.splice(50);
+  send(200,{viewerId:user.id,unread,notifications:page.map(({id,tournament_id,title,round,slot,kind,starts_at,seen,score_a,score_b,result_kind,result_reason,created_at})=>({id,tournament_id,title,round,slot,kind,starts_at,seen,score_a,score_b,result_kind,result_reason,created_at})),next:more?page.at(-1).id:null});return true;
  }
  const read=path.match(/^\/api\/tournaments\/notifications\/(\d+)\/read$/);
  if(read&&method==='POST'){const rows=inbox();if(!rows.some(n=>n.id===Number(read[1])))fail(404,'Уведомление недоступно.');run('UPDATE tournament_notifications SET seen=1 WHERE id=? AND user_id=?',Number(read[1]),user.id);send(200,{ok:true});return true;}
  if(['/api/tournaments/invitations','/api/tournaments/invitations/summary'].includes(path)&&method==='GET'){
   signed();const availability=new Map(),available=uid=>{if(!availability.has(uid))availability.set(uid,!blocked(uid)&&eligible(uid));return availability.get(uid);};
-  const invitations=all(`SELECT t.id tournament_id,t.title,team.name team_name,team.captain_id,t.owner_id
+  const invitations=all(`SELECT t.id tournament_id,t.title,t.created_at,team.name team_name,team.captain_id,t.owner_id
     FROM tournament_roster r JOIN tournament_teams team ON team.id=r.team_id AND team.tournament_id=r.tournament_id
     JOIN tournaments t ON t.id=r.tournament_id
     WHERE r.user_id=? AND r.status='pending' AND t.state='open' AND t.cancelled_at IS NULL ORDER BY t.id DESC`,user.id).filter(x=>available(x.captain_id)&&available(x.owner_id));
   if(path.endsWith('/summary')){send(200,{viewerId:user.id,pending:invitations.length});return true;}
   const before=url?.searchParams.get('before');if(before!==undefined&&before!==null&&(!/^[1-9]\d*$/.test(before)||!Number.isSafeInteger(Number(before))))fail(422,'Некорректная граница списка.');
   const page=invitations.filter(x=>!before||x.tournament_id<Number(before)).slice(0,51),more=page.length>50;page.splice(50);
-  send(200,{viewerId:user.id,pending:invitations.length,invitations:page.map(({tournament_id,title,team_name})=>({tournament_id,title,team_name})),next:more?page.at(-1).tournament_id:null});return true;
+  send(200,{viewerId:user.id,pending:invitations.length,invitations:page.map(({tournament_id,title,team_name,created_at})=>({tournament_id,title,team_name,created_at})),next:more?page.at(-1).tournament_id:null});return true;
  }
  if(path==='/api/tournaments/mine'&&method==='GET'){
   signed();const before=url?.searchParams.get('before');if(before&&(!/^[1-9]\d*$/.test(before)||!Number.isSafeInteger(Number(before))))fail(422,'Некорректная граница списка.');

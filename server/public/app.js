@@ -16,7 +16,7 @@ let welcomeController=null;
 const postManagement=window.WRPostManagement;let searchState={query:'',club:''};
 const discussionUI=window.WRDiscussions;
 const clubUI=window.WRClubs;
-let selectedTournamentId=null;
+let selectedTournamentId=null,selectedLfgId=null,selectedTournamentMatch=null;
 let clubTab='posts',clubPins=new Set(),postReturnView='notifications';
 let inviteToken=/^#invite=([a-f0-9]{64})$/.exec(location.hash)?.[1]||null;
 if(inviteToken)history.replaceState(null,'',location.pathname);
@@ -45,14 +45,16 @@ function plural(n,one,few,many){const x=Math.abs(n)%100,y=x%10;return n+' '+(x>=
 function memberCount(c){const bots=c.bots??clubs.find(x=>x.id===c.id)?.bots??0;return plural(c.members,'участник','участника','участников')+(bots?' · '+plural(bots,'бот','бота','ботов'):'');}
 function parseRoute(path,search=''){
  const routes={'/':'welcome','/feed':'discover','/clubs':'clubs','/players':'members','/guides':'guides','/teams':'lfg','/events':'events','/tournaments':'tournaments','/account':'account','/messages':'direct','/notifications':'notifications','/reports':'reports','/saved':'saved','/drafts':'drafts','/search':'search','/rules':'rules'};
- const clean=path==='/'?path:path.replace(/\/$/,'');if(routes[clean]){const tab=new URLSearchParams(search).get('tab');return {view:routes[clean],...(routes[clean]==='tournaments'?{tournamentId:(()=>{const id=Number(new URLSearchParams(search).get('id'));return Number.isSafeInteger(id)&&id>0?id:null;})()}:{}),...(routes[clean]==='discover'?{homeTab:['conversations','play'].includes(tab)?tab:'overview'}:{})};}
+ const clean=path==='/'?path:path.replace(/\/$/,'');if(routes[clean]){const tab=new URLSearchParams(search).get('tab');return {view:routes[clean],...(routes[clean]==='tournaments'?{tournamentMatch:(()=>{const q=new URLSearchParams(search),round=Number(q.get('round')),slot=Number(q.get('slot'));return q.has('slot')&&Number.isSafeInteger(round)&&round>=1&&round<=4&&Number.isSafeInteger(slot)&&slot>=0&&slot<=7?{round,slot}:null;})(),tournamentId:(()=>{const id=Number(new URLSearchParams(search).get('id'));return Number.isSafeInteger(id)&&id>0?id:null;})()}:{}),...(['events','lfg'].includes(routes[clean])?{destinationId:(()=>{const id=Number(new URLSearchParams(search).get('id'));return Number.isSafeInteger(id)&&id>0?id:null;})()}:{}),...(routes[clean]==='discover'?{homeTab:['conversations','play'].includes(tab)?tab:'overview'}:{})};}
  const m=/^\/(clubs|posts|players)\/([\w-]{1,80})$/.exec(clean);
  if(!m||(m[1]==='posts'&&!/^\d{1,16}$/.test(m[2])))return null;
  return {view:{clubs:'club',posts:'post',players:'player'}[m[1]],id:m[2]};
 }
 function applyRoute(route){
  if(!route)return;view=route.view;
- if(view==='tournaments')selectedTournamentId=route.tournamentId||null;
+ if(view==='events')eventState.id=route.destinationId||null;
+ if(view==='lfg'){selectedLfgId=route.destinationId||null;lfgState.initialGroup=selectedLfgId;}
+ if(view==='tournaments'){selectedTournamentId=route.tournamentId||null;selectedTournamentMatch=route.tournamentMatch||null;}
  if(view==='discover')homeTab=route.homeTab||'overview';
  if(view==='club'){selectedClub=route.id;clubTab='posts';}
  if(view==='post'){selectedPost=Number(route.id);selectedComment=null;postReturnView='discover';}
@@ -65,7 +67,9 @@ function routePath(){
  if(view==='player')return '/players/'+encodeURIComponent(selectedPlayer);
  const paths={welcome:'/',discover:'/feed',clubs:'/clubs',members:'/players',guides:'/guides',lfg:'/teams',events:'/events',tournaments:'/tournaments',account:'/account',direct:'/messages',notifications:'/notifications',reports:'/reports',saved:'/saved',drafts:'/drafts',search:'/search',rules:'/rules'};
  let path=paths[view]||'/';
- if(view==='tournaments'&&selectedTournamentId)path+='?id='+selectedTournamentId;
+ if(view==='tournaments'&&selectedTournamentId){path+='?id='+selectedTournamentId;if(selectedTournamentMatch)path+='&round='+selectedTournamentMatch.round+'&slot='+selectedTournamentMatch.slot;}
+ if(view==='events'&&eventState.id)path+='?id='+eventState.id;
+ if(view==='lfg'&&selectedLfgId)path+='?id='+selectedLfgId;
  if(view==='discover'&&homeTab!=='overview')path+='?tab='+homeTab;
  if(view==='account'&&authReturn?.view==='club')path+='?return='+encodeURIComponent('/clubs/'+authReturn.id);
  return path;
@@ -374,8 +378,7 @@ async function render(options={}) {
     }
     if(view==='notifications'){
       if(!user){$('#main').innerHTML=auth();return;}
-      const [data,invites,matches]=await Promise.all([api('/api/discussions/notifications'),api('/api/tournaments/invitations').then(data=>({data})).catch(error=>({error})),api('/api/tournaments/notifications').then(data=>({data})).catch(error=>({error}))]);if(version!==requestVersion||data.viewerId!==user?.id||invites.data&&invites.data.viewerId!==user?.id||matches.data&&matches.data.viewerId!==user?.id)return;
-      $('#main').innerHTML=`<div class="pagehead"><div><span class="tiny-label">РАЗГОВОР ПРОДОЛЖАЕТСЯ</span><h1>Уведомления</h1><p class="muted">Приглашения в команды, ответы и упоминания.</p></div></div>${invites.data?.invitations.length?`<section aria-label="Приглашения в турниры"><h2>Приглашения в турниры</h2><p class="note">Счётчик сохраняется, пока ты не ответишь или приглашение не закроется.</p><div id="tournamentInvitations">${invites.data.invitations.map(tournamentInvitationCard).join('')}</div>${invites.data.next?`<button class="btn quiet" data-tournament-invitation-more="${invites.data.next}">Ранее приглашён</button>`:''}</section>`:''}${invites.error?'<p class="error" role="alert">Не удалось загрузить турнирные приглашения. Обнови страницу, чтобы повторить.</p>':''}${matches.data?.notifications.length?`<section aria-label="Расписание матчей"><h2>Расписание матчей</h2><div id="matchNotifications">${matches.data.notifications.map(matchNotificationCard).join('')}</div>${matches.data.next?`<button class="btn quiet" data-match-more="${matches.data.next}">Ранее о матчах</button>`:''}</section>`:''}${matches.error?'<p class="error">Не удалось загрузить расписание матчей. Обнови страницу.</p>':''}<h2>Ответы и упоминания</h2><div id="discussionEvents">${data.notifications.map(discussionUI.notification).join('')||'<div class="empty-state"><h3>Пока тихо</h3><p>Здесь появятся ответы на твои комментарии и упоминания через @логин.</p></div>'}</div>${data.next?`<button class="btn quiet" data-discussion-more="${data.next}">Ранее</button>`:''}`;return;
+      $('#main').innerHTML='<section id="notificationRoot"></section>';chatController=createNotificationCenter($('#notificationRoot'),user);return;
     }
     if(view==='members'){
       const data=await api('/api/community-members?'+new URLSearchParams(memberState));if(version!==requestVersion||data.viewerId!==(user?.id||null))return;
@@ -406,9 +409,9 @@ async function render(options={}) {
       $('#main').innerHTML=discoverPage(feed,home?.data,home?.error,people,preview?.data,preview?.error);return;
     }
     if(!user&&['events','lfg'].includes(view)){const data=await api('/api/community-preview');if(version!==requestVersion)return;$('#main').innerHTML=playNavigation(view)+announcementPreview(data,view);return;}
-    if(view==='tournaments'){$('#main').innerHTML=playNavigation('tournaments')+'<section id=tournamentsRoot></section>';chatController=window.createTournaments({root:$('#tournamentsRoot'),user,api,initialId:selectedTournamentId,onSelect:id=>{selectedTournamentId=id;},onChange:()=>{badgeSignature='';pollBadges();}});return;}
-    if(view==='events'){$('#main').innerHTML=user?playNavigation('events')+'<section id=eventsRoot></section>':auth();if(user)chatController=window.createEvents({root:$('#eventsRoot'),user,api,state:eventState});return;}
-    if(view==='lfg'){$('#main').innerHTML=user?playNavigation('lfg')+'<section id=lfgRoot></section>':auth();if(user)chatController=window.createLfg({root:$('#lfgRoot'),user,api,state:lfgState});return;}
+    if(view==='tournaments'){$('#main').innerHTML=playNavigation('tournaments')+'<section id=tournamentsRoot></section>';chatController=window.createTournaments({root:$('#tournamentsRoot'),user,api,initialId:selectedTournamentId,initialMatch:selectedTournamentMatch,onSelect:id=>{selectedTournamentId=id;selectedTournamentMatch=null;},onChange:()=>{badgeSignature='';pollBadges();}});return;}
+    if(view==='events'){$('#main').innerHTML=user?playNavigation('events')+'<section id=eventsRoot></section>':auth();if(user)chatController=window.createEvents({root:$('#eventsRoot'),user,api,state:eventState,onSelect:()=>history.replaceState(null,'',routePath())});return;}
+    if(view==='lfg'){$('#main').innerHTML=user?playNavigation('lfg')+'<section id=lfgRoot></section>':auth();if(user)chatController=window.createLfg({root:$('#lfgRoot'),user,api,state:lfgState,initialId:selectedLfgId,onSelect:id=>{selectedLfgId=id;history.replaceState(null,'',routePath());}});return;}
     if (view === 'reports') {
       if(!user){$('#main').innerHTML=auth();return;}
       const mine=await api('/api/reports');
@@ -728,14 +731,35 @@ async function updateLfgBadge(){
 document.addEventListener('input',event=>{if(event.target.id==='clubSearch'){clubFilter.q=event.target.value;clearTimeout(catalogTimer);catalogTimer=setTimeout(()=>applyClubFilters(),150);}});
 document.addEventListener('change',event=>{if(event.target.id==='clubSort'){clubFilter.sort=event.target.value;applyClubFilters();}});
 
-function matchNotificationCard(n){const label={scheduled:'Матч назначен',rescheduled:'Матч перенесён',reminder:'Матч начнётся в течение 30 минут',result:'Результат матча',corrected:'Результат исправлен',withdrawn:'Команда снята',changed:'Изменился соперник: расписание и готовность сброшены'};return `<article class="panel" data-match-notification="${n.id}"><span class="pill">${label[n.kind]}</span><h3>${esc(n.title)}</h3><p>Раунд ${n.round} · матч ${n.slot+1}</p>${n.starts_at?`<p>${esc(new Date(n.starts_at).toLocaleString('ru-RU'))} · ${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)}</p>`:''}${['result','corrected','withdrawn'].includes(n.kind)?`<p>Счёт: ${n.score_a} : ${n.score_b}${n.result_kind==='forfeit'?' · техническое поражение':''}</p><p>${esc(n.result_reason)}</p>`:''}<a class="btn quiet" data-route href="/tournaments?id=${n.tournament_id}">Открыть турнир</a>${!n.seen?`<button class="btn quiet" data-match-read="${n.id}">Прочитано</button>`:''}</article>`;}
+function createNotificationCenter(root,viewer){
+ let active=true,version=0,type='all',unread=false,next=null,through=null;const requests=new Set(),keys=new Set();
+ const labels={all:'Все типы',discussions:'Ответы и упоминания',events:'Игровые события',lfg:'Поиск компании',tournaments:'Турниры'};
+ const text={events:{joined:'Игрок занял место',left:'Игрок освободил место',removed:'Ты исключён из состава',cancelled:'Событие отменено',reminder:'До начала осталось не больше 30 минут'},lfg:{application:'Новая заявка в группу',accepted:'Тебя приняли в группу',rejected:'Заявка отклонена',removed:'Ты исключён из группы',cancelled:'Заявка отменена',left:'Участник вышел',closed:'Группа закрыта'}};
+ async function request(path,method='GET',body){const controller=new AbortController();requests.add(controller);const timeout=setTimeout(()=>controller.abort(),10000);try{return await api(path,method,body,{signal:controller.signal});}finally{clearTimeout(timeout);requests.delete(controller);}}
+ function card(n){let html;if(n.source==='discussions')html=discussionUI.notification(n);else if(n.source==='matches')html=matchNotificationCard(n);else if(n.source==='invitations')html=tournamentInvitationCard(n);else {const event=n.source==='events',id=event?n.event_id:n.group_id;html=`<article class="panel"><span class="pill">${event?'Игровое событие':'Поиск компании'}</span><h3>${esc(text[n.source][n.kind]||'Обновление')}</h3>${n.title?`<p>${esc(n.title)}</p>`:''}<p class="note">${event?'Событие':'Группа'} №${id} · ${esc(new Date(n.created_at).toLocaleString('ru-RU'))}</p><a class="btn quiet" data-route href="/${event?'events':'teams'}?id=${id}">${event?'Открыть событие':'Открыть группу'}</a>${!n.seen?'<button class="btn quiet" data-center-read>Прочитано</button>':'<span class="note">Прочитано</span>'}</article>`;}return `<div data-notification-key="${esc(n.key)}" data-source="${n.source}" data-id="${n.id}">${html}</div>`;}
+ function append(items){const list=root.querySelector('#discussionEvents');for(const n of items){if(keys.has(n.key))continue;keys.add(n.key);list.insertAdjacentHTML('beforeend',card(n));}}
+ function pager(){root.querySelector('[data-center-more]')?.remove();if(next)root.insertAdjacentHTML('beforeend','<button class="btn quiet wide" data-center-more>Ранее</button>');}
+ async function draw(){const v=++version;root.innerHTML=`<header class="pagehead"><div><h1>Уведомления</h1><p class="muted">Ответы, события, поиск компании и турниры.</p></div></header><div class="panel"><label class="field">Тип<select data-notification-type>${Object.entries(labels).map(([k,l])=>`<option value="${k}" ${k===type?'selected':''}>${l}</option>`).join('')}</select></label><label><input type="checkbox" data-notification-unread ${unread?'checked':''}> Только непрочитанные</label><p class="note">Приглашения сохраняются до принятия или отказа.</p><button class="btn quiet" data-notification-read-all disabled>Прочитать всё</button><button class="btn quiet" data-center-refresh>Обновить</button></div><p class="error" role="alert" data-center-error></p><div id="discussionEvents" aria-live="polite"><p class="note">Загрузка…</p></div>`;
+  try{const d=await request('/api/notifications?'+new URLSearchParams({type,unread:unread?'1':'0'}));if(!active||v!==version||d.viewerId!==viewer.id||user?.id!==viewer.id)return;next=d.next;through=d.through;keys.clear();root.querySelector('#discussionEvents').innerHTML='';append(d.notifications);if(!d.notifications.length)root.querySelector('#discussionEvents').innerHTML='<p class="note">Здесь пока нет уведомлений для выбранного фильтра.</p>';root.querySelector('[data-notification-read-all]').disabled=false;pager();}
+  catch(e){if(active&&v===version){root.querySelector('#discussionEvents').innerHTML='';root.querySelector('[data-center-error]').textContent='Не удалось загрузить уведомления. Нажми «Обновить», чтобы повторить.';}}
+ }
+ async function click(e){const b=e.target.closest('button');if(!b)return;const isRead=b.matches('[data-center-read],[data-discussion-read],[data-match-read]');if(!isRead&&!b.matches('[data-notification-read-all],[data-center-more],[data-center-refresh]'))return;e.stopPropagation();if(b.hasAttribute('data-center-refresh')){draw();return;}const v=version;b.disabled=true;root.querySelector('[data-center-error]').textContent='';
+  try{if(b.hasAttribute('data-center-more')){const d=await request('/api/notifications?'+new URLSearchParams({type,unread:unread?'1':'0',cursor:next}));if(!active||v!==version||d.viewerId!==viewer.id||user?.id!==viewer.id)return;append(d.notifications);next=d.next;pager();}
+   else {if(isRead){const n=b.closest('[data-notification-key]');await request('/api/notifications/'+n.dataset.source+'/'+n.dataset.id+'/read','POST',{});}else await request('/api/notifications/read-all','POST',{through});if(!active||v!==version||user?.id!==viewer.id)return;badgeSignature='';pollBadges();draw();}}
+  catch(e){if(active&&v===version){root.querySelector('[data-center-error]').textContent='Не удалось выполнить действие. Повтори попытку.';}}
+  finally{if(b.isConnected)b.disabled=false;}
+ }
+ function change(e){if(e.target.matches('[data-notification-type]'))type=e.target.value;else if(e.target.matches('[data-notification-unread]'))unread=e.target.checked;else return;draw();}
+ root.addEventListener('click',click);root.addEventListener('change',change);draw();return {destroy(){active=false;version++;for(const c of requests)c.abort();root.removeEventListener('click',click);root.removeEventListener('change',change);}};
+}
+function matchNotificationCard(n){const label={scheduled:'Матч назначен',rescheduled:'Матч перенесён',reminder:'Матч начнётся в течение 30 минут',result:'Результат матча',corrected:'Результат исправлен',withdrawn:'Команда снята',changed:'Изменился соперник: расписание и готовность сброшены'};return `<article class="panel" data-match-notification="${n.id}"><span class="pill">${label[n.kind]}</span><h3>${esc(n.title)}</h3><p>Раунд ${n.round} · матч ${n.slot+1}</p>${n.starts_at?`<p>${esc(new Date(n.starts_at).toLocaleString('ru-RU'))} · ${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)}</p>`:''}${['result','corrected','withdrawn'].includes(n.kind)?`<p>Счёт: ${n.score_a} : ${n.score_b}${n.result_kind==='forfeit'?' · техническое поражение':''}</p><p>${esc(n.result_reason)}</p>`:''}<a class="btn quiet" data-route href="/tournaments?id=${n.tournament_id}&round=${n.round}&slot=${n.slot}">Открыть турнир</a>${!n.seen?`<button class="btn quiet" data-match-read="${n.id}">Прочитано</button>`:''}</article>`;}
 function tournamentInvitationCard(n){return `<article class="panel" data-tournament-invitation="${n.tournament_id}"><span class="pill">Приглашение в команду</span><h3>${esc(n.team_name)}</h3><p>${esc(n.title)}</p><a class="btn quiet" data-route href="/tournaments?id=${encodeURIComponent(n.tournament_id)}">Посмотреть приглашение</a></article>`;}
-function notificationBadge(replies=0,pending=0,matches=0){const total=replies+pending+matches,button=$('#notifications');button.textContent='Уведомления'+(total?' · '+total:'');button.title=`Непрочитанных ответов: ${replies}; ожидающих приглашений: ${pending}; о матчах: ${matches}`;const badge=$('[data-notification-total]');if(badge){badge.hidden=!user||!total;badge.textContent=total>99?'99+':String(total);badge.setAttribute('aria-label',button.title);}}
+function notificationBadge(replies=0,pending=0,matches=0,events=0,lfg=0){const total=replies+pending+matches+events+lfg,button=$('#notifications');button.textContent='Уведомления'+(total?' · '+total:'');button.title=`Непрочитанных ответов: ${replies}; ожидающих приглашений: ${pending}; о матчах: ${matches}; события: ${events}; поиск компании: ${lfg}`;const badge=$('[data-notification-total]');if(badge){badge.hidden=!user||!total;badge.textContent=total>99?'99+':String(total);badge.setAttribute('aria-label',button.title);}}
 let discussionBadgeBusy=false;
 async function updateDiscussionBadge(){
  if(discussionBadgeBusy)return;const id=user?.id;if(!id){notificationBadge();return;}
  discussionBadgeBusy=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
- try{const data=await api('/api/notifications/summary','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;if(data.viewerId===id)notificationBadge(data.discussions.unread,data.tournaments?.pending||0,data.matches?.unread||0);else $('#notifications').textContent='Уведомления · обнови сеанс';}
+ try{const data=await api('/api/notifications/summary','GET',undefined,{signal:controller.signal});if(user?.id!==id)return;if(data.viewerId===id)notificationBadge(data.discussions.unread,data.tournaments?.pending||0,data.matches?.unread||0,data.events?.unread||0,data.lfg?.unread||0);else $('#notifications').textContent='Уведомления · обнови сеанс';}
  catch{if(user?.id===id)$('#notifications').textContent='Уведомления · нет связи';}
  finally{clearTimeout(timer);discussionBadgeBusy=false;}
 }
@@ -753,7 +777,7 @@ async function pollBadges(){
   navBadge('direct','Чаты',`непрочитанных: ${d.direct.unread}, запросов: ${d.direct.requests}`,d.direct.unread+d.direct.requests);
   $('#reports').textContent='Жалобы'+(d.reports.unread?' · решений: '+d.reports.unread:'');
   navBadge('lfg','Найти',`уведомлений: ${d.lfg.unread}`,d.lfg.unread);
-  notificationBadge(d.discussions.unread,d.tournaments?.pending||0,d.matches?.unread||0);
+  notificationBadge(d.discussions.unread,d.tournaments?.pending||0,d.matches?.unread||0,d.events?.unread||0,d.lfg?.unread||0);
   $('#events').textContent='События'+(d.events.unread?' · '+d.events.unread:'');
  }catch{badgeInterval=Math.min(badgeInterval*2,60000);}
  finally{clearTimeout(deadline);badgePolling=false;badgeTimer=setTimeout(pollBadges,badgeInterval);}

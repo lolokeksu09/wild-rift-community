@@ -15,12 +15,13 @@ export function lfgRoutes({db,user,path,method,body,url,send,now}){
  const current=g=>{if(g.closed||g.expires_at<=now())fail(409,'Группа закрыта или срок объявления истёк.');};
  const clientId=()=>{const id=text(body.clientId,'Идентификатор отправки',16,80);if(!/^[A-Za-z0-9_-]+$/.test(id))fail(422,'Некорректный идентификатор.');return id;};
  const cursor=()=>{const raw=url.searchParams.get('before');if(raw!==null&&(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw))))fail(422,'Некорректный курсор.');return Number(raw??Number.MAX_SAFE_INTEGER);};
+ const notificationAccess=`FROM lfg_notifications n JOIN lfg_groups g ON g.id=n.group_id WHERE n.user_id=:viewer AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=:viewer AND b.target_id=g.owner_id) OR (b.blocker_id=g.owner_id AND b.target_id=:viewer))`;
  const card=g=>{const {create_signature,client_id,...safe}=g;return {...safe,members:count(g.id),state:state(g),membership:membership(g.id)};};
  if(path==='/api/lfg/notifications/summary'&&method==='GET'){
-  send(200,{viewerId:user.id,unread:get('SELECT count(*) AS n FROM lfg_notifications WHERE user_id=? AND seen=0',user.id).n});return true;
+  send(200,{viewerId:user.id,unread:get(`SELECT count(*) AS n ${notificationAccess} AND n.seen=0`,{viewer:user.id}).n});return true;
  }
  if(path==='/api/lfg/notifications'&&method==='GET'){
-  const result=all('SELECT id,group_id,kind,created_at,seen FROM lfg_notifications WHERE user_id=? AND id<? ORDER BY id DESC LIMIT 51',user.id,cursor());const notifications=result.slice(0,50);
+  const result=all(`SELECT n.id,n.group_id,n.kind,n.created_at,n.seen,g.title ${notificationAccess} AND n.id<:before ${url.searchParams.get('unread')==='1'?'AND n.seen=0':''} ORDER BY n.id DESC LIMIT 51`,{viewer:user.id,before:cursor()});const notifications=result.slice(0,50);
   send(200,{viewerId:user.id,notifications,next:result.length>50?notifications.at(-1).id:null});return true;
  }
  const readNotification=path.match(/^\/api\/lfg\/notifications\/(\d+)\/read$/);

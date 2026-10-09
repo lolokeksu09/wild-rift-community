@@ -18,7 +18,7 @@ window.WREvents={};
   if(candidates.size!==1)throw Error('Время попало на перевод часов. Выбери другое время или часовой пояс UTC.');
   return [...candidates][0];
  };
- window.createEvents=function({root,user,api,state={}}){
+ window.createEvents=function({root,user,api,state={},onSelect}){
   let active=true,version=0,chat=null;const find=s=>root.querySelector(s);
   const error=e=>{if(active){const out=find('[data-event-error]');if(out)out.textContent=e.message;}};
   const dateBlock=ms=>`<time class="event-calendar" datetime="${esc(new Date(ms).toISOString())}" aria-label="${esc(time(ms))}"><strong>${new Date(ms).getDate()}</strong><span>${esc(new Date(ms).toLocaleDateString('ru-RU',{month:'short'}))}</span><small>${esc(new Date(ms).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}))}</small></time>`;
@@ -44,7 +44,7 @@ window.WREvents={};
   async function click(ev){const b=ev.target.closest('button');if(!b)return;
    if(b.hasAttribute('data-event-create-open')){const form=find('[data-event-create]');if(form){form.closest('details').open=true;form.scrollIntoView?.({block:'start'});form.querySelector('input').focus();}return;}
    if(b.hasAttribute('data-event-filter-reset')){state.mine=false;state.role='';draw();return;}
-   if(b.dataset.eventOpen){state.id=Number(b.dataset.eventOpen);draw();return;}if(b.hasAttribute('data-event-back')){state.id=null;draw();return;}if(b.hasAttribute('data-event-refresh')){draw();return;}
+   if(b.dataset.eventOpen){state.id=Number(b.dataset.eventOpen);onSelect?.();draw();return;}if(b.hasAttribute('data-event-back')){state.id=null;onSelect?.();draw();return;}if(b.hasAttribute('data-event-refresh')){draw();return;}
    b.disabled=true;try{
     if(b.dataset.eventMore||b.dataset.eventNoticeMore){const notices=!!b.dataset.eventNoticeMore,q=new URLSearchParams({before:b.dataset.eventNoticeMore||b.dataset.eventMore});if(!notices){if(state.mine)q.set('mine','1');if(state.role)q.set('role',state.role);}const d=await api('/api/events'+(notices?'/notifications':'')+'?'+q);if(!active||!b.isConnected||d.viewerId!==user.id)return;find(notices?'#eventNotices':'#eventCards').insertAdjacentHTML('beforeend',(notices?d.notifications:d.events).map(notices?notice:card).join(''));if(!notices)find('[data-event-count]').textContent='Показано событий: '+root.querySelectorAll('[data-event-card]').length;else updateNoticeLabel();if(d.next)b.dataset[notices?'eventNoticeMore':'eventMore']=d.next;else b.remove();return;}
     if(b.dataset.eventRead){await api('/api/events/notifications/'+b.dataset.eventRead+'/read','POST',{});if(active&&b.isConnected){const read=document.createElement('small');read.textContent='Прочитано';b.replaceWith(read);updateNoticeLabel();}return;}
@@ -52,7 +52,7 @@ window.WREvents={};
    }catch(e){error(e);}finally{if(b.isConnected)b.disabled=false;}
   }
   async function submit(ev){const f=ev.target;if(!f.matches('[data-event-create],[data-event-filter]'))return;ev.preventDefault();if(!f.reportValidity())return;const button=f.querySelector('button');button.disabled=true;try{const data=new FormData(f);if(f.hasAttribute('data-event-filter')){state.mine=data.get('mine')==='1';state.role=data.get('role');await draw();return;}
-   const payload=Object.fromEntries(data);payload.startsAt=window.WREvents.toInstant(payload.date,payload.timezone);delete payload.date;payload.roles=data.getAll('roles');payload.durationHours=Number(payload.durationHours);const signature=JSON.stringify(payload);if(f.dataset.signature!==signature){f.dataset.signature=signature;f.dataset.clientId=crypto.randomUUID();}payload.clientId=f.dataset.clientId;const d=await api('/api/events','POST',payload);if(active){state.id=d.id;await draw();}
+   const payload=Object.fromEntries(data);payload.startsAt=window.WREvents.toInstant(payload.date,payload.timezone);delete payload.date;payload.roles=data.getAll('roles');payload.durationHours=Number(payload.durationHours);const signature=JSON.stringify(payload);if(f.dataset.signature!==signature){f.dataset.signature=signature;f.dataset.clientId=crypto.randomUUID();}payload.clientId=f.dataset.clientId;const d=await api('/api/events','POST',payload);if(active){state.id=d.id;onSelect?.();await draw();}
   }catch(e){if(f.isConnected)f.querySelector('.error').textContent=e.message;}finally{if(button.isConnected)button.disabled=false;}}
   root.addEventListener('click',click);root.addEventListener('submit',submit);draw();return {destroy(){active=false;version++;chat?.destroy();root.removeEventListener('click',click);root.removeEventListener('submit',submit);}};
  };

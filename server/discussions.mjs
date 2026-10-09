@@ -55,7 +55,7 @@ export function discussionRoutes({db,user,path,method,body,url,send,now,postFor}
     }
     if(method!=='GET')fail(405,'Метод не поддерживается.');
     if(notification[1]==='summary'){const count=db.prepare(`SELECT count(*) AS unread FROM discussion_notifications n ${readable} AND n.seen=0`).get({viewer});send(200,{viewerId:viewer,unread:count.unread});return true;}
-    const records=db.prepare(`SELECT n.id,n.kind,n.post_id,n.comment_id,n.created_at,n.seen,p.title,u.name AS actor_name FROM discussion_notifications n JOIN users u ON u.id=n.actor_id ${readable} AND n.id<:before ORDER BY n.id DESC LIMIT 21`).all({viewer,before:cursor(url,'before',Number.MAX_SAFE_INTEGER)});
+    const records=db.prepare(`SELECT n.id,n.kind,n.post_id,n.comment_id,n.created_at,n.seen,p.title,u.name AS actor_name FROM discussion_notifications n JOIN users u ON u.id=n.actor_id ${readable} AND n.id<:before ${url.searchParams.get('unread')==='1'?'AND n.seen=0':''} ORDER BY n.id DESC LIMIT 21`).all({viewer,before:cursor(url,'before',Number.MAX_SAFE_INTEGER)});
     send(200,{viewerId:viewer,notifications:records.slice(0,20),next:records.length>20?records[19].id:null});return true;
   }
   const id=Number(route[1]),action=route[2];if(!Number.isSafeInteger(id))fail(404,'Публикация недоступна.');

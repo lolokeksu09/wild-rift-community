@@ -1,9 +1,9 @@
 'use strict';
-window.createLfg=function({root,user,api,state={}}){
+window.createLfg=function({root,user,api,state={},initialId,onSelect}){
  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const modes={ranked:'Ранговая',normal:'Обычная',aram:'ARAM',custom:'Своя игра'},roles={any:'Любая роль',...window.WRProfiles.roles},states={open:'Есть места',full:'Группа заполнена',closed:'Закрыта',expired:'Срок истёк'},statuses={pending:'Ожидает решения',accepted:'В группе',rejected:'Отклонено',cancelled:'Отменено'};
  const options=(map,blank=false)=>(blank?'<option value="">Все</option>':'')+Object.entries(map).map(([v,t])=>`<option value="${v}">${t}</option>`).join('');
- let active=true,version=0,chat=null,finder=null,selected=state.initialGroup||null,query=state.groupQuery||'';
+ let active=true,version=0,chat=null,finder=null,selected=initialId===undefined?(state.initialGroup||null):initialId,query=state.groupQuery||'';
  delete state.initialGroup;
  const heading=()=>'<header class="catalog-heading finder-heading"><div><h1>С кем играем?</h1><p class="muted">Найди напарника или собери группу под свой режим.</p></div></header>';
  const tabs=()=>`<div class="finder-tabs" role="group" aria-label="Способ поиска"><button type="button" class="btn quiet" data-lfg-tab="groups" aria-pressed="${state.tab!=='players'}">Группы</button><button type="button" class="btn quiet" data-lfg-tab="players" aria-pressed="${state.tab==='players'}">Игроки</button></div>`;const requests=new Set();
@@ -33,11 +33,11 @@ window.createLfg=function({root,user,api,state={}}){
  }
  async function click(e){const b=e.target.closest('button');if(!b)return;try{
   if(b.hasAttribute('data-lfg-create-open')){const form=root.querySelector('[data-lfg-create]');if(form){form.closest('details').open=true;form.scrollIntoView?.({block:'start'});form.querySelector('input').focus();}return;}
-  if(b.dataset.lfgTab){state.tab=b.dataset.lfgTab;selected=null;return render();}
+  if(b.dataset.lfgTab){state.tab=b.dataset.lfgTab;selected=null;onSelect?.(null);return render();}
   if(b.dataset.lfgRead){b.disabled=true;await request(`/api/lfg/notifications/${b.dataset.lfgRead}/read`,'POST',{});if(active&&b.isConnected){const label=document.createElement('small');label.textContent='Прочитано';b.replaceWith(label);if(!root.querySelector('[data-lfg-read]'))root.querySelector('.group-notifications summary').textContent='Уведомления о группах';}return;}
   if(b.dataset.lfgEventsMore){b.disabled=true;const data=await request('/api/lfg/notifications?before='+b.dataset.lfgEventsMore);if(!active||!b.isConnected)return;if(data.viewerId!==user.id)throw new Error('Сеанс изменился.');root.querySelector('[data-lfg-notifications]').insertAdjacentHTML('beforeend',data.notifications.map(notification).join(''));if(data.next){b.dataset.lfgEventsMore=data.next;b.disabled=false;}else b.remove();return;}
-  if(b.dataset.lfgOpen){selected=b.dataset.lfgOpen;return render();}
-  if(b.hasAttribute('data-lfg-back')){selected=null;return render();}
+  if(b.dataset.lfgOpen){selected=Number(b.dataset.lfgOpen);onSelect?.(selected);return render();}
+  if(b.hasAttribute('data-lfg-back')){selected=null;onSelect?.(null);return render();}
   if(b.hasAttribute('data-lfg-refresh'))return render();
   if(b.dataset.lfgAction){if(['close','leave'].includes(b.dataset.lfgAction)&&!confirm(b.dataset.lfgAction==='close'?'Закрыть группу? Набор и отправка сообщений прекратятся.':'Покинуть группу или отменить заявку? Доступ к чату будет закрыт.'))return;b.disabled=true;await request(`/api/lfg/${selected}/${b.dataset.lfgAction}`,'POST',{});if(active)await render();}
   if(b.dataset.lfgDecision){if(b.dataset.lfgDecision==='reject'&&!confirm('Отклонить или исключить игрока? Он потеряет доступ к чату и не сможет подать заявку снова.'))return;b.disabled=true;await request(`/api/lfg/${selected}/decision`,'POST',{userId:b.dataset.target,decision:b.dataset.lfgDecision});if(active)await render();}
@@ -46,7 +46,7 @@ window.createLfg=function({root,user,api,state={}}){
  async function submit(e){const f=e.target;if(!f.matches('[data-lfg-create],[data-lfg-filter]'))return;e.preventDefault();if(!f.reportValidity())return;const data=Object.fromEntries(new FormData(f));if(f.hasAttribute('data-lfg-filter')){query=new URLSearchParams(Object.entries(data).filter(([,v])=>v)).toString();state.groupQuery=query;return render();}
   data.capacity=Number(data.capacity);data.durationHours=Number(data.durationHours);data.startsAt=data.startsAt?new Date(data.startsAt).getTime():null;
   const signature=JSON.stringify(data);if(f.dataset.signature!==signature){f.dataset.signature=signature;f.dataset.clientId=crypto.randomUUID();}data.clientId=f.dataset.clientId;
-  const b=f.querySelector('button');b.disabled=true;try{const result=await request('/api/lfg','POST',data);if(active){selected=result.id;await render();}}catch(e){error(e);}finally{b.disabled=false;}
+  const b=f.querySelector('button');b.disabled=true;try{const result=await request('/api/lfg','POST',data);if(active){selected=result.id;onSelect?.(selected);await render();}}catch(e){error(e);}finally{b.disabled=false;}
  }
  root.addEventListener('click',click);root.addEventListener('submit',submit);render();
  return {destroy(){active=false;version++;chat?.destroy();finder?.destroy();for(const c of requests)c.abort();root.removeEventListener('click',click);root.removeEventListener('submit',submit);}};
