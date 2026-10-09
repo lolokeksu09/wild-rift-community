@@ -20,6 +20,7 @@ import { profileFields, profileView } from './profiles.mjs';
 import { readImage, encodeImage, saveImage, ownedImage, imageAttached } from './media.mjs';
 import {clubNotificationRoutes} from './club-notifications.mjs';
 import {agendaRoutes} from './agenda.mjs';
+import {calendarRoutes} from './calendar.mjs';
 import {notificationRoutes} from './notifications.mjs';
 import { lfgRoutes } from './lfg.mjs';
 import { moderationRoutes } from './moderation.mjs';
@@ -386,6 +387,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         send(200,{viewerId:user.id,...summaries,notificationTotal:summaries.clubs.unread+summaries.discussions.unread+summaries.events.unread+summaries.lfg.unread+summaries.matches.unread+summaries.tournaments.pending});return;
       }
       if(clubNotificationRoutes({db,user,path,method,body,url,send}))return;
+      if(calendarRoutes({db,user,path,method,url,now,origin:expectedOrigin,sendCalendar:(body,filename)=>{res.writeHead(200,{'Content-Type':'text/calendar; charset=utf-8','Content-Disposition':'attachment; filename="'+filename+'"'});res.end(body);}}))return;
       if(agendaRoutes({db,user,path,method,url,send,now}))return;
       if(notificationRoutes({db,user,path,method,body,url,send,now,postFor}))return;
       if(guideRoutes({db,user,path,method,body,url,send,now,clubFor,postFor,mentions}))return;
