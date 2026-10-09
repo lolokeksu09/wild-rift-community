@@ -39,14 +39,14 @@ try{
    assert.equal(await member.page.locator('#main img[src=x]').count(),0);
    async function layout(label){assert.equal(await member.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}: overflow ${label}`);assert.deepEqual(errors,[]);}
    await layout('comments');await member.page.evaluate(()=>scrollTo(0,0));await member.page.screenshot({path:`ui-screenshots/discussions-${width}.png`,fullPage:true});
-   await member.page.locator('.section-menu summary').click();await member.page.locator('#notifications').click();await member.page.getByRole('heading',{name:'Ответы и упоминания'}).waitFor();assert.equal(await member.page.locator('[data-discussion-post]').count(),2);
+   await member.page.locator('.section-menu summary').click();await member.page.locator('#notifications').click();await member.page.getByRole('heading',{name:'Уведомления',exact:true}).waitFor();assert.equal(await member.page.locator('[data-discussion-post]').count(),2);
    await member.page.locator('[data-discussion-read]').first().click();await member.page.getByText('Прочитано',{exact:true}).waitFor();assert.equal((await member.api('/api/discussions/notifications/summary')).unread,1);
    await layout('notifications');await member.page.evaluate(()=>scrollTo(0,0));await member.page.screenshot({path:`ui-screenshots/discussion-events-${width}.png`,fullPage:true});
    await member.page.locator('[data-discussion-post]').first().click();await member.page.locator('.comment-reply').first().waitFor();
    await member.page.locator('#account').click();await member.page.locator('#main [data-nav=saved]').click();await member.page.getByRole('heading',{name:'Сохранённое',exact:true}).waitFor();assert.equal(await member.page.locator('[data-save][aria-pressed=true]').count(),1);
    await layout('saved');await member.page.evaluate(()=>scrollTo(0,0));await member.page.screenshot({path:`ui-screenshots/saved-${width}.png`,fullPage:true});
    await owner.api(`/api/clubs/${club.id}/ban`,'POST',{userId:member.id});await member.page.locator('#account').click();await member.page.locator('#main [data-nav=saved]').click();await member.page.getByRole('heading',{name:'Сохрани то, к чему хочется вернуться'}).waitFor();
-   await member.page.locator('.section-menu summary').click();await member.page.locator('#notifications').click();await member.page.getByRole('heading',{name:'Пока тихо'}).waitFor();assert.equal((await member.api('/api/discussions/notifications/summary')).unread,0);
+   await member.page.locator('.section-menu summary').click();await member.page.locator('#notifications').click();await member.page.locator('#discussionEvents').getByText('Здесь пока нет уведомлений для выбранного фильтра.',{exact:true}).waitFor();assert.equal(await member.page.locator('[data-discussion-post]').count(),0);assert.equal((await member.api('/api/discussions/notifications/summary')).unread,0);
    console.log(`PASS ${width}px: reactions, saved items, retry after lost response, replies, mentions, notification read, access revocation, escaped text and layout`);
   }finally{for(const c of contexts)await c.close();await app.close();}
  }
