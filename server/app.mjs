@@ -22,6 +22,7 @@ import {clubNotificationRoutes} from './club-notifications.mjs';
 import {agendaRoutes} from './agenda.mjs';
 import {calendarRoutes} from './calendar.mjs';
 import {notificationRoutes} from './notifications.mjs';
+import {notificationPreferenceRoutes,notificationPreferences,notificationTotal} from './notification-preferences.mjs';
 import { lfgRoutes } from './lfg.mjs';
 import { moderationRoutes } from './moderation.mjs';
 import { directRoutes } from './direct.mjs';
@@ -376,6 +377,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
         transaction(db,()=>{if(cover!==club.cover_id)clubAudit(db,user,club.id,club.id,'cover',now);run('UPDATE clubs SET cover_id=? WHERE id=?',cover,club.id);if(club.cover_id && club.cover_id!==cover && !imageAttached(db,club.cover_id))run('DELETE FROM media WHERE id=?',club.cover_id);});
         send(200,{ok:true});return;
       }
+      if(notificationPreferenceRoutes({db,user,path,method,body,send}))return;
       if(path==='/api/notifications/summary'&&method==='GET'){
         signed(user);
         const summaries={};
@@ -384,7 +386,7 @@ export async function createApp({ databasePath = ':memory:', now = Date.now, aut
           ['lfg','/api/lfg/notifications/summary',lfgRoutes],['discussions','/api/discussions/notifications/summary',discussionRoutes],
           ['clubs','/api/club-notifications/summary',clubNotificationRoutes],['events','/api/events/notifications/summary',eventRoutes],['tournaments','/api/tournaments/invitations/summary',tournamentRoutes],['matches','/api/tournaments/notifications/summary',tournamentRoutes]
         ])handler({db,user,path:route,method,body,url,now,postFor,moderatorIds,send:(status,data)=>{if(status!==200)fail(status,'Не удалось обновить уведомления.');summaries[key]=data;}});
-        send(200,{viewerId:user.id,...summaries,notificationTotal:summaries.clubs.unread+summaries.discussions.unread+summaries.events.unread+summaries.lfg.unread+summaries.matches.unread+summaries.tournaments.pending});return;
+        const preferences=notificationPreferences(db,user.id);send(200,{viewerId:user.id,...summaries,preferences,notificationTotal:notificationTotal(summaries,preferences)});return;
       }
       if(clubNotificationRoutes({db,user,path,method,body,url,send}))return;
       if(calendarRoutes({db,user,path,method,url,now,origin:expectedOrigin,sendCalendar:(body,filename)=>{res.writeHead(200,{'Content-Type':'text/calendar; charset=utf-8','Content-Disposition':'attachment; filename="'+filename+'"'});res.end(body);}}))return;

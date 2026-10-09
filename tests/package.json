@@ -10,7 +10,7 @@
     "test:direct-ui": "node direct-ui.dom.cjs",
     "test:moderation-ui": "node moderation-ui.dom.cjs",
     "test:lfg-ui": "node lfg-ui.dom.cjs",
-    "test:browser": "node browser-launch.mjs && node browser.mjs && node browser-community.mjs && node browser-players.mjs && node browser-discussions.mjs && node browser-clubs.mjs && node browser-events.mjs && node browser-home.mjs && node browser-drafts.mjs && node browser-post-management.mjs && node browser-polls.mjs && node browser-guides.mjs && node browser-recovery.mjs && node browser-premium.mjs && node browser-discovery.mjs && node browser-refinement.mjs && node browser-audit-fixes.mjs && node browser-pages.mjs && node browser-contacts.mjs && node browser-account-security.mjs && node browser-mobile-input.mjs && node browser-chat-resilience.mjs && node browser-filled-community.mjs && node browser-roster.mjs && node browser-club-subscriptions.mjs && node browser-agenda.mjs",
+    "test:browser": "node browser-launch.mjs && node browser.mjs && node browser-community.mjs && node browser-players.mjs && node browser-discussions.mjs && node browser-clubs.mjs && node browser-events.mjs && node browser-home.mjs && node browser-drafts.mjs && node browser-post-management.mjs && node browser-polls.mjs && node browser-guides.mjs && node browser-recovery.mjs && node browser-premium.mjs && node browser-discovery.mjs && node browser-refinement.mjs && node browser-audit-fixes.mjs && node browser-pages.mjs && node browser-contacts.mjs && node browser-account-security.mjs && node browser-mobile-input.mjs && node browser-chat-resilience.mjs && node browser-filled-community.mjs && node browser-roster.mjs && node browser-club-subscriptions.mjs && node browser-agenda.mjs && node browser-notification-preferences.mjs",
     "test:launch-ui": "node launch-ui.dom.cjs",
     "test:events-ui": "node events-ui.dom.cjs",
     "test:account-ui": "node account-ui.dom.cjs",
@@ -22,7 +22,8 @@
     "test:tournament-complete-ui": "node tournament-complete.dom.cjs",
     "test:roster-lifecycle-ui": "node roster-lifecycle.dom.cjs",
     "test:club-subscriptions-ui": "node club-subscriptions.dom.cjs",
-    "test:agenda-ui": "node agenda.dom.cjs"
+    "test:agenda-ui": "node agenda.dom.cjs",
+    "test:notification-preferences-ui": "node notification-preferences.dom.cjs"
   },
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"

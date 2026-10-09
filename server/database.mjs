@@ -7,7 +7,7 @@ export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 30) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
+  if (version > 31) { db.close(); throw new Error('Unsupported database schema; use matching application version.'); }
   if (version === 0) db.exec(`BEGIN;
     CREATE TABLE users (
       id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -431,6 +431,10 @@ export function openDatabase(path) {
       DELETE FROM club_post_notifications WHERE user_id=NEW.user_id AND post_id IN (SELECT id FROM posts WHERE club_id=NEW.club_id);
     END;
     PRAGMA user_version=30;
+  `));
+  if(version < 31) transaction(db,()=>db.exec(`
+    CREATE TABLE notification_preferences(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,category TEXT NOT NULL CHECK(category IN ('discussions','events','lfg','tournaments','clubs')),enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),PRIMARY KEY(user_id,category)) STRICT;
+    PRAGMA user_version=31;
   `));
   return db;
 }
